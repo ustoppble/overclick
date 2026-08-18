@@ -6,12 +6,13 @@ import {
 } from "./task-status";
 
 describe("task status machine (spec §3.1)", () => {
-  it("lists the four statuses in order", () => {
+  it("lists workflow statuses including discarded", () => {
     expect(TASK_STATUSES).toEqual([
       "aberto",
       "em_execucao",
       "feito",
       "validado",
+      "descartado",
     ]);
   });
 

@@ -10,6 +10,7 @@ export const COLUMN_STATUSES = [
   "em_execucao",
   "feito",
   "validado",
+  "descartado",
 ] as const;
 
 export type ColumnStatus = (typeof COLUMN_STATUSES)[number];
@@ -23,6 +24,7 @@ export function countByStatus(cards: { status: ColumnStatus }[]): ColumnCounts {
     em_execucao: 0,
     feito: 0,
     validado: 0,
+    descartado: 0,
   };
   for (const card of cards) counts[card.status] += 1;
   return counts;

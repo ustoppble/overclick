@@ -84,6 +84,153 @@ describe("MCP tool edge cases against a test db", () => {
     expect(out.task.harness?.model).toBe("opus-5");
   });
 
+  it("atomically supersedes a running card, preserves usage and inherits its contract", async () => {
+    world = await createTestWorld();
+    const first = await invokeTool(world.db, ctx(), "task_create", {
+      project_id: world.projectId,
+      title: "Original",
+      type: "feature",
+      o_que: "Keep this contract.",
+      por_que: "The work still matters.",
+      como_confirmo: [{ step: "run it", expected: "it works" }],
+      origem,
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const original = TaskCreateOutputSchema.parse(first.value).task;
+
+    await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: original.id,
+      executor: { cli: "codex", model: "spark" },
+    });
+    const usage = await invokeTool(world.db, ctx(), "task_update", {
+      task_id: original.id,
+      usage: { tokens_in: 120, tokens_out: 30, duration_ms: 5000 },
+    });
+    expect(usage.ok).toBe(true);
+
+    const continued = await invokeTool(world.db, ctx(), "task_create", {
+      project_id: world.projectId,
+      title: "Continuation",
+      type: "feature",
+      supersedes: original.short_id,
+      inherit: true,
+      origem,
+    });
+    expect(continued.ok).toBe(true);
+    if (!continued.ok) return;
+    const replacement = TaskCreateOutputSchema.parse(continued.value).task;
+    expect(replacement.supersedes).toBe(original.id);
+    expect(replacement.o_que).toBe(original.o_que);
+    expect(replacement.por_que).toBe(original.por_que);
+    expect(replacement.como_confirmo).toEqual(original.como_confirmo);
+
+    const old = await invokeTool(world.db, ctx(), "task_get", {
+      task_id: original.id,
+    });
+    expect(old.ok).toBe(true);
+    if (!old.ok) return;
+    const oldCard = TaskGetOutputSchema.parse(old.value).task;
+    expect(oldCard.status).toBe("descartado");
+    expect(oldCard.superseded_by).toBe(replacement.id);
+
+    const [attempt] = await world.db
+      .select()
+      .from(executionAttempt)
+      .where(eq(executionAttempt.taskId, original.id));
+    expect(attempt?.result).toBe("abandoned");
+    expect(attempt?.resultNote).toBe(`superseded by ${replacement.short_id}`);
+    expect(attempt?.tokensIn).toBe(120);
+    expect(attempt?.tokensOut).toBe(30);
+
+    const corrected = await invokeTool(world.db, ctx(), "task_update", {
+      task_id: original.id,
+      usage: { tokens_in: 200, tokens_out: 40, duration_ms: 6000 },
+    });
+    expect(corrected.ok).toBe(true);
+    const [afterCorrection] = await world.db
+      .select()
+      .from(executionAttempt)
+      .where(eq(executionAttempt.taskId, original.id));
+    expect(afterCorrection?.result).toBe("abandoned");
+    expect(afterCorrection?.tokensIn).toBe(200);
+    expect(afterCorrection?.tokensOut).toBe(40);
+  });
+
+  it("rejects superseding a delivered card", async () => {
+    world = await createTestWorld();
+    const created = await invokeTool(world.db, ctx(), "task_create", {
+      project_id: world.projectId,
+      title: "Already delivered",
+      type: "bug",
+      o_que: "Fix it.",
+      por_que: "It broke.",
+      como_confirmo: [{ step: "check", expected: "fixed" }],
+      origem,
+    });
+    if (!created.ok) throw new Error("create failed");
+    const card = TaskCreateOutputSchema.parse(created.value).task;
+    await invokeTool(world.db, ctx(), "task_claim", { task_id: card.id });
+    await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: card.id,
+      summary: "done",
+      usage: { tokens_in: 1, estimated: true },
+    });
+
+    const refused = await invokeTool(world.db, ctx(), "task_create", {
+      project_id: world.projectId,
+      title: "Should not exist",
+      type: "bug",
+      supersedes: card.id,
+      inherit: true,
+      origem,
+    });
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error.code).toBe("INVALID_ARGUMENT");
+  });
+
+  it("lets a managed token link an existing continuation while discarding", async () => {
+    world = await createTestWorld();
+    const make = async (title: string) => {
+      const made = await invokeTool(world.db, ctx(), "task_create", {
+        project_id: world.projectId,
+        title,
+        type: "feature",
+        o_que: title,
+        por_que: "needed",
+        como_confirmo: [{ step: "check", expected: "ok" }],
+        origem,
+      });
+      if (!made.ok) throw new Error("create failed");
+      return TaskCreateOutputSchema.parse(made.value).task;
+    };
+    const original = await make("Old");
+    const continuation = await make("New");
+    await invokeTool(world.db, ctx(), "task_claim", { task_id: original.id });
+
+    const updated = await invokeTool(
+      world.db,
+      { ...ctx(), canManage: true },
+      "task_update",
+      {
+        task_id: original.id,
+        status: "descartado",
+        superseded_by: continuation.id,
+      },
+    );
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    const out = TaskUpdateOutputSchema.parse(updated.value).task;
+    expect(out.status).toBe("descartado");
+    expect(out.superseded_by).toBe(continuation.id);
+    const next = await invokeTool(world.db, ctx(), "task_get", {
+      task_id: continuation.id,
+    });
+    expect(next.ok && TaskGetOutputSchema.parse(next.value).task.supersedes).toBe(
+      original.id,
+    );
+  });
+
   it("accepts handoff without usage and marks telemetry incomplete", async () => {
     world = await createTestWorld();
     const created = await invokeTool(world.db, ctx(), "task_create", {

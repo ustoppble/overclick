@@ -722,7 +722,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    the last column off the edge (OCL-24). The zero floor lets the tracks take
    their quarter and the cards elide, and below 1200px the board switches to
    minimum-width columns with horizontal scroll instead (media query below). */
-.nb .board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--nebula-space-4); }
+.nb .board { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--nebula-space-4); }
 /* The phone list is in the markup at every width and waits for its media
    query. Both layouts render the same cards, so only one may ever be on. */
 .nb .board-mobile { display: none; }
@@ -1860,7 +1860,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .board {
     /* 4×232px + 3 gaps fits the widest width of this band without scroll;
        below it the overflow is what the scroll is for */
-    grid-template-columns: repeat(4, minmax(232px, 1fr));
+    grid-template-columns: repeat(5, minmax(232px, 1fr));
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch;

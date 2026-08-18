@@ -5,6 +5,7 @@ export const CARD_STATUSES = [
   "em_execucao",
   "feito",
   "validado",
+  "descartado",
 ] as const;
 
 export type CardStatus = (typeof CARD_STATUSES)[number];
@@ -41,6 +42,7 @@ const VALID_EVENTS: Record<CardStatus, readonly CardEventType[]> = {
   em_execucao: ["handoff", "force_claim", "force_reopen"],
   feito: ["validate", "reopen", "mark_revisado"],
   validado: [],
+  descartado: [],
 };
 
 function isBlank(value: string): boolean {
@@ -54,6 +56,7 @@ const STATUS_LABEL: Record<CardStatus, string> = {
   em_execucao: "in execution",
   feito: "delivered and waiting for review",
   validado: "validated and closed",
+  descartado: "discarded and continued by another card",
 };
 
 const NEXT_STEP: Record<CardEventType, string> = {

@@ -134,6 +134,8 @@ async function loadTasks(projectIds: string[]) {
       attempts: true,
       handoffs: true,
       comments: true,
+      supersedes: { columns: { id: true, shortId: true } },
+      supersededBy: { columns: { id: true, shortId: true } },
     },
   });
 }
@@ -435,6 +437,12 @@ function toBoardCard(
     tipo: t.tipo,
     priority: t.priority,
     status: t.status,
+    supersedes: t.supersedes
+      ? { id: t.supersedes.id, shortId: t.supersedes.shortId }
+      : null,
+    supersededBy: t.supersededBy
+      ? { id: t.supersededBy.id, shortId: t.supersededBy.shortId }
+      : null,
     isExample: t.isExample,
     oQue: t.oQue,
     porQue: t.porQue,

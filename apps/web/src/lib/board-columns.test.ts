@@ -15,6 +15,7 @@ describe("board columns", () => {
       "em_execucao",
       "feito",
       "validado",
+      "descartado",
     ]);
   });
 
@@ -25,7 +26,13 @@ describe("board columns", () => {
         card("aberto"),
         card("feito"),
       ]),
-    ).toEqual({ aberto: 2, em_execucao: 0, feito: 1, validado: 0 });
+    ).toEqual({
+      aberto: 2,
+      em_execucao: 0,
+      feito: 1,
+      validado: 0,
+      descartado: 0,
+    });
   });
 
   it("counts nothing without cards", () => {
@@ -34,6 +41,7 @@ describe("board columns", () => {
       em_execucao: 0,
       feito: 0,
       validado: 0,
+      descartado: 0,
     });
   });
 

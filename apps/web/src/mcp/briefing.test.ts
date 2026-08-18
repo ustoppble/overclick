@@ -16,6 +16,8 @@ const task: Task = {
   workspace_id: "ws_1",
   previous_short_ids: [],
   parent_id: null,
+  supersedes: null,
+  superseded_by: null,
   reports_count: 0,
   o_que: "O login volta a autenticar.",
   por_que: "Ninguém entra.",

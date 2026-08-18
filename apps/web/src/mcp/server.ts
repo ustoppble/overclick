@@ -16,6 +16,7 @@ export const SERVER_INSTRUCTIONS = [
   "Missions group cards: mission_create returns the id that task_create accepts. Every task_id argument accepts the card uuid or the workspace short id (for example AGB-5).",
   "Cards live in projects: project_list shows the projects of the workspace and project_create starts one. task_create takes the project uuid or its card prefix (for example AGB).",
   "Reorganizing is project_update to rename, project_delete to remove (empty by default), and task_update with project_id to move a card to another project, which restamps its short id and returns the old-to-new mapping.",
+  "If an executor dies or reaches its model limit, create the continuation with task_create supersedes (and inherit: true when reusing the contract); never leave the old card in execution.",
 ].join("\n");
 
 const DESCRIPTIONS: Record<McpToolName, string> = {
@@ -39,11 +40,11 @@ const DESCRIPTIONS: Record<McpToolName, string> = {
   task_search:
     "Free-text search over the workspace's cards (title, what, why, comments), best match first. Filters: project_id (uuid or prefix), type, status (one or a list), limit (default 5, max 20). Each hit carries resolved_in, comments_count and reports_count, so you can tell whether a card already covers something before creating one. Empty list when nothing matches.",
   task_create:
-    "Cria um card. Workspace vem do token. mission é o id de uma missão existente (mission_create / mission_list); omitido → card solto. mode solo|team.",
+    "Cria um card. Workspace vem do token. mission é o id de uma missão existente (mission_create / mission_list); omitido → card solto. mode solo|team. supersedes descarta atomicamente o card anterior em execução; inherit reutiliza o contrato sem copiar comentários.",
   task_claim:
     "Pega o card (status → em execução), cria ExecutionAttempt e devolve o briefing.",
   task_update:
-    "Registra progresso, comentário, marca revisado, reclassifica o harness ou reporta/corrige usage do card (inclusive depois do deliver). project_id move o card para outro projeto: o short id é re-carimbado com o prefixo do destino, o antigo fica em previous_short_ids e a resposta devolve o de-para; subtasks vão junto e a missão não muda.",
+    "Registra progresso, comentário, marca revisado, reclassifica o harness ou reporta/corrige usage do card (inclusive descartado). project_id move o card entre projetos. status descartado + superseded_by encerra o attempt como abandoned e liga a continuação; exige can_manage.",
   task_deliver:
     "Entrega o resultado: resumo, evidências, artefatos, usage. usage é OBRIGATÓRIO: sem números exatos, ESTIME tokens, turns e custo e marque estimated: true — o card rotula como estimativa. A duração é medida pelo servidor do claim ao deliver. how_to_verify (URL ou comando) abre o painel de validação leiga. Status → feito.",
   task_delete:

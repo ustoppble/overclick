@@ -36,6 +36,10 @@ Two rules that cost real time when broken:
   refused, and a claim registered after the fact makes the board lie about how
   long the work took.
 - **One card, one claim.** If a second agent already holds it, take another.
+- **No zombie card.** If the executor dies or reaches its model limit, create
+  the continuation with `task_create { supersedes: old_card, inherit: true }`.
+  This discards the old attempt while preserving its cost; never leave it in
+  execution.
 - **Search before you create a new card.** Before `task_create`, run `task_search` with a
   short query to reuse existing cards and avoid duplicates.
 

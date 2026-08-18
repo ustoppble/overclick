@@ -81,7 +81,9 @@ export type BoardCard = {
   title: string;
   tipo: "feature" | "bug" | "rfc";
   priority: "urgente" | "alta" | "media" | "baixa";
-  status: "aberto" | "em_execucao" | "feito" | "validado";
+  status: "aberto" | "em_execucao" | "feito" | "validado" | "descartado";
+  supersedes: { id: string; shortId: string } | null;
+  supersededBy: { id: string; shortId: string } | null;
   isExample: boolean;
   oQue: string;
   porQue: string;
@@ -129,6 +131,7 @@ function columnLabels(t: Dict): Record<ColumnStatus, string> {
     em_execucao: t.board.colInProgress,
     feito: t.board.colDone,
     validado: t.board.colValidated,
+    descartado: t.board.colDiscarded,
   };
 }
 
@@ -138,6 +141,7 @@ function statusLabels(t: Dict): Record<ColumnStatus, string> {
     em_execucao: t.board.statusInProgress,
     feito: t.board.statusDone,
     validado: t.board.statusValidated,
+    descartado: t.board.statusDiscarded,
   };
 }
 
@@ -146,6 +150,7 @@ const STATUS_CHIP: Record<ColumnStatus, string> = {
   em_execucao: "exec",
   feito: "feito",
   validado: "ok",
+  descartado: "off",
 };
 
 /**
@@ -160,6 +165,7 @@ const COLUMN_ICON: Record<ColumnStatus, IconName> = {
   em_execucao: "columnRunning",
   feito: "columnDone",
   validado: "columnValidated",
+  descartado: "columnDone",
 };
 
 /** Empty-state microcopy (briefing §4.2). */
@@ -199,6 +205,14 @@ function EmptyState({ status, t }: { status: ColumnStatus; t: Dict }) {
       <div className="empty-col" title={t.board.emptyDone}>
         {mark}
         <span>{t.board.emptyDone}</span>
+      </div>
+    );
+  }
+  if (status === "descartado") {
+    return (
+      <div className="empty-col" title={t.board.emptyDiscarded}>
+        {mark}
+        <span>{t.board.emptyDiscarded}</span>
       </div>
     );
   }
@@ -384,6 +398,7 @@ function Card({
   // click away in the detail panel.
   return (
     <div
+      id={`board-card-${card.id}`}
       className={`card nebula-glass${exec ? " exec nebula-corners" : ""}${dim ? " dim" : ""}${
         selectable ? " selectable" : ""
       }${selected ? " picked" : ""}`}
@@ -409,6 +424,16 @@ function Card({
         {card.isExample ? <span className="selo">{t.board.example}</span> : null}
         {card.awaitingMyReview ? (
           <span className="review-chip">{t.board.yourReview}</span>
+        ) : null}
+        {card.supersedes ? (
+          <span className="selo">
+            {t.board.continues} {card.supersedes.shortId}
+          </span>
+        ) : null}
+        {card.status === "descartado" ? (
+          <span className="selo">
+            {t.board.discardedTo} {card.supersededBy?.shortId ?? "—"}
+          </span>
         ) : null}
       </div>
       {/* One line on the phone: the ellipsis points here and to the panel. */}
@@ -1071,6 +1096,20 @@ function Detail({
             <div>
               <SectionLabel icon="branch" text={t.detail.branch} />
               <p className="d-mono">{card.branch ?? "—"}</p>
+              {card.supersedes ? (
+                <p>
+                  <a href={`#board-card-${card.supersedes.id}`}>
+                    {t.board.continues} {card.supersedes.shortId}
+                  </a>
+                </p>
+              ) : null}
+              {card.status === "descartado" && card.supersededBy ? (
+                <p>
+                  <a href={`#board-card-${card.supersededBy.id}`}>
+                    {t.board.discardedTo} {card.supersededBy.shortId}
+                  </a>
+                </p>
+              ) : null}
               {card.resolvedIn ? (
                 <p>
                   <span className="tag feature">

@@ -62,6 +62,7 @@ describe("projects over MCP", () => {
       em_execucao: 0,
       feito: 0,
       validado: 0,
+      descartado: 0,
     });
 
     const listed = await invokeTool(world.db, ctx(), "project_list", {});
@@ -127,6 +128,7 @@ describe("projects over MCP", () => {
       em_execucao: 1,
       feito: 0,
       validado: 0,
+      descartado: 0,
     });
     expect(row?.next_number).toBe(4);
   });

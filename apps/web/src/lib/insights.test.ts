@@ -15,6 +15,7 @@ function attempt(overrides: Partial<InsightAttemptRow> = {}): InsightAttemptRow 
     taskShortId: "OC-1",
     taskTitle: "First card",
     taskIsExample: false,
+    taskStatus: "feito",
     tipo: "feature",
     priority: "media",
     projectId: "proj-1",
@@ -22,6 +23,7 @@ function attempt(overrides: Partial<InsightAttemptRow> = {}): InsightAttemptRow 
     missionId: null,
     missionTitle: null,
     model: "sonnet-5",
+    executor: "codex",
     result: "success",
     finishedAt: new Date("2026-08-10T12:00:00Z"),
     usageSegments: null,
@@ -47,6 +49,41 @@ function reopen(taskId: string, at: string): ReopenRow {
 }
 
 describe("computeInsights totals", () => {
+  it("keeps abandoned discarded cost outside successful totals", () => {
+    const result = computeInsights(
+      [
+        attempt({
+          result: "success",
+          costUsd: "2.00",
+          tokensIn: 200,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+        attempt({
+          result: "abandoned",
+          taskStatus: "descartado",
+          costUsd: "0.75",
+          tokensIn: 75,
+          tokensOut: 0,
+          tokensCache: 0,
+          missionId: "mission-1",
+          missionTitle: "Reliability",
+          model: "spark",
+          executor: "codex",
+        }),
+      ],
+      [],
+    );
+
+    expect(result.totals.attempts).toBe(1);
+    expect(result.totals.tokens).toBe(200);
+    expect(result.discarded.totals.attempts).toBe(1);
+    expect(result.discarded.totals.tokens).toBe(75);
+    expect(result.discarded.byModel[0]?.label).toBe("spark");
+    expect(result.discarded.byMission[0]?.label).toBe("Reliability");
+    expect(result.discarded.byExecutor[0]?.label).toBe("codex");
+  });
+
   it("sums cost, tokens and time across finished attempts", () => {
     const result = computeInsights(
       [

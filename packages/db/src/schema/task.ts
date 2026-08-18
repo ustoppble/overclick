@@ -34,6 +34,15 @@ export const task = pgTable(
   parentId: uuid("parent_id").references((): AnyPgColumn => task.id, {
     onDelete: "cascade",
   }),
+  /** Card this one continues after an executor was abandoned. */
+  supersedesId: uuid("supersedes_id").references((): AnyPgColumn => task.id, {
+    onDelete: "set null",
+  }),
+  /** Replacement card that made this card obsolete. */
+  supersededById: uuid("superseded_by_id").references(
+    (): AnyPgColumn => task.id,
+    { onDelete: "set null" },
+  ),
   shortId: text("short_id").notNull().unique(),
   /**
    * Short ids this card carried before, oldest first. Moving a card to another
@@ -98,5 +107,7 @@ export const task = pgTable(
     index("task_project_idx").on(table.projectId),
     index("task_status_idx").on(table.status),
     index("task_parent_idx").on(table.parentId),
+    index("task_supersedes_idx").on(table.supersedesId),
+    index("task_superseded_by_idx").on(table.supersededById),
   ],
 );

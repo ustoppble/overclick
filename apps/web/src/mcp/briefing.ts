@@ -124,6 +124,7 @@ export function renderBriefingMarkdown(input: {
       "Only when it reports `estimated: true` with a reason should you estimate; " +
       "never replace a missing model with an invented default. " +
       "Real numbers found later? Correct them with `task_update` passing usage.\n\n" +
+      "If this executor dies or reaches its model limit, start the replacement with `task_create { supersedes: this_card, inherit: true }`; never leave this card in execution.\n\n" +
       "Send `transcript: {path}` too, with the transcript the command read. " +
       "The board stores the reference only, never the content: the file stays " +
       "on your machine, and the card gets a way back to this session for " +

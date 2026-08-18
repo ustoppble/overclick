@@ -19,12 +19,13 @@ function card(
 }
 
 describe("card state machine", () => {
-  it("exposes the four MVP statuses and no extra ones", () => {
+  it("exposes the workflow statuses including discarded", () => {
     expect(CARD_STATUSES).toEqual([
       "aberto",
       "em_execucao",
       "feito",
       "validado",
+      "descartado",
     ]);
   });
 

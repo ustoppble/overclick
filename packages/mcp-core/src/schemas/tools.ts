@@ -224,6 +224,8 @@ export const TaskGetOutputSchema = z.object({
     ])
     .nullable(),
   cost_unpriced_models: z.array(z.string()),
+  /** Discarded run whose abandoned attempt still needs usage telemetry. */
+  usage_warning: z.string().optional(),
 });
 
 /**
@@ -273,9 +275,13 @@ export const TaskCreateInputSchema = z
     project_id: ProjectRefSchema,
     title: z.string().min(1).max(200),
     type: TaskTypeSchema,
-    o_que: z.string().min(1),
-    por_que: z.string().min(1),
-    como_confirmo: z.array(ConfirmationStepSchema).min(1),
+    o_que: z.string().min(1).optional(),
+    por_que: z.string().min(1).optional(),
+    como_confirmo: z.array(ConfirmationStepSchema).min(1).optional(),
+    /** Existing in-execution card replaced atomically by this one. */
+    supersedes: TaskIdSchema.optional(),
+    /** Reuse the superseded card contract fields omitted by this request. */
+    inherit: z.boolean().optional(),
     priority: PrioritySchema.optional(),
     parent: z.string().min(1).optional(),
     mode: ExecutionModeSchema.default("solo"),
@@ -285,6 +291,22 @@ export const TaskCreateInputSchema = z
     origem: OrigemSchema,
   })
   .superRefine((value, ctx) => {
+    if (value.inherit && !value.supersedes) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["inherit"],
+        message: "inherit requires supersedes",
+      });
+    }
+    for (const key of ["o_que", "por_que", "como_confirmo"] as const) {
+      if (value[key] === undefined && !value.inherit) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `${key} is required unless inherit: true reuses it from supersedes`,
+        });
+      }
+    }
     if (value.mode === "team" && (!value.subtasks || value.subtasks.length === 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -390,6 +412,9 @@ export const TaskUpdateInputSchema = z
      * null clears it. Empty string is refused: send null to clear.
      */
     resolved_in: z.string().min(1).nullable().optional(),
+    /** Discard an in-execution card, optionally linking its existing continuation. */
+    status: z.literal("descartado").optional(),
+    superseded_by: TaskIdSchema.optional(),
   })
   .refine(
     (value) =>
@@ -401,15 +426,21 @@ export const TaskUpdateInputSchema = z
       value.harness !== undefined ||
       value.usage !== undefined ||
       value.spawn_failure !== undefined ||
-      value.resolved_in !== undefined,
+      value.resolved_in !== undefined ||
+      value.status !== undefined ||
+      value.superseded_by !== undefined,
     {
       message:
-        "provide comment, progress, revisado, mission_id, project_id, harness, usage, spawn_failure or resolved_in",
+        "provide comment, progress, revisado, mission_id, project_id, harness, usage, spawn_failure, resolved_in, or status descartado",
     },
   )
   .refine(
     (value) => value.comment !== undefined || value.comment_kind === undefined,
     { message: "comment_kind requires comment", path: ["comment_kind"] },
+  )
+  .refine(
+    (value) => value.status !== undefined || value.superseded_by === undefined,
+    { message: "superseded_by requires status: descartado", path: ["superseded_by"] },
   );
 
 /** One card's short id before and after a move between projects. */
@@ -839,6 +870,13 @@ export const InsightsQueryOutputSchema = z.object({
     until: IsoDateTimeSchema.nullable(),
   }),
   totals: UsageTotalsSchema,
+  /** Abandoned cost kept visible but never mixed into successful work. */
+  discarded: z.object({
+    totals: UsageTotalsSchema,
+    by_executor: z.array(InsightGroupSchema),
+    by_mission: z.array(InsightGroupSchema),
+    by_model: z.array(InsightGroupSchema),
+  }),
   /**
    * False by default: this workspace reports tokens and time only, and every
    * cost field comes back null. Turn the money layer on in Settings and the

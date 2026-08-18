@@ -73,6 +73,16 @@ export const taskRelations = relations(task, ({ one, many }) => ({
     relationName: "subtasks",
   }),
   subtasks: many(task, { relationName: "subtasks" }),
+  supersedes: one(task, {
+    fields: [task.supersedesId],
+    references: [task.id],
+    relationName: "task_supersedes",
+  }),
+  supersededBy: one(task, {
+    fields: [task.supersededById],
+    references: [task.id],
+    relationName: "task_superseded_by",
+  }),
   createdBy: one(user, {
     fields: [task.createdByUserId],
     references: [user.id],

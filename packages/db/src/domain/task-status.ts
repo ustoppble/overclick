@@ -3,6 +3,7 @@ export const TASK_STATUSES = [
   "em_execucao",
   "feito",
   "validado",
+  "descartado",
 ] as const;
 
 export type TaskStatus = (typeof TASK_STATUSES)[number];

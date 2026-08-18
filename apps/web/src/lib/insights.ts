@@ -35,6 +35,7 @@ export type InsightAttemptRow = {
   taskShortId: string;
   taskTitle: string;
   taskIsExample: boolean;
+  taskStatus: "aberto" | "em_execucao" | "feito" | "validado" | "descartado";
   tipo: "feature" | "bug" | "rfc";
   priority: "urgente" | "alta" | "media" | "baixa";
   projectId: string;
@@ -42,6 +43,7 @@ export type InsightAttemptRow = {
   missionId: string | null;
   missionTitle: string | null;
   model: string | null;
+  executor: string | null;
   result: string | null;
   finishedAt: Date | null;
   /** Tokens by model. Null on attempts recorded before segments existed. */
@@ -78,6 +80,7 @@ export async function loadInsightAttemptRows(
       taskShortId: task.shortId,
       taskTitle: task.title,
       taskIsExample: task.isExample,
+      taskStatus: task.status,
       tipo: task.tipo,
       priority: task.priority,
       projectId: project.id,
@@ -85,6 +88,7 @@ export async function loadInsightAttemptRows(
       missionId: task.missionId,
       missionTitle: mission.title,
       model: executionAttempt.model,
+      executor: executionAttempt.executor,
       result: executionAttempt.result,
       finishedAt: executionAttempt.finishedAt,
       usageSegments: executionAttempt.usageSegments,
@@ -299,6 +303,13 @@ export type CardInsight = {
 
 export type Insights = {
   totals: UsageTotals;
+  /** Abandoned attempts on discarded cards, deliberately outside success totals. */
+  discarded: {
+    totals: UsageTotals;
+    byExecutor: GroupInsight[];
+    byMission: GroupInsight[];
+    byModel: GroupInsight[];
+  };
   /**
    * Finished attempts that ran more than one model. Each of them appears in
    * several byModel groups, so this is the count the screen can name without
@@ -314,6 +325,18 @@ export type Insights = {
 
 const NO_MISSION = "__none__";
 const NO_MODEL = "__unknown__";
+
+function executorLabel(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { cli?: unknown; agent?: unknown };
+    if (typeof parsed.cli === "string" && parsed.cli) return parsed.cli;
+    if (typeof parsed.agent === "string" && parsed.agent) return parsed.agent;
+  } catch {
+    // Older rows stored the executor label directly.
+  }
+  return raw;
+}
 
 /**
  * Totals while they are being summed. The running cost is a number here and
@@ -624,6 +647,10 @@ export function computeInsights(
   prices: readonly ModelPrice[] = [],
 ): Insights {
   const finished = rows.filter((r) => !r.taskIsExample && r.finishedAt != null);
+  const successful = finished.filter((r) => r.result === "success");
+  const abandoned = finished.filter(
+    (r) => r.result === "abandoned" && r.taskStatus === "descartado",
+  );
 
   const totals = emptyTotals();
   let switchedRuns = 0;
@@ -652,7 +679,7 @@ export function computeInsights(
     return entry;
   };
 
-  for (const a of finished) {
+  for (const a of successful) {
     const segments = attemptSegments(a);
     const cost = attemptCost(a, segments, prices);
     const priced = isAttemptPriced(a, segments, prices);
@@ -777,7 +804,7 @@ export function computeInsights(
     reopensByTask.set(r.taskId, list);
   }
   const reopenAgg = new Map<string, ModelReopenInsight>();
-  for (const a of finished) {
+  for (const a of successful) {
     if (a.result !== "success" || !a.finishedAt) continue;
     // A delivery a run produced with two models counts for both: neither can
     // be cleared of a reopen the pair earned together.
@@ -811,8 +838,51 @@ export function computeInsights(
   const seal = (map: Map<string, RunningGroup>): GroupInsight[] =>
     sortGroups([...map.values()].map(sealTotals));
 
+  const discardedTotals = emptyTotals();
+  const discardedByExecutor = new Map<string, RunningGroup>();
+  const discardedByMission = new Map<string, RunningGroup>();
+  const discardedByModel = new Map<string, RunningGroup>();
+  for (const a of abandoned) {
+    const segments = attemptSegments(a);
+    const cost = attemptCost(a, segments, prices);
+    const priced = isAttemptPriced(a, segments, prices);
+    addAttempt(discardedTotals, a, cost, priced);
+    addAttempt(
+      group(
+        discardedByExecutor,
+        executorLabel(a.executor) ?? NO_MODEL,
+        executorLabel(a.executor),
+      ),
+      a,
+      cost,
+      priced,
+    );
+    addAttempt(
+      group(discardedByMission, a.missionId ?? NO_MISSION, a.missionTitle),
+      a,
+      cost,
+      priced,
+    );
+    for (const segment of segments) {
+      addSegment(
+        group(discardedByModel, segment.model ?? NO_MODEL, segment.model),
+        a,
+        segment,
+        segmentCost(a, segment, prices, segments.length === 1),
+        isSegmentPriced(a, segment, prices),
+        segments.length > 1,
+      );
+    }
+  }
+
   return {
     totals: sealTotals(totals),
+    discarded: {
+      totals: sealTotals(discardedTotals),
+      byExecutor: seal(discardedByExecutor),
+      byMission: seal(discardedByMission),
+      byModel: seal(discardedByModel),
+    },
     switchedRuns,
     byProject: seal(byProject),
     byMission: seal(byMission),

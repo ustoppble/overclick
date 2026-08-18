@@ -176,7 +176,14 @@ export function mapMission(row: MissionRow, taskCount?: number): Mission {
 }
 
 export function emptyCardCounts(): ProjectCardCounts {
-  return { total: 0, aberto: 0, em_execucao: 0, feito: 0, validado: 0 };
+  return {
+    total: 0,
+    aberto: 0,
+    em_execucao: 0,
+    feito: 0,
+    validado: 0,
+    descartado: 0,
+  };
 }
 
 export function mapProject(
@@ -214,6 +221,8 @@ export function mapTask(
     workspace_id: proj.workspaceId,
     previous_short_ids: row.previousShortIds ?? [],
     parent_id: row.parentId,
+    supersedes: row.supersedesId,
+    superseded_by: row.supersededById,
     o_que: row.oQue,
     por_que: row.porQue,
     como_confirmo: parseComoConfirmo(row.comoConfirmo),

@@ -5,6 +5,7 @@ export const taskStatusEnum = pgEnum("task_status", [
   "em_execucao",
   "feito",
   "validado",
+  "descartado",
 ]);
 
 export const taskTypeEnum = pgEnum("task_type", ["feature", "bug", "rfc"]);

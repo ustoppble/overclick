@@ -5,6 +5,7 @@ export const CardStatusSchema = z.enum([
   "em_execucao",
   "feito",
   "validado",
+  "descartado",
 ]);
 
 export const TaskTypeSchema = z.enum(["feature", "bug", "rfc"]);
@@ -238,6 +239,7 @@ export const ProjectCardCountsSchema = z.object({
   em_execucao: z.number().int().nonnegative(),
   feito: z.number().int().nonnegative(),
   validado: z.number().int().nonnegative(),
+  descartado: z.number().int().nonnegative(),
 });
 
 export const ProjectSchema = z.object({
@@ -279,6 +281,10 @@ export const TaskSchema = TaskSummarySchema.extend({
    */
   previous_short_ids: z.array(z.string().min(1)),
   parent_id: z.string().min(1).nullable(),
+  /** Card this one continues, if it replaced an abandoned execution. */
+  supersedes: z.string().min(1).nullable(),
+  /** Replacement card, when this card was discarded. */
+  superseded_by: z.string().min(1).nullable(),
   o_que: z.string(),
   por_que: z.string(),
   como_confirmo: z.array(ConfirmationStepSchema),
