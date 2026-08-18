@@ -47,7 +47,15 @@ describe("complete schema from spec §3", () => {
 
   it("workspace holds name, executor config and cardápio", () => {
     expect(columnNames(workspace)).toEqual(
-      expect.arrayContaining(["id", "name", "executors", "cardapio", "createdAt", "updatedAt"]),
+      expect.arrayContaining([
+        "id",
+        "name",
+        "executors",
+        "cardapio",
+        "claimTimeoutMinutes",
+        "createdAt",
+        "updatedAt",
+      ]),
     );
   });
 
@@ -145,6 +153,7 @@ describe("complete schema from spec §3", () => {
         "model",
         "sessionId",
         "startedAt",
+        "lastActivityAt",
         "finishedAt",
         "tokensIn",
         "tokensOut",

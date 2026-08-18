@@ -36,6 +36,13 @@ Two rules that cost real time when broken:
   refused, and a claim registered after the fact makes the board lie about how
   long the work took.
 - **One card, one claim.** If a second agent already holds it, take another.
+- **Release what you cannot finish.** Call `task_release {task_id, reason}`
+  before leaving a claimed card. Long runs can renew their lease with
+  `task_heartbeat`; otherwise the workspace timeout makes the claim
+  reclaimable (60 minutes by default).
+- **Disclose a stale takeover.** When `task_claim` returns
+  `reclaimed_stale: true`, say in `task_deliver` that the previous claim
+  expired. The abandoned attempt stays in the timeline with its usage.
 - **Search before you create a new card.** Before `task_create`, run `task_search` with a
   short query to reuse existing cards and avoid duplicates.
 

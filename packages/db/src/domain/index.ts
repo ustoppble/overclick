@@ -95,3 +95,12 @@ export {
   type UsageRecipe,
   type UsageRecipeRow,
 } from "./usage-recipe";
+export {
+  claimExpiresAt,
+  claimInactiveMinutes,
+  isClaimStale,
+  validClaimTimeoutMinutes,
+  DEFAULT_CLAIM_TIMEOUT_MINUTES,
+  MAX_CLAIM_TIMEOUT_MINUTES,
+  MIN_CLAIM_TIMEOUT_MINUTES,
+} from "./claim-lifecycle";

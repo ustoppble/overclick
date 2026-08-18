@@ -339,6 +339,30 @@ export const TaskClaimOutputSchema = z.object({
   harness_divergence: HarnessDivergenceSchema.optional(),
   /** Recipe for the CLI that claimed, already appended to the briefing. */
   usage_recipe: UsageRecipeSchema.nullable().optional(),
+  /** True when this claim replaced an expired lease rather than an open card. */
+  reclaimed_stale: z.boolean().optional(),
+});
+
+/** Releases an open claim without losing its attempt telemetry. */
+export const TaskReleaseInputSchema = z.object({
+  task_id: TaskIdSchema,
+  reason: z.string().trim().min(1).max(1_000),
+});
+
+export const TaskReleaseOutputSchema = z.object({
+  task: TaskSchema,
+  attempt: ExecutionAttemptSchema,
+});
+
+/** Extends the lease of a long-running executor without adding timeline prose. */
+export const TaskHeartbeatInputSchema = z.object({
+  task_id: TaskIdSchema,
+});
+
+export const TaskHeartbeatOutputSchema = z.object({
+  task_id: z.string().min(1),
+  last_activity_at: IsoDateTimeSchema,
+  expires_at: IsoDateTimeSchema,
 });
 
 export const TaskUpdateInputSchema = z
@@ -870,6 +894,8 @@ export const MCP_TOOL_NAMES = [
   "task_search",
   "task_create",
   "task_claim",
+  "task_release",
+  "task_heartbeat",
   "task_update",
   "task_deliver",
   "task_delete",
@@ -932,6 +958,14 @@ export const toolContracts = {
     input: TaskClaimInputSchema,
     output: TaskClaimOutputSchema,
   },
+  task_release: {
+    input: TaskReleaseInputSchema,
+    output: TaskReleaseOutputSchema,
+  },
+  task_heartbeat: {
+    input: TaskHeartbeatInputSchema,
+    output: TaskHeartbeatOutputSchema,
+  },
   task_update: {
     input: TaskUpdateInputSchema,
     output: TaskUpdateOutputSchema,
@@ -974,6 +1008,10 @@ export type TaskCreateInput = z.infer<typeof TaskCreateInputSchema>;
 export type TaskCreateOutput = z.infer<typeof TaskCreateOutputSchema>;
 export type TaskClaimInput = z.infer<typeof TaskClaimInputSchema>;
 export type TaskClaimOutput = z.infer<typeof TaskClaimOutputSchema>;
+export type TaskReleaseInput = z.infer<typeof TaskReleaseInputSchema>;
+export type TaskReleaseOutput = z.infer<typeof TaskReleaseOutputSchema>;
+export type TaskHeartbeatInput = z.infer<typeof TaskHeartbeatInputSchema>;
+export type TaskHeartbeatOutput = z.infer<typeof TaskHeartbeatOutputSchema>;
 export type TaskUpdateInput = z.infer<typeof TaskUpdateInputSchema>;
 export type TaskDeliverInput = z.infer<typeof TaskDeliverInputSchema>;
 export type TaskDeliverOutput = z.infer<typeof TaskDeliverOutputSchema>;

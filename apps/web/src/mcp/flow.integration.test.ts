@@ -53,7 +53,7 @@ describe("MCP end-to-end against a test db", () => {
     if (world) await closeTestWorld(world);
   });
 
-  it("lists the 13 tools and runs create → claim → handoff", async () => {
+  it("lists the 23 tools and runs create → claim → handoff", async () => {
     world = await createTestWorld();
     const { client, server } = await connectClient(world);
     try {

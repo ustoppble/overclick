@@ -39,6 +39,13 @@ export const executionAttempt = pgTable(
   startedAt: timestamp("started_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  /**
+   * Lease heartbeat for an open claim. Starts with the claim and is advanced
+   * by task_update/task_heartbeat; deliver advances it once more while closing.
+   */
+  lastActivityAt: timestamp("last_activity_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   /**
    * Tokens by model, one segment per model that ran. The three flat counters

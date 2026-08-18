@@ -113,6 +113,23 @@ describe("self-contained briefing markdown", () => {
     expect(md).toContain("work before the claim");
   });
 
+  it("tells a stale-claim successor to disclose the takeover on deliver", () => {
+    const convention = branchConvention(task.short_id, task.title);
+    const md = renderBriefingMarkdown({
+      task,
+      mission,
+      branchConvention: convention,
+      reclaimedStale: true,
+    });
+
+    expect(md).toContain("## Expired claim takeover");
+    expect(md).toContain("claim expired");
+    expect(md).toContain("explicitly in `task_deliver`");
+    expect(md.indexOf("## Expired claim takeover")).toBeLessThan(
+      md.indexOf("## Executor contract"),
+    );
+  });
+
   it("falls back to the generic recipe for a CLI nobody wrote one for", () => {
     const convention = branchConvention(task.short_id, task.title);
     const recipe = findUsageRecipe(factoryUsageRecipes(), "some-new-cli");

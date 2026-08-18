@@ -310,11 +310,14 @@ export const ExecutionAttemptSchema = z.object({
     session_id: z.string().optional(),
   }),
   started_at: IsoDateTimeSchema,
+  last_activity_at: IsoDateTimeSchema,
   finished_at: IsoDateTimeSchema.nullable(),
   usage: UsageSchema.nullable(),
   usage_suspect: z.boolean(),
   usage_suspect_reason: z.string().nullable(),
   result: z.enum(["success", "failure", "abandoned"]).nullable(),
+  /** Why an attempt failed or was abandoned; usage remains on the attempt. */
+  result_note: z.string().nullable(),
   /** Null when the executor sent no session and its cli has no resume hint. */
   transcript: StoredTranscriptRefSchema.nullable().optional(),
 });

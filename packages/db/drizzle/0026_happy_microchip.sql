@@ -1,0 +1,2 @@
+ALTER TABLE "execution_attempt" ADD COLUMN "last_activity_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
+ALTER TABLE "workspace" ADD COLUMN "claim_timeout_minutes" integer DEFAULT 60 NOT NULL;

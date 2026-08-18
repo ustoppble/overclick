@@ -1,7 +1,9 @@
 import { asc, eq, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import {
+  claimInactiveMinutes,
   harnessChain,
+  isClaimStale,
   mission,
   normalizeUsageSegments,
   project,
@@ -227,6 +229,8 @@ function toBoardCard(
   recipes: readonly UsageRecipeRow[],
   /** Who is looking, so the card can tell whose review it waits on. */
   viewerId: string,
+  /** Workspace lease: after this silence another executor may reclaim. */
+  claimTimeoutMinutes: number,
 ): BoardCard {
   const h = t.harness;
   const plannedModel = h?.model ?? h?.modelTier ?? null;
@@ -259,19 +263,34 @@ function toBoardCard(
         c.kind === "executor_swap" ||
         c.kind === "spawn_failure" ||
         c.kind === "report" ||
-        c.kind === "comment",
+        c.kind === "comment" ||
+        c.kind === "claim_release" ||
+        c.kind === "claim_stale",
     )
     .map((c) => ({
       kind: c.kind as
         | "executor_swap"
         | "spawn_failure"
         | "report"
-        | "comment",
+        | "comment"
+        | "claim_release"
+        | "claim_stale",
       body: c.body,
       author: c.authorAgentRef,
       at: fmtDate(c.createdAt),
     }));
   const reportsCount = comments.filter((c) => c.kind === "report").length;
+  const claimInactive =
+    t.status === "em_execucao" && latestAttempt
+      ? tr.board.noActivityFor(
+          claimInactiveMinutes(latestAttempt.lastActivityAt),
+        )
+      : null;
+  const claimStale = Boolean(
+    t.status === "em_execucao" &&
+      latestAttempt &&
+      isClaimStale(latestAttempt.lastActivityAt, claimTimeoutMinutes),
+  );
 
   // Footer ladder: full usage > estimated usage (labeled) > server-measured
   // duration with "usage not reported". A delivered card never shows nothing.
@@ -466,6 +485,8 @@ function toBoardCard(
     origem: `${origem} · ${fmtDate(t.createdAt)}`,
     executor: t.claimedByExecutor ?? latestAttempt?.executor ?? null,
     elapsed: t.claimedAt ? fmtElapsed(t.claimedAt, tr) : null,
+    claimInactive,
+    claimStale,
     branch: t.branch ?? latestHandoff?.branch ?? null,
     resolvedIn: t.resolvedIn ?? null,
     reportsCount,
@@ -526,7 +547,14 @@ export default async function HomePage() {
   // command is the one that measured the run, pinned to its transcript.
   const recipes = await loadUsageRecipes(db(), ws.id);
   const cards = rows.map((row) =>
-    toBoardCard(row, t, ws.pricingEnabled, recipes, session.userId),
+    toBoardCard(
+      row,
+      t,
+      ws.pricingEnabled,
+      recipes,
+      session.userId,
+      ws.claimTimeoutMinutes,
+    ),
   );
   const initialFilter = resolveBoardFilter(
     {

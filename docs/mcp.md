@@ -1,6 +1,6 @@
 # MCP · OverClick
 
-The board exposes the 21 tools over **streamable HTTP**, served by the same app process.
+The board exposes the 23 tools over **streamable HTTP**, served by the same app process.
 
 ## Connect
 
@@ -50,9 +50,11 @@ instructions hand their agents this context before the first tool call.
 | `task_create` | creates the card (`mission` is an existing mission id, `mode` solo\|team, origin) |
 | | `project_id` takes the project uuid **or** its card prefix (`AGB`), so an agent that just called `project_list` never needs the uuid |
 | `task_search` | search the queue by text (`q`) and metadata filters |
-| `task_claim` | status → `in_progress`; a second claim → `ALREADY_CLAIMED` |
+| `task_claim` | status → `in_progress`; a second active claim → `ALREADY_CLAIMED`. A claim whose attempt has had no `task_update` or `task_heartbeat` beyond the workspace timeout (60 minutes by default) is reclaimable without `force`: the old attempt becomes `abandoned` with reason `stale`, its usage is preserved, the timeline records the takeover and the response carries `reclaimed_stale: true` |
 | | A card claimed again after a delivery was reopened comes back one link down its chain, and the briefing says which try this is. Only reviewed deliveries count: an attempt ended with `force` is a restart, not a verdict, and a harness pinned by hand off the chain is never escalated |
 | | when the claiming executor differs from the card harness, the response carries a `harness_divergence` warning and the card timeline automatically records an executor swap entry naming planned vs actual |
+| `task_release` | returns a card in execution to open, closes its current attempt as `abandoned` with the supplied `reason`, and preserves every usage counter already stored. The token that owns the claim may release it; a token with `manage` may release any claim in its workspace |
+| `task_heartbeat` | renews an open attempt's activity lease for a long run and returns `last_activity_at` plus `expires_at`. The claiming token (or a manage token) may heartbeat it; it adds no timeline prose |
 | `task_update` | progress, comment (`comment_kind` supports `report` to increment `reports_count`), `resolved_in` metadata (string or `null`), the `reviewed` mark, a new `harness` (validated against executors), or a `usage` block that fills or corrects the latest attempt's telemetry, even after deliver |
 | | `mission_id`: moves the card between missions after it was created, `null` detaches it. Only missions of the token's workspace qualify; anything else is a `NOT_FOUND`, never a silent detach. Subtasks follow their parent, and the response says how many in `subtasks_moved`. On the board the same move is a select in the card detail, and a bulk bar that assigns a whole selection at once |
 | | `project_id`: moves the card to another project of the same workspace. This is how a board gets reorganized without deleting anything, and it is a field on `task_update` rather than a `task_move` tool because a move is one more thing a card can change, like its mission. The card is **restamped** with the destination prefix (`FUN-1` landing in `MKT` becomes `MKT-7`), consuming the destination's `next_number` so the numbering advances without colliding with a card already there. The id it had is kept on the card in `previous_short_ids` and the response returns the whole old-to-new mapping in `project_move {from_prefix, to_prefix, short_ids: [{from, to}]}`, so branches, commits and PR titles that name the old ids can be fixed. Subtasks travel with their parent and are restamped with it (`FUN-1.1` → `MKT-7.1`), counted in `subtasks_moved`; a subtask cannot be moved on its own, because its id is derived from its parent and it would land orphaned in a project its id does not belong to. `mission_id` is untouched: missions are workspace wide and cross projects by design. Naming the project the card is already in changes nothing and returns no `project_move` |
@@ -139,7 +141,9 @@ Settings › MCP tokens. Tokens that have it show a `manage` badge in the list. 
 else about the token is unchanged: same URL, same header, same tools for claiming and
 delivering.
 
-The tools behind it are `harness_set` and `executors_update`. Without the flag they answer
+The configuration tools behind it are `harness_set` and `executors_update`. The flag also
+lets an owner release or heartbeat another token's stuck claim; the claiming token can
+always manage its own lease. Without the flag, configuration writes answer
 with a typed `PERMISSION_DENIED` and change nothing. The harness policy also keeps a
 trail: every line records who wrote it last (an email from Settings, the token label from
 `harness_set`) and when, shown in the Settings policy table and returned by

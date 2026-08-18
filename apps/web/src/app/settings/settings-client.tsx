@@ -3,6 +3,7 @@
 import type { AutoUpdateRecord, UpdateMode } from "@agent-board/db";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { saveClaimTimeoutAction } from "../../actions/claims";
 import { saveCardapioAction, type CardapioInput } from "../../actions/cardapio";
 import { addSeenExecutorAction, saveExecutorsAction } from "../../actions/executors";
 import { saveLanguageAction } from "../../actions/language";
@@ -100,6 +101,7 @@ export function SettingsClient({
   cardapio,
   prices,
   pricingEnabled,
+  claimTimeoutMinutes,
   /** The tab a link asked for (OCL-20), already validated on the server. */
   initialTab,
   unpricedModels,
@@ -126,6 +128,7 @@ export function SettingsClient({
   cardapio: CardapioRow[];
   prices: ModelPriceRow[];
   pricingEnabled: boolean;
+  claimTimeoutMinutes: number;
   initialTab: string;
   /** Every model this board knows of, configured or seen, with no price row. */
   unpricedModels: string[];
@@ -170,6 +173,7 @@ export function SettingsClient({
     { id: "prices", label: t.settings.tabPrices },
     { id: "recipes", label: t.settings.tabRecipes },
     { id: "tokens", label: t.settings.tabTokens },
+    { id: "claims", label: t.settings.tabClaims },
     { id: "language", label: t.settings.tabLanguage },
     { id: "updates", label: t.updates.tabUpdates },
   ];
@@ -192,6 +196,16 @@ export function SettingsClient({
       const r = await saveLanguageAction(langSel);
       if (!r.ok) setErr(r.error);
       else { setMsg(dict(langSel).settings.langSaved); router.refresh(); }
+    });
+
+  // ---- orphaned claim lease
+  const [claimTimeout, setClaimTimeout] = useState(String(claimTimeoutMinutes));
+  const saveClaimTimeout = () =>
+    start(async () => {
+      setErr(null); setMsg(null);
+      const r = await saveClaimTimeoutAction(Number(claimTimeout));
+      if (!r.ok) setErr(r.error);
+      else { setMsg(t.settings.claimTimeoutSaved); router.refresh(); }
     });
 
   // ---- executors
@@ -963,6 +977,40 @@ export function SettingsClient({
           </div>
           <div className="policy-note" style={{ borderTop: 0, paddingTop: 8 }}>
             {t.settings.maskedNote}
+          </div>
+        </div>
+
+        {/* ---- CLAIM LEASE ---- */}
+        <div
+          className={`tabpane${tab === "claims" ? " active" : ""}`}
+          id="setpane-claims"
+          role="tabpanel"
+          aria-labelledby="settab-claims"
+        >
+          <div className="set-card">
+            <div className="field" style={{ maxWidth: 320, marginBottom: 0 }}>
+              <label htmlFor="settings-claim-timeout">
+                {t.settings.claimTimeoutLabel}
+              </label>
+              <input
+                id="settings-claim-timeout"
+                className="input"
+                type="number"
+                min="1"
+                max="10080"
+                step="1"
+                value={claimTimeout}
+                onChange={(event) => setClaimTimeout(event.target.value)}
+              />
+            </div>
+            <div className="policy-note" style={{ borderTop: 0, paddingTop: 10 }}>
+              {t.settings.claimTimeoutNote}
+            </div>
+          </div>
+          <div className="save-row">
+            <button className="btn-new" disabled={pending} onClick={saveClaimTimeout}>
+              {pending ? t.settings.saving : t.settings.saveClaimTimeout}
+            </button>
           </div>
         </div>
 

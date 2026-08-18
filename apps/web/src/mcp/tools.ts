@@ -3,11 +3,13 @@ import {
   canNestUnder,
   cardapioEntry,
   checkUsageWindow,
+  claimExpiresAt,
   derivePrefix,
   executionAttempt,
   factoryCardapioPolicy,
   handoff,
   isValidPrefix,
+  isClaimStale,
   mergeTranscriptRef,
   mission,
   nextShortId,
@@ -111,6 +113,48 @@ function tokenCountersReported(usage: UsageReport | undefined): boolean {
     usage?.tokens_out !== undefined ||
     usage?.tokens_cache !== undefined
   );
+}
+
+/** Canonical attempt wire shape shared by claim and release responses. */
+function mapExecutionAttempt(row: typeof executionAttempt.$inferSelect) {
+  const hasUsage =
+    (row.usageSegments?.length ?? 0) > 0 ||
+    row.tokensIn != null ||
+    row.tokensOut != null ||
+    row.tokensCache != null ||
+    row.reportedCostUsd != null ||
+    row.durationMs != null ||
+    row.turns != null;
+  const usage: Usage | null = hasUsage
+    ? {
+        ...(row.usageSegments?.length
+          ? { segments: row.usageSegments }
+          : {}),
+        ...(row.tokensIn != null ? { tokens_in: row.tokensIn } : {}),
+        ...(row.tokensOut != null ? { tokens_out: row.tokensOut } : {}),
+        ...(row.tokensCache != null ? { tokens_cache: row.tokensCache } : {}),
+        ...(row.reportedCostUsd != null
+          ? { cost_usd: Number(row.reportedCostUsd) }
+          : {}),
+        ...(row.durationMs != null ? { duration_ms: row.durationMs } : {}),
+        ...(row.turns != null ? { turns: row.turns } : {}),
+        estimated: row.usageEstimated,
+      }
+    : null;
+  return {
+    id: row.id,
+    task_id: row.taskId,
+    executor: decodeExecutor(row.executor, row.model),
+    started_at: iso(row.startedAt),
+    last_activity_at: iso(row.lastActivityAt),
+    finished_at: row.finishedAt ? iso(row.finishedAt) : null,
+    usage,
+    usage_suspect: row.usageSuspect,
+    usage_suspect_reason: row.usageSuspectReason,
+    result: row.result as "success" | "failure" | "abandoned" | null,
+    result_note: row.resultNote,
+    transcript: transcriptToWire(row.transcript),
+  };
 }
 
 export async function invokeTool(
@@ -219,6 +263,16 @@ async function dispatchTool(
       break;
     case "task_claim":
       value = await taskClaim(db, ctx, data as Parameters<typeof taskClaim>[2]);
+      break;
+    case "task_release":
+      value = await taskRelease(db, ctx, data as Parameters<typeof taskRelease>[2]);
+      break;
+    case "task_heartbeat":
+      value = await taskHeartbeat(
+        db,
+        ctx,
+        data as Parameters<typeof taskHeartbeat>[2],
+      );
       break;
     case "task_update":
       value = await taskUpdate(db, ctx, data as Parameters<typeof taskUpdate>[2]);
@@ -1023,6 +1077,38 @@ async function taskClaim(
     );
     }
 
+    const [ws] = await tx
+      .select({ claimTimeoutMinutes: workspace.claimTimeoutMinutes })
+      .from(workspace)
+      .where(eq(workspace.id, ctx.workspaceId))
+      .limit(1);
+    if (!ws) {
+      return err(
+        "NOT_FOUND",
+        "The workspace for this token no longer exists. Generate a new token in the board Settings.",
+      );
+    }
+
+    const [previousAttempt] = await tx
+      .select()
+      .from(executionAttempt)
+      .where(
+        and(
+          eq(executionAttempt.taskId, found.row.id),
+          isNull(executionAttempt.finishedAt),
+        ),
+      )
+      .orderBy(desc(executionAttempt.startedAt))
+      .limit(1);
+    const lastActivity =
+      previousAttempt?.lastActivityAt ?? found.row.claimedAt ?? null;
+    const reclaimedStale = Boolean(
+      found.row.status === "em_execucao" &&
+        !input.force &&
+        lastActivity &&
+        isClaimStale(lastActivity, ws.claimTimeoutMinutes),
+    );
+
     const reopenComment = await latestReopenComment(tx, found.row);
     const evaluated = evaluateClaim(
       {
@@ -1035,7 +1121,7 @@ async function taskClaim(
       },
       {
         task_id: found.row.id,
-        force: input.force,
+        force: input.force || reclaimedStale,
         actor: {
           token_id: ctx.tokenId,
           token_revoked: false,
@@ -1048,11 +1134,12 @@ async function taskClaim(
     // A rejected delivery does not go back to the model that produced it.
     const escalated = await escalatedHarnessForRetry(tx, ctx.workspaceId, found.row);
 
+    const now = new Date();
     const [updated] = await tx
       .update(task)
       .set({
         status: "em_execucao",
-        claimedAt: new Date(),
+        claimedAt: now,
         claimedByTokenId: ctx.tokenId,
         claimedByExecutor:
           input.executor?.cli ?? input.executor?.agent ?? ctx.tokenLabel,
@@ -1072,10 +1159,23 @@ async function taskClaim(
       );
     }
 
-    if (input.force) {
+    if (input.force || reclaimedStale) {
       await tx
         .update(executionAttempt)
-        .set({ finishedAt: new Date(), result: "abandoned" })
+        .set({
+          finishedAt: now,
+          lastActivityAt: now,
+          result: "abandoned",
+          resultNote: reclaimedStale ? "stale" : "force claim takeover",
+          ...(previousAttempt
+            ? {
+                serverDurationMs: Math.max(
+                  0,
+                  now.getTime() - previousAttempt.startedAt.getTime(),
+                ),
+              }
+            : {}),
+        })
         .where(
           and(
             eq(executionAttempt.taskId, updated.id),
@@ -1098,11 +1198,27 @@ async function taskClaim(
         sessionId:
           input.executor?.session_id ?? input.transcript?.session_id ?? null,
         transcript: claimTranscript,
+        lastActivityAt: now,
       })
       .returning();
     if (!attempt) throw new Error("failed to insert execution_attempt");
 
-    return ok({ updated, proj: found.proj, attempt, reopenComment });
+    if (reclaimedStale) {
+      await tx.insert(taskComment).values({
+        taskId: updated.id,
+        authorAgentRef: ctx.tokenLabel,
+        kind: "claim_stale",
+        body: `previous claim expired after ${ws.claimTimeoutMinutes} minutes without activity; reclaimed by ${ctx.tokenLabel}`,
+      });
+    }
+
+    return ok({
+      updated,
+      proj: found.proj,
+      attempt,
+      reopenComment,
+      reclaimedStale,
+    });
   });
 
   if (!claimed.ok) return claimed;
@@ -1122,6 +1238,7 @@ async function taskClaim(
     {
       sessionId: input.executor?.session_id,
       model: input.executor?.model,
+      reclaimedStale: claimed.value.reclaimedStale,
     },
   );
   if (!payload || ("ok" in payload && payload.ok === false)) return payload;
@@ -1158,28 +1275,167 @@ async function taskClaim(
 
   return {
     task: payload.task,
-    attempt: {
-      id: claimed.value.attempt.id,
-      task_id: claimed.value.attempt.taskId,
-      executor: decodeExecutor(
-        claimed.value.attempt.executor,
-        claimed.value.attempt.model,
-      ),
-      started_at: iso(claimed.value.attempt.startedAt),
-      finished_at: claimed.value.attempt.finishedAt
-        ? iso(claimed.value.attempt.finishedAt)
-        : null,
-      usage: null,
-      usage_suspect: false,
-      usage_suspect_reason: null,
-      result: null,
-      transcript: transcriptToWire(claimed.value.attempt.transcript),
-    },
+    attempt: mapExecutionAttempt(claimed.value.attempt),
     briefing_markdown: payload.briefing_markdown,
     branch_convention: payload.branch_convention,
     usage_recipe: payload.usage_recipe,
+    ...(claimed.value.reclaimedStale ? { reclaimed_stale: true } : {}),
     ...(divergence ? { harness_divergence: divergence } : {}),
   };
+}
+
+/**
+ * Turns an open claim back into queue work. The attempt is closed rather than
+ * deleted, so any usage already reported stays attributable and auditable.
+ */
+async function taskRelease(
+  db: McpDatabase,
+  ctx: AuthContext,
+  input: { task_id: string; reason: string },
+) {
+  return db.transaction(async (tx) => {
+    const found = await findTask(tx, ctx.workspaceId, input.task_id, true);
+    if (!found) {
+      return err(
+        "NOT_FOUND",
+        `Task ${input.task_id} not found in this workspace. Call task_list to see the available cards.`,
+      );
+    }
+    if (found.row.status !== "em_execucao") {
+      return err(
+        "INVALID_TRANSITION",
+        "Only a card in execution has a claim to release. Call task_get to see its current status.",
+      );
+    }
+    if (found.row.claimedByTokenId !== ctx.tokenId && !ctx.canManage) {
+      return err(
+        "PERMISSION_DENIED",
+        "Only the token that owns this claim, or a token with manage permission, may release it.",
+      );
+    }
+
+    const [openAttempt] = await tx
+      .select()
+      .from(executionAttempt)
+      .where(
+        and(
+          eq(executionAttempt.taskId, found.row.id),
+          isNull(executionAttempt.finishedAt),
+        ),
+      )
+      .orderBy(desc(executionAttempt.startedAt))
+      .limit(1);
+    if (!openAttempt) {
+      return err(
+        "INVALID_ARGUMENT",
+        "The card is in execution but has no open attempt to release. Use task_get and repair the card before retrying.",
+      );
+    }
+
+    const now = new Date();
+    const [abandoned] = await tx
+      .update(executionAttempt)
+      .set({
+        finishedAt: now,
+        lastActivityAt: now,
+        result: "abandoned",
+        resultNote: input.reason,
+        serverDurationMs: Math.max(
+          0,
+          now.getTime() - openAttempt.startedAt.getTime(),
+        ),
+      })
+      .where(eq(executionAttempt.id, openAttempt.id))
+      .returning();
+    if (!abandoned) throw new Error("failed to abandon execution_attempt");
+
+    const [updated] = await tx
+      .update(task)
+      .set({
+        status: "aberto",
+        claimedAt: null,
+        claimedByExecutor: null,
+        claimedByTokenId: null,
+      })
+      .where(eq(task.id, found.row.id))
+      .returning();
+    if (!updated) throw new Error("failed to release task claim");
+
+    await tx.insert(taskComment).values({
+      taskId: updated.id,
+      authorAgentRef: ctx.tokenLabel,
+      kind: "claim_release",
+      body: input.reason,
+    });
+
+    return {
+      task: mapTask(updated, found.proj),
+      attempt: mapExecutionAttempt(abandoned),
+    };
+  });
+}
+
+/** Keeps a legitimate long-running attempt from becoming reclaimable. */
+async function taskHeartbeat(
+  db: McpDatabase,
+  ctx: AuthContext,
+  input: { task_id: string },
+) {
+  return db.transaction(async (tx) => {
+    const found = await findTask(tx, ctx.workspaceId, input.task_id, true);
+    if (!found) {
+      return err(
+        "NOT_FOUND",
+        `Task ${input.task_id} not found in this workspace. Call task_list to see the available cards.`,
+      );
+    }
+    if (found.row.status !== "em_execucao") {
+      return err(
+        "INVALID_TRANSITION",
+        "Only a card in execution has a claim to keep alive.",
+      );
+    }
+    if (found.row.claimedByTokenId !== ctx.tokenId && !ctx.canManage) {
+      return err(
+        "PERMISSION_DENIED",
+        "Only the token that owns this claim, or a token with manage permission, may heartbeat it.",
+      );
+    }
+
+    const [ws] = await tx
+      .select({ claimTimeoutMinutes: workspace.claimTimeoutMinutes })
+      .from(workspace)
+      .where(eq(workspace.id, ctx.workspaceId))
+      .limit(1);
+    const [openAttempt] = await tx
+      .select()
+      .from(executionAttempt)
+      .where(
+        and(
+          eq(executionAttempt.taskId, found.row.id),
+          isNull(executionAttempt.finishedAt),
+        ),
+      )
+      .orderBy(desc(executionAttempt.startedAt))
+      .limit(1);
+    if (!ws || !openAttempt) {
+      return err(
+        "INVALID_ARGUMENT",
+        "The claim has no open attempt to keep alive. Call task_get before retrying.",
+      );
+    }
+
+    const now = new Date();
+    await tx
+      .update(executionAttempt)
+      .set({ lastActivityAt: now })
+      .where(eq(executionAttempt.id, openAttempt.id));
+    return {
+      task_id: found.row.id,
+      last_activity_at: iso(now),
+      expires_at: iso(claimExpiresAt(now, ws.claimTimeoutMinutes)),
+    };
+  });
 }
 
 /**
@@ -1450,6 +1706,23 @@ async function taskUpdate(
       kind: "spawn_failure",
       body: `${input.spawn_failure}${planned}`,
     });
+  }
+
+  // Progress on the token's own open claim is an implicit heartbeat. A
+  // comment from a different token must not keep an abandoned worker alive.
+  if (
+    nextRow.status === "em_execucao" &&
+    nextRow.claimedByTokenId === ctx.tokenId
+  ) {
+    await db
+      .update(executionAttempt)
+      .set({ lastActivityAt: new Date() })
+      .where(
+        and(
+          eq(executionAttempt.taskId, nextRow.id),
+          isNull(executionAttempt.finishedAt),
+        ),
+      );
   }
 
   const latestUsageGuard = await latestUsageGuardForTask(db, nextRow.id);
@@ -1778,6 +2051,7 @@ async function taskDeliver(
         .update(executionAttempt)
         .set({
           finishedAt,
+          lastActivityAt: finishedAt,
           result: "success",
           usageSegments: storedUsage?.segments?.length ? storedUsage.segments : null,
           tokensIn: storedUsage?.tokens_in,
@@ -2462,6 +2736,7 @@ async function assembleTaskPayload(
     sessionId?: string | null;
     model?: string | null;
     claimedAt?: Date | string | null;
+    reclaimedStale?: boolean;
   },
 ) {
   const comment =
@@ -2529,6 +2804,7 @@ async function assembleTaskPayload(
       claimedAt: latestAttempt?.startedAt
         ? iso(latestAttempt.startedAt)
         : null,
+      reclaimedStale: executor?.reclaimedStale,
     }),
     mission: missionPayload,
     branch_convention: convention,

@@ -36,8 +36,19 @@ export function renderBriefingMarkdown(input: {
   attempt?: number;
   /** Server boundary for this attempt's transcript and usage counters. */
   claimedAt?: string | null;
+  /** The previous executor stopped renewing its lease and was abandoned. */
+  reclaimedStale?: boolean;
 }): string {
-  const { task, mission, branchConvention, recipe, chain, attempt, claimedAt } = input;
+  const {
+    task,
+    mission,
+    branchConvention,
+    recipe,
+    chain,
+    attempt,
+    claimedAt,
+    reclaimedStale,
+  } = input;
   const steps = task.como_confirmo
     .map((step, index) => `${index + 1}. ${step.step} → ${step.expected}`)
     .join("\n");
@@ -101,6 +112,14 @@ export function renderBriefingMarkdown(input: {
     `- commit/PR: \`${branchConvention.commit_prefix}\``,
     reopen,
     "",
+    ...(reclaimedStale
+      ? [
+          "## Expired claim takeover",
+          "",
+          "The previous executor stopped reporting activity and its claim expired. This attempt reclaimed the card automatically. Say that explicitly in `task_deliver` so the reviewer can distinguish a takeover from a clean first claim.",
+          "",
+        ]
+      : []),
     ...(claimedAt
       ? [
           "## Usage window",

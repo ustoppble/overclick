@@ -10,7 +10,7 @@ import {
 } from "../src/index.js";
 
 describe("MCP tool contracts", () => {
-  it("exports input and output schemas for all 21 tools", () => {
+  it("exports input and output schemas for all 23 tools", () => {
     expect(MCP_TOOL_NAMES).toEqual([
       "project_list",
       "project_create",
@@ -24,6 +24,8 @@ describe("MCP tool contracts", () => {
       "task_search",
       "task_create",
       "task_claim",
+      "task_release",
+      "task_heartbeat",
       "task_update",
       "task_deliver",
       "task_delete",
@@ -198,6 +200,8 @@ describe("task_create canonical flow", () => {
     for (const name of [
       "task_get",
       "task_claim",
+      "task_release",
+      "task_heartbeat",
       "task_update",
       "task_deliver",
       "task_delete",
@@ -206,6 +210,7 @@ describe("task_create canonical flow", () => {
       expect(
         toolContracts[name].input.parse({
           task_id: "AGB-5",
+          ...(name === "task_release" ? { reason: "executor stopped" } : {}),
           ...(name === "task_update" ? { comment: "ok" } : {}),
           ...(name === "task_deliver" ? { summary: "ok" } : {}),
           ...(name === "branch_register" ? { branch: "agb-5-x" } : {}),
