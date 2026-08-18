@@ -51,13 +51,17 @@ export type ModelPriceRow = ModelPrice & {
  * table instead of growing its own special case.
  */
 export const MODEL_KEY_ALIASES: Readonly<Record<string, string>> = {
+  "gpt-5-codex": "gpt-5-3-codex-spark",
   "gpt-5.3-codex-spark": "gpt-5-3-codex-spark",
   "openai/gpt-5.3-codex-spark": "gpt-5-3-codex-spark",
   "codex/gpt-5.3-codex-spark": "gpt-5-3-codex-spark",
   "gpt-5.6-sol": "gpt-5-6-sol",
   "openai/gpt-5.6-sol": "gpt-5-6-sol",
+  "claude-opus-5": "opus-5",
   "claude-fable-5": "fable-5",
+  "claude-sonnet-5": "sonnet-5",
   "anthropic/claude-fable-5": "fable-5",
+  kimi: "k3",
   "kimi-code/k3": "k3",
   "moonshot/k3": "k3",
 };

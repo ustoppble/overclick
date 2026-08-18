@@ -11,6 +11,7 @@ import {
   mergeTranscriptRef,
   mission,
   nextShortId,
+  normalizeModelKey,
   normalizeShortId,
   project,
   readTranscriptRef,
@@ -20,6 +21,7 @@ import {
   transcriptRef,
   workspace,
   type ExecutorConfig,
+  type UsageSegment,
   type UsageReport,
 } from "@agent-board/db";
 import {
@@ -81,6 +83,12 @@ import {
 } from "../lib/recipes";
 import { renderBriefingMarkdown } from "./briefing";
 import {
+  isExecutorPairConfigured,
+  normalizeClaimCli,
+  normalizeObservedExecutor,
+  resolveClaimExecutor,
+} from "./executor-identity";
+import {
   decodeExecutor,
   emptyCardCounts,
   encodeExecutor,
@@ -102,6 +110,20 @@ import {
 import type { AuthContext, McpDatabase } from "./types";
 
 type Tx = McpDatabase;
+
+/** Last model in measured segment order, plus the full chain for the trace. */
+function measuredModelIdentity(
+  segments: readonly UsageSegment[] | null | undefined,
+): { model: string; chain: string } | null {
+  const models: string[] = [];
+  for (const segment of segments ?? []) {
+    if (!segment.model) continue;
+    const model = normalizeModelKey(segment.model);
+    if (model && !models.includes(model)) models.push(model);
+  }
+  const model = models.at(-1);
+  return model ? { model, chain: models.join(" to ") } : null;
+}
 
 /** Distinguishes explicit zero counters from a delivery that sent no tokens. */
 function tokenCountersReported(usage: UsageReport | undefined): boolean {
@@ -1004,16 +1026,6 @@ async function taskClaim(
     transcript?: TranscriptRefWire;
   },
 ) {
-  // The session id an executor already sends becomes the transcript
-  // reference: an old claim that only knew its session still lands on a card
-  // that can point back at it.
-  const claimTranscript = transcriptRef({
-    cli: input.transcript?.cli ?? input.executor?.cli,
-    sessionId: input.transcript?.session_id ?? input.executor?.session_id,
-    path: input.transcript?.path,
-    resume: input.transcript?.resume,
-  });
-
   const claimed = await db.transaction(async (tx) => {
     const found = await findTask(tx, ctx.workspaceId, input.task_id, true);
     if (!found) {
@@ -1047,6 +1059,19 @@ async function taskClaim(
 
     // A rejected delivery does not go back to the model that produced it.
     const escalated = await escalatedHarnessForRetry(tx, ctx.workspaceId, found.row);
+    const effectiveHarness = escalated ?? found.row.harness;
+    const executor = resolveClaimExecutor(input.executor, effectiveHarness);
+    // The transcript uses the same contextual CLI as the attempt. An
+    // orchestrator calling itself "overclock" therefore resolves to the
+    // harness connection that really ran the card.
+    const claimTranscript = transcriptRef({
+      cli:
+        normalizeClaimCli(input.transcript?.cli, effectiveHarness?.cli) ??
+        executor.cli,
+      sessionId: input.transcript?.session_id ?? executor.session_id,
+      path: input.transcript?.path,
+      resume: input.transcript?.resume,
+    });
 
     const [updated] = await tx
       .update(task)
@@ -1055,7 +1080,7 @@ async function taskClaim(
         claimedAt: new Date(),
         claimedByTokenId: ctx.tokenId,
         claimedByExecutor:
-          input.executor?.cli ?? input.executor?.agent ?? ctx.tokenLabel,
+          executor.cli ?? executor.agent ?? ctx.tokenLabel,
         ...(escalated ? { harness: escalated } : {}),
       })
       .where(
@@ -1090,26 +1115,27 @@ async function taskClaim(
         taskId: updated.id,
         executor: encodeExecutor({
           token_id: ctx.tokenId,
-          cli: input.executor?.cli,
-          agent: input.executor?.agent,
-          session_id: input.executor?.session_id,
+          cli: executor.cli,
+          agent: executor.agent,
+          session_id: executor.session_id,
         }),
-        model: input.executor?.model ?? null,
+        model: executor.model ?? null,
+        modelSource: executor.model_source ?? null,
         sessionId:
-          input.executor?.session_id ?? input.transcript?.session_id ?? null,
+          executor.session_id ?? input.transcript?.session_id ?? null,
         transcript: claimTranscript,
       })
       .returning();
     if (!attempt) throw new Error("failed to insert execution_attempt");
 
-    return ok({ updated, proj: found.proj, attempt, reopenComment });
+    return ok({ updated, proj: found.proj, attempt, reopenComment, executor });
   });
 
   if (!claimed.ok) return claimed;
 
   await recordSeenExecutor(db, ctx.workspaceId, {
-    cli: input.executor?.cli,
-    model: input.executor?.model,
+    cli: claimed.value.executor.cli,
+    model: claimed.value.executor.model,
   });
 
   const payload = await assembleTaskPayload(
@@ -1117,21 +1143,21 @@ async function taskClaim(
     claimed.value.updated,
     claimed.value.proj,
     claimed.value.reopenComment,
-    input.executor?.cli ?? null,
+    claimed.value.executor.cli ?? null,
     0,
     {
-      sessionId: input.executor?.session_id,
-      model: input.executor?.model,
+      sessionId: claimed.value.executor.session_id,
+      model: claimed.value.executor.model,
     },
   );
   if (!payload || ("ok" in payload && payload.ok === false)) return payload;
 
   const recommended = payload.task.harness;
-  const actual = input.executor ?? {};
+  const actual = claimed.value.executor;
   const divergence =
     recommended &&
     actual.model &&
-    actual.model.trim().toLowerCase() !== recommended.model.trim().toLowerCase()
+    normalizeModelKey(actual.model) !== normalizeModelKey(recommended.model)
       ? {
           recommended,
           actual,
@@ -1164,6 +1190,7 @@ async function taskClaim(
       executor: decodeExecutor(
         claimed.value.attempt.executor,
         claimed.value.attempt.model,
+        claimed.value.attempt.modelSource,
       ),
       started_at: iso(claimed.value.attempt.startedAt),
       finished_at: claimed.value.attempt.finishedAt
@@ -1192,9 +1219,9 @@ async function recordSeenExecutor(
   workspaceId: string,
   executor: { cli?: string; model?: string },
 ): Promise<void> {
-  const cli = executor.cli?.trim();
-  const model = executor.model?.trim();
-  if (!cli || !model) return;
+  const normalized = normalizeObservedExecutor(executor);
+  if (!normalized) return;
+  const { cli, model } = normalized;
 
   const [ws] = await db
     .select()
@@ -1202,16 +1229,17 @@ async function recordSeenExecutor(
     .where(eq(workspace.id, workspaceId))
     .limit(1);
   if (!ws) return;
-  if (isPairInConfig(ws.executors, cli, model)) return;
+  if (isExecutorPairConfigured(ws.executors, cli, model)) return;
 
   const now = new Date().toISOString();
   const seen = [...ws.seenExecutors];
-  const match = seen.find(
-    (s) =>
-      s.cli.trim().toLowerCase() === cli.toLowerCase() &&
-      s.model.trim().toLowerCase() === model.toLowerCase(),
-  );
+  const match = seen.find((s) => {
+    const existing = normalizeObservedExecutor(s);
+    return existing?.cli === cli && existing.model === model;
+  });
   if (match) {
+    match.cli = cli;
+    match.model = model;
     match.lastSeenAt = now;
     match.count += 1;
   } else {
@@ -1521,7 +1549,11 @@ async function applyUsageToLatestAttempt(
     attempt.model,
   );
 
-  const executor = decodeExecutor(attempt.executor, attempt.model);
+  const executor = decodeExecutor(
+    attempt.executor,
+    attempt.model,
+    attempt.modelSource,
+  );
   const sessionId =
     attempt.sessionId ??
     readTranscriptRef(attempt.transcript, {
@@ -1555,10 +1587,16 @@ async function applyUsageToLatestAttempt(
     ...merged,
     segments: assessment.normalizedSegments,
   };
+  const measured = measuredModelIdentity(storedUsage.segments);
+  const claimedModel = attempt.model ? normalizeModelKey(attempt.model) : null;
+  const modelChanged = Boolean(measured && measured.model !== claimedModel);
 
   await db
     .update(executionAttempt)
     .set({
+      ...(modelChanged
+        ? { model: measured?.model, modelSource: "measured" as const }
+        : {}),
       usageSegments: storedUsage.segments?.length ? storedUsage.segments : null,
       tokensIn: storedUsage.tokens_in,
       tokensOut: storedUsage.tokens_out,
@@ -1578,6 +1616,15 @@ async function applyUsageToLatestAttempt(
       usageSuspectReason: guard.reason,
     })
     .where(eq(executionAttempt.id, attempt.id));
+
+  if (modelChanged && measured) {
+    await db.insert(taskComment).values({
+      taskId: row.id,
+      authorAgentRef: "usage",
+      kind: "executor_swap",
+      body: `declarou ${claimedModel ?? "unknown"}, mediu ${measured.chain}`,
+    });
+  }
 
   const [latestHandoff] = await db
     .select()
@@ -1727,7 +1774,11 @@ async function taskDeliver(
     // value, and an attempt claimed before this column existed falls back to
     // the session id already inside its executor blob.
     const claimExecutor = openAttempt
-      ? decodeExecutor(openAttempt.executor, openAttempt.model)
+      ? decodeExecutor(
+          openAttempt.executor,
+          openAttempt.model,
+          openAttempt.modelSource,
+        )
       : {};
     const transcript = mergeTranscriptRef(
       readTranscriptRef(openAttempt?.transcript, {
@@ -1772,11 +1823,19 @@ async function taskDeliver(
     const storedUsage: UsageReport | undefined = usage
       ? { ...usage, segments: assessment.normalizedSegments }
       : undefined;
+    const measured = measuredModelIdentity(storedUsage?.segments);
+    const claimedModel = openAttempt?.model
+      ? normalizeModelKey(openAttempt.model)
+      : null;
+    const modelChanged = Boolean(measured && measured.model !== claimedModel);
 
     if (openAttempt) {
       await tx
         .update(executionAttempt)
         .set({
+          ...(modelChanged
+            ? { model: measured?.model, modelSource: "measured" as const }
+            : {}),
           finishedAt,
           result: "success",
           usageSegments: storedUsage?.segments?.length ? storedUsage.segments : null,
@@ -1804,6 +1863,14 @@ async function taskDeliver(
           transcript,
         })
         .where(eq(executionAttempt.id, openAttempt.id));
+      if (modelChanged && measured) {
+        await tx.insert(taskComment).values({
+          taskId: found.row.id,
+          authorAgentRef: ctx.tokenLabel,
+          kind: "executor_swap",
+          body: `declarou ${claimedModel ?? "unknown"}, mediu ${measured.chain}`,
+        });
+      }
     }
 
     const [saved] = await tx
@@ -1845,7 +1912,13 @@ async function taskDeliver(
       incomplete,
       usage: storedUsage,
       routedTo: reviewerFromRow(updated),
-      attemptExecutor: openAttempt ? claimExecutor : null,
+      attemptExecutor: openAttempt
+        ? {
+            ...claimExecutor,
+            ...(measured ? { model: measured.model } : {}),
+            ...(modelChanged ? { model_source: "measured" as const } : {}),
+          }
+        : null,
       transcript,
       usageGuard,
     });
@@ -2203,6 +2276,7 @@ async function insightsQuery(
         project: card.projectName,
         mission: card.missionTitle,
         models: card.models,
+        model_origins: card.modelOrigins,
         // Kept nullable on purpose: an unknown cost is not a cost of zero,
         // and with the money layer off there is no cost to know.
         cost_usd: pricingEnabled ? card.costUsd : null,

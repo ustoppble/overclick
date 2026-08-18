@@ -143,6 +143,7 @@ describe("complete schema from spec §3", () => {
         "taskId",
         "executor",
         "model",
+        "modelSource",
         "sessionId",
         "startedAt",
         "finishedAt",

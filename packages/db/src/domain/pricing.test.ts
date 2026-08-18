@@ -42,7 +42,9 @@ describe("model key normalization", () => {
       "gpt-5-3-codex-spark",
     );
     expect(normalizeModelKey("kimi-code/k3")).toBe("k3");
+    expect(normalizeModelKey("kimi")).toBe("k3");
     expect(normalizeModelKey("claude-fable-5")).toBe("fable-5");
+    expect(normalizeModelKey("gpt-5-codex")).toBe("gpt-5-3-codex-spark");
   });
 });
 

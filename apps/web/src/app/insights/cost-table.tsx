@@ -202,7 +202,18 @@ export function CostTable({
           <tbody>
             {sorted.map((card) => {
               const models =
-                card.models.length > 0 ? card.models.join(", ") : t.noModel;
+                card.models.length > 0
+                  ? card.models
+                      .map((model) =>
+                        card.modelOrigins.some(
+                          (origin) =>
+                            origin.model === model && origin.source === "harness",
+                        )
+                          ? `${model} (${t.modelFromHarness})`
+                          : model,
+                      )
+                      .join(", ")
+                  : t.noModel;
               return (
                 <tr key={card.taskId}>
                   <td>

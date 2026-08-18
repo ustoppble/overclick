@@ -22,6 +22,7 @@ function attempt(overrides: Partial<InsightAttemptRow> = {}): InsightAttemptRow 
     missionId: null,
     missionTitle: null,
     model: "sonnet-5",
+    modelSource: null,
     result: "success",
     finishedAt: new Date("2026-08-10T12:00:00Z"),
     usageSegments: null,
@@ -436,6 +437,17 @@ describe("usage in segments per model", () => {
   it("names every model the card ran, in order", () => {
     const result = computeInsights([switched()], [], prices);
     expect(result.perCard[0]?.models).toEqual(["sonnet-5", "opus-5"]);
+  });
+
+  it("keeps the harness origin beside an inferred model", () => {
+    const result = computeInsights(
+      [attempt({ model: "gpt-5.6-sol", modelSource: "harness" })],
+      [],
+      prices,
+    );
+    expect(result.perCard[0]?.modelOrigins).toEqual([
+      { model: "gpt-5-6-sol", source: "harness" },
+    ]);
   });
 
   it("counts a delivery from a switched run against both models", () => {

@@ -350,7 +350,7 @@ const SEED: UsageRecipe[] = [
     label: "Codex",
     yields: "tokens_per_model",
     instructions:
-      "Run this from the repo you worked in. The board binds claimed_at, the session id and harness model declared at task_claim: the command reads that exact Codex rollout only from the claim boundary, attributes each model call to turn_context.payload.model, normalizes the model slug for pricing, and falls back to the harness model only when the rollout omits it. A readable rollout returns estimated: false. Only a missing or unreadable rollout returns estimated: true with a reason. Send the printed transcript path as transcript.path so the card links back to this run.",
+      "At task_claim, declare the exact model from this session's --model flag (for example gpt-5.6-sol), never the generic family label gpt-5. Run this from the repo you worked in. The board binds claimed_at, the session id and harness model declared at task_claim: the command reads that exact Codex rollout only from the claim boundary, attributes each model call to turn_context.payload.model, normalizes the model slug for pricing, and falls back to the harness model only when the rollout omits it. A readable rollout returns estimated: false. Only a missing or unreadable rollout returns estimated: true with a reason. Send the printed transcript path as transcript.path so the card links back to this run.",
     command: CODEX_COMMAND,
   },
   {

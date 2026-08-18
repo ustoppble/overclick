@@ -306,6 +306,7 @@ export const ExecutionAttemptSchema = z.object({
     token_id: z.string().min(1).optional(),
     cli: z.string().optional(),
     model: z.string().optional(),
+    model_source: z.enum(["declared", "harness", "measured"]).optional(),
     agent: z.string().optional(),
     session_id: z.string().optional(),
   }),

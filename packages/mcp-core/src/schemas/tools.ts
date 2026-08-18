@@ -779,6 +779,12 @@ export const InsightCardSchema = z.object({
   project: z.string(),
   mission: z.string().nullable(),
   models: z.array(z.string()),
+  model_origins: z.array(
+    z.object({
+      model: z.string().min(1),
+      source: z.enum(["declared", "harness", "measured"]),
+    }),
+  ),
   /** null when no attempt on the card has a cost. Not the same as $0. */
   cost_usd: z.number().nullable(),
   /** Where that figure came from; "mixed" when the attempts disagree. */

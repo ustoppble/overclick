@@ -84,6 +84,112 @@ describe("MCP tool edge cases against a test db", () => {
     expect(out.task.harness?.model).toBe("opus-5");
   });
 
+  it("uses the harness model when Codex claims with generic gpt-5", async () => {
+    world = await createTestWorld();
+    const [card] = await world.db
+      .insert(task)
+      .values({
+        projectId: world.projectId,
+        shortId: "OC-90",
+        title: "Generic Codex claim",
+        harness: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+      })
+      .returning();
+    if (!card) throw new Error("failed to create card");
+
+    const claimed = await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "Codex CLI", model: "gpt-5" },
+    });
+    expect(claimed.ok).toBe(true);
+    if (!claimed.ok) return;
+    const out = TaskClaimOutputSchema.parse(claimed.value);
+    expect(out.attempt.executor).toMatchObject({
+      cli: "codex",
+      model: "gpt-5-6-sol",
+      model_source: "harness",
+    });
+
+    const [attempt] = await world.db
+      .select()
+      .from(executionAttempt)
+      .where(eq(executionAttempt.taskId, card.id));
+    expect(attempt).toMatchObject({
+      model: "gpt-5-6-sol",
+      modelSource: "harness",
+    });
+  });
+
+  it("keeps an exact Codex model declared on claim", async () => {
+    world = await createTestWorld();
+    const [card] = await world.db
+      .insert(task)
+      .values({
+        projectId: world.projectId,
+        shortId: "OC-91",
+        title: "Exact Codex claim",
+        harness: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+      })
+      .returning();
+    if (!card) throw new Error("failed to create card");
+
+    const claimed = await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "codex", model: "gpt-5.6-luna" },
+    });
+    expect(claimed.ok).toBe(true);
+    if (!claimed.ok) return;
+    expect(TaskClaimOutputSchema.parse(claimed.value).attempt.executor).toMatchObject({
+      cli: "codex",
+      model: "gpt-5-6-luna",
+      model_source: "declared",
+    });
+  });
+
+  it("updates the attempt model and timeline when measured segments diverge", async () => {
+    world = await createTestWorld();
+    const [card] = await world.db
+      .insert(task)
+      .values({
+        projectId: world.projectId,
+        shortId: "OC-92",
+        title: "Measured Codex model",
+        harness: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+      })
+      .returning();
+    if (!card) throw new Error("failed to create card");
+
+    await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "codex", model: "gpt-5" },
+    });
+    const delivered = await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: card.id,
+      summary: "measured",
+      usage: {
+        segments: [{ model: "gpt-5.6-terra", input: 100, output: 20 }],
+      },
+    });
+    expect(delivered.ok).toBe(true);
+
+    const [attempt] = await world.db
+      .select()
+      .from(executionAttempt)
+      .where(eq(executionAttempt.taskId, card.id));
+    expect(attempt).toMatchObject({
+      model: "gpt-5-6-terra",
+      modelSource: "measured",
+    });
+    const [note] = await world.db
+      .select()
+      .from(taskComment)
+      .where(eq(taskComment.taskId, card.id));
+    expect(note).toMatchObject({
+      kind: "executor_swap",
+      body: "declarou gpt-5-6-sol, mediu gpt-5-6-terra",
+    });
+  });
+
   it("accepts handoff without usage and marks telemetry incomplete", async () => {
     world = await createTestWorld();
     const created = await invokeTool(world.db, ctx(), "task_create", {
@@ -267,7 +373,7 @@ describe("MCP tool edge cases against a test db", () => {
       `CODEX_SESSION_ID='codex-session-with-'"'"'quote'`,
     );
     expect(payload.usage_recipe?.command).toContain(
-      "CODEX_HARNESS_MODEL='gpt-5.6-sol'",
+      "CODEX_HARNESS_MODEL='gpt-5-6-sol'",
     );
     expect(payload.usage_recipe?.command).toContain(
       `OVERCLICK_CLAIMED_AT='${payload.attempt.started_at}'`,
@@ -279,7 +385,7 @@ describe("MCP tool edge cases against a test db", () => {
       "work before the claim",
     );
     expect(payload.briefing_markdown).toContain(
-      "CODEX_HARNESS_MODEL='gpt-5.6-sol'",
+      "CODEX_HARNESS_MODEL='gpt-5-6-sol'",
     );
   });
 
@@ -877,33 +983,36 @@ describe("MCP tool edge cases against a test db", () => {
     });
     expect(await seen()).toEqual([]);
 
-    // Unknown model: learned on claim, bumped on a second claim and on deliver.
+    // A confirmed alias resolves to the configured model and is not learned.
     const a = await mkCard("Unknown pair A");
     await invokeTool(world.db, ctx(), "task_claim", {
       task_id: a.id,
       executor: { cli: "claude", model: "claude-fable-5" },
     });
-    let rows = await seen();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ cli: "claude", model: "claude-fable-5", count: 1 });
+    expect(await seen()).toEqual([]);
 
+    // A genuinely unknown model is learned, bumped on a second claim and on deliver.
     const b = await mkCard("Unknown pair B");
     await invokeTool(world.db, ctx(), "task_claim", {
       task_id: b.id,
-      executor: { cli: "claude", model: "claude-fable-5" },
+      executor: { cli: "claude", model: "claude-future-model" },
     });
-    rows = await seen();
+    let rows = await seen();
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.count).toBe(2);
+    expect(rows[0]).toMatchObject({
+      cli: "claude-code",
+      model: "future-model",
+      count: 1,
+    });
 
     const submitted = await invokeTool(world.db, ctx(), "task_deliver", {
-      task_id: a.id,
+      task_id: b.id,
       summary: "done",
     });
     expect(submitted.ok).toBe(true);
     rows = await seen();
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.count).toBe(3);
+    expect(rows[0]?.count).toBe(2);
   });
 
   it("rejects handoff from aberto via the state machine", async () => {

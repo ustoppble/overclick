@@ -16,6 +16,7 @@ import type {
 } from "../domain/pricing";
 import type { TranscriptRef } from "../domain/transcript";
 import type { UsageSegment } from "../domain/usage";
+import type { AttemptModelSource } from "../types";
 import { task } from "./task";
 
 export const executionAttempt = pgTable(
@@ -27,6 +28,8 @@ export const executionAttempt = pgTable(
     .references(() => task.id, { onDelete: "cascade" }),
   executor: text("executor"),
   model: text("model"),
+  /** Declared exactly, inferred from the harness, or corrected by usage. */
+  modelSource: text("model_source").$type<AttemptModelSource>(),
   /** Stable executor session used to spot one transcript reused across cards. */
   sessionId: text("session_id"),
   /**

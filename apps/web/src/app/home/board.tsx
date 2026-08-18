@@ -101,6 +101,8 @@ export type BoardCard = {
   harnessChain: string | null;
   /** What actually ran, set only when it was not what the card planned. */
   harnessRan: string | null;
+  /** Where the attempt's current model identity came from. */
+  modelSource: "declared" | "harness" | "measured" | null;
   /** True when this card waits on the review of whoever is looking at it. */
   awaitingMyReview: boolean;
   devolve: string;
@@ -418,6 +420,11 @@ function Card({
         {/* The line leads with who ran it and follows with what it ran. */}
         <CardCli card={card} />
         {harness ? <span className="meta-harness">{harness}</span> : null}
+        {card.modelSource === "harness" ? (
+          <span className="selo" title={t.detail.modelSourceHarness}>
+            {t.detail.modelSourceHarness}
+          </span>
+        ) : null}
         {/* The separator belongs to what comes after the harness, not to the
             harness itself: an ellipsis on the model chain would eat it. */}
         <CardMetaTail card={card} t={t} lead={harness != null} />
@@ -1018,6 +1025,13 @@ function Detail({
               {card.harnessRan ? (
                 <p className="d-mono d-harness-ran">
                   {t.detail.harnessRan} {card.harnessRan}
+                </p>
+              ) : null}
+              {card.modelSource === "harness" ? (
+                <p>
+                  <span className="tag feature">
+                    {t.detail.modelSourceHarness}
+                  </span>
                 </p>
               ) : null}
             </div>

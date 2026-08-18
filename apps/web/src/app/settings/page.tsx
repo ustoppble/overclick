@@ -15,7 +15,6 @@ import { getSession } from "../../lib/cookies";
 import { db } from "../../lib/db";
 import {
   EXECUTOR_CATALOG,
-  isPairInConfig,
   selectionFromConfig,
 } from "../../lib/executors";
 import { loadModelPrices } from "../../lib/prices";
@@ -28,6 +27,10 @@ import {
 } from "../../lib/update-commands";
 import { APP_VERSION, readUpdaterState } from "../../lib/updates";
 import { SettingsClient } from "./settings-client";
+import {
+  isExecutorPairConfigured,
+  normalizeObservedExecutor,
+} from "../../mcp/executor-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -141,6 +144,10 @@ export default async function SettingsPage({
     ...(row.segments ?? []).map((segment) => segment.model),
   ]);
   const catalogModels = Object.values(selection.models).flatMap((list) => list);
+  const normalizedSeen = ws.seenExecutors.flatMap((row) => {
+    const identity = normalizeObservedExecutor(row);
+    return identity ? [{ ...row, ...identity }] : [];
+  });
   const clean = (models: (string | null)[]) =>
     models
       .map((model) => model?.trim())
@@ -156,7 +163,7 @@ export default async function SettingsPage({
     clean([
       ...ranModels,
       ...catalogModels,
-      ...ws.seenExecutors.map((row) => row.model),
+      ...normalizedSeen.map((row) => row.model),
     ]),
   );
 
@@ -178,8 +185,8 @@ export default async function SettingsPage({
   const runtime = detectRuntime();
 
   // Pairs observed on real connections that the config still does not cover.
-  const seenSuggestions = ws.seenExecutors
-    .filter((s) => !isPairInConfig(ws.executors, s.cli, s.model))
+  const seenSuggestions = normalizedSeen
+    .filter((s) => !isExecutorPairConfigured(ws.executors, s.cli, s.model))
     .map((s) => ({
       cli: s.cli,
       model: s.model,

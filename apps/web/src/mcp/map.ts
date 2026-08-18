@@ -305,10 +305,12 @@ export function encodeExecutor(input: {
 export function decodeExecutor(
   raw: string | null,
   model: string | null,
+  modelSource?: "declared" | "harness" | "measured" | null,
 ): {
   token_id?: string;
   cli?: string;
   model?: string;
+  model_source?: "declared" | "harness" | "measured";
   agent?: string;
   session_id?: string;
 } {
@@ -329,5 +331,6 @@ export function decodeExecutor(
     agent: asString(parsed.agent),
     session_id: asString(parsed.session_id),
     ...(model ? { model } : {}),
+    ...(modelSource ? { model_source: modelSource } : {}),
   };
 }

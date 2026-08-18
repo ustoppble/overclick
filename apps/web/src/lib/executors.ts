@@ -66,6 +66,7 @@ export const CUSTOM_EXECUTOR_ID = "generic-mcp";
  */
 const CLI_ALIASES: Record<string, string> = {
   claude: "claude-code",
+  "codex cli": "codex",
   gemini: "gemini-cli",
   copilot: "github-copilot",
 };

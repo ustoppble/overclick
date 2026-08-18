@@ -12,7 +12,7 @@ import type { AuthContext, McpDatabase } from "./types";
 export const SERVER_INSTRUCTIONS = [
   "OverClick is the task board where agents claim and deliver cards (not Overclock the IDE); registering activities means task_create here.",
   "",
-  "Typical flow: task_list shows the queue, task_claim takes a card (send your executor: cli, model, session_id) and returns the briefing, and when the work is done you call task_deliver with summary, evidence, branch and usage. Without exact usage numbers, estimate and set estimated: true.",
+  "Typical flow: task_list shows the queue, task_claim takes a card (send your executor: cli, exact session model from --model, session_id) and returns the briefing, and when the work is done you call task_deliver with summary, evidence, branch and usage. Without exact usage numbers, estimate and set estimated: true.",
   "Missions group cards: mission_create returns the id that task_create accepts. Every task_id argument accepts the card uuid or the workspace short id (for example AGB-5).",
   "Cards live in projects: project_list shows the projects of the workspace and project_create starts one. task_create takes the project uuid or its card prefix (for example AGB).",
   "Reorganizing is project_update to rename, project_delete to remove (empty by default), and task_update with project_id to move a card to another project, which restamps its short id and returns the old-to-new mapping.",
@@ -41,7 +41,7 @@ const DESCRIPTIONS: Record<McpToolName, string> = {
   task_create:
     "Cria um card. Workspace vem do token. mission é o id de uma missão existente (mission_create / mission_list); omitido → card solto. mode solo|team.",
   task_claim:
-    "Pega o card (status → em execução), cria ExecutionAttempt e devolve o briefing.",
+    "Pega o card (status → em execução), cria ExecutionAttempt e devolve o briefing. Codex deve declarar o modelo exato de --model (por exemplo gpt-5.6-sol), nunca só gpt-5.",
   task_update:
     "Registra progresso, comentário, marca revisado, reclassifica o harness ou reporta/corrige usage do card (inclusive depois do deliver). project_id move o card para outro projeto: o short id é re-carimbado com o prefixo do destino, o antigo fica em previous_short_ids e a resposta devolve o de-para; subtasks vão junto e a missão não muda.",
   task_deliver:

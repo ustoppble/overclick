@@ -21,6 +21,7 @@ function row(over: Partial<InsightAttemptRow>): InsightAttemptRow {
     missionId: null,
     missionTitle: null,
     model: "claude-opus-5",
+    modelSource: null,
     result: "success",
     finishedAt: new Date(2026, 7, 10, 12),
     usageSegments: null,

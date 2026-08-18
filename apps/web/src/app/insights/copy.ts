@@ -43,6 +43,7 @@ const en = {
   colRate: "rate",
   noMission: "no mission",
   noModel: "model not reported",
+  modelFromHarness: "via harness",
   costNotReported: "not reported",
   /** Never "US$ 0.00": a model nobody priced did not work for free. */
   costNoPrice: "no price",
@@ -150,6 +151,7 @@ const ptBR: InsightsCopy = {
   colRate: "taxa",
   noMission: "sem missão",
   noModel: "modelo não reportado",
+  modelFromHarness: "via harness",
   costNotReported: "não reportado",
   costNoPrice: "sem preço",
   costNoPriceFor: (models: string) => `sem preço para ${models}`,

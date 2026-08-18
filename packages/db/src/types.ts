@@ -2,6 +2,9 @@ import type { UsageSegment } from "./domain/usage";
 
 export type Effort = "low" | "medium" | "high";
 
+/** Where the model identity on an execution attempt came from. */
+export type AttemptModelSource = "declared" | "harness" | "measured";
+
 export type Harness = {
   cli?: string | null;
   model: string | null;
