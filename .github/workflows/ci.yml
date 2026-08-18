@@ -1,0 +1,40 @@
+# Runs the suite the repo already ships on every push and pull request. The
+# release-image workflow publishes to ghcr.io on a v* tag with no gate of its
+# own, so this is the check that stands between a red suite and a tagged image.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # corepack reads packageManager from package.json, so the lockfile is
+      # resolved by the pinned pnpm 9.15.9 and not by whatever the runner ships.
+      - run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # apps/web imports @agent-board/mcp-core from dist/, so the package has to
+      # be compiled before its consumers are tested.
+      - run: pnpm --filter @agent-board/mcp-core build
+
+      # No database service: the integration tests boot an in-memory PGlite.
+      - run: pnpm test
