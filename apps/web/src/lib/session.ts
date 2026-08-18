@@ -8,10 +8,17 @@ export type SessionPayload = {
   email: string;
 };
 
+// 32 is the floor every document and the deploy path already state, and the
+// cloud compose file refuses to boot without it. This is the key that signs
+// every session, so the code enforces what the operator was told to provide.
+const MIN_SECRET_LENGTH = 32;
+
 function secretKey(): Uint8Array {
   const secret = process.env.AUTH_SECRET;
-  if (!secret || secret.length < 16) {
-    throw new Error("AUTH_SECRET must be set (16+ characters)");
+  if (!secret || secret.length < MIN_SECRET_LENGTH) {
+    throw new Error(
+      `AUTH_SECRET must be set (${MIN_SECRET_LENGTH}+ characters)`,
+    );
   }
   return new TextEncoder().encode(secret);
 }
