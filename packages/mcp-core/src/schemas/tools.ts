@@ -31,7 +31,7 @@ import {
 
 export const MissionListInputSchema = z.object({
   status: MissionStatusSchema.optional(),
-});
+}).strict();
 
 export const MissionListOutputSchema = z.object({
   missions: z.array(MissionSummarySchema),
@@ -39,7 +39,7 @@ export const MissionListOutputSchema = z.object({
 
 export const MissionGetInputSchema = z.object({
   mission_id: z.string().min(1),
-});
+}).strict();
 
 export const MissionGetOutputSchema = z.object({
   mission: MissionSchema,
@@ -55,7 +55,7 @@ export const MissionCreateInputSchema = z.object({
   objective: z.string().optional(),
   context: z.string().optional(),
   status: MissionStatusSchema.optional(),
-});
+}).strict();
 
 export const MissionCreateOutputSchema = z.object({
   mission: MissionSchema,
@@ -72,7 +72,7 @@ export const MissionUpdateInputSchema = z.object({
   objective: z.string().optional(),
   context: z.string().optional(),
   status: MissionStatusSchema.optional(),
-});
+}).strict();
 
 export const MissionUpdateOutputSchema = z.object({
   mission: MissionSchema,
@@ -90,7 +90,7 @@ export const MissionDeleteInputSchema = z.object({
     .describe(
       "Deletes the mission even when it holds cards, detaching them first. Omitted or false, a mission with cards is refused with the count that blocks it.",
     ),
-});
+}).strict();
 
 export const MissionDeleteOutputSchema = z.object({
   deleted: z.literal(true),
@@ -106,7 +106,7 @@ const ProjectRefSchema = z
     "Project uuid or its card prefix (e.g. AGB). Resolved in the token workspace; call project_list to see both.",
   );
 
-export const ProjectListInputSchema = z.object({});
+export const ProjectListInputSchema = z.object({}).strict();
 
 export const ProjectListOutputSchema = z.object({
   projects: z.array(ProjectSchema),
@@ -125,7 +125,7 @@ const ProjectVersionSchema = z.string().max(200);
 
 export const ProjectGetInputSchema = z.object({
   project_id: ProjectRefSchema,
-});
+}).strict();
 
 export const ProjectGetOutputSchema = z.object({
   project: ProjectDetailSchema,
@@ -149,7 +149,7 @@ export const ProjectCreateInputSchema = z.object({
     .describe(
       "Card prefix, 2 to 4 letters or digits (e.g. AGB). Derived from the name when omitted.",
     ),
-});
+}).strict();
 
 export const ProjectCreateOutputSchema = z.object({
   project: ProjectDetailSchema,
@@ -181,7 +181,7 @@ export const ProjectUpdateInputSchema = z
       .describe(
         "New card prefix, 2 to 4 letters or digits. Only accepted while the project has no cards.",
       ),
-  })
+  }).strict()
   .refine(
     (value) =>
       value.name !== undefined ||
@@ -214,7 +214,7 @@ export const ProjectDeleteInputSchema = z.object({
     .describe(
       "Deletes the project even when it holds cards, destroying every card in it. Omitted or false, a project with cards is refused with the count that blocks it.",
     ),
-});
+}).strict();
 
 export const ProjectDeleteOutputSchema = z.object({
   deleted: z.literal(true),
@@ -234,7 +234,7 @@ export const TaskListInputSchema = z.object({
   priority: PrioritySchema.optional(),
   type: TaskTypeSchema.optional(),
   awaiting_review_by: z.union([z.literal("me"), z.string().min(1)]).optional(),
-});
+}).strict();
 
 export const TaskListOutputSchema = z.object({
   tasks: z.array(TaskSummarySchema),
@@ -249,7 +249,7 @@ const TaskIdSchema = z
 
 export const TaskGetInputSchema = z.object({
   task_id: TaskIdSchema,
-});
+}).strict();
 
 /**
  * The board's recipe for measuring a run on this CLI. It rides in the briefing
@@ -307,7 +307,7 @@ export const TaskSearchInputSchema = z.object({
   status: z.union([CardStatusSchema, z.array(CardStatusSchema)]).optional(),
   /** Hits to return, best match first. Default 5, at most 20. */
   limit: z.number().int().min(1).max(20).optional(),
-});
+}).strict();
 
 /** One search hit: enough to decide "same thing or not" without a task_get. */
 export const TaskSearchHitSchema = z.object({
@@ -356,7 +356,7 @@ export const TaskCreateInputSchema = z
     devolve_para: ReviewerSchema.optional(),
     harness: HarnessSchema.optional(),
     origem: OrigemSchema,
-  })
+  }).strict()
   .superRefine((value, ctx) => {
     if (value.inherit && !value.supersedes) {
       ctx.addIssue({
@@ -412,7 +412,7 @@ export const TaskClaimInputSchema = z.object({
    * when the usage recipe has printed it.
    */
   transcript: TranscriptRefSchema.optional(),
-});
+}).strict();
 
 export const HarnessDivergenceSchema = z.object({
   recommended: HarnessSchema,
@@ -436,7 +436,7 @@ export const TaskClaimOutputSchema = z.object({
 export const TaskReleaseInputSchema = z.object({
   task_id: TaskIdSchema,
   reason: z.string().trim().min(1).max(1_000),
-});
+}).strict();
 
 export const TaskReleaseOutputSchema = z.object({
   task: TaskSchema,
@@ -446,7 +446,7 @@ export const TaskReleaseOutputSchema = z.object({
 /** Extends the lease of a long-running executor without adding timeline prose. */
 export const TaskHeartbeatInputSchema = z.object({
   task_id: TaskIdSchema,
-});
+}).strict();
 
 export const TaskHeartbeatOutputSchema = z.object({
   task_id: z.string().min(1),
@@ -506,7 +506,7 @@ export const TaskUpdateInputSchema = z
     /** Discard an in-execution card, optionally linking its existing continuation. */
     status: z.literal("descartado").optional(),
     superseded_by: TaskIdSchema.optional(),
-  })
+  }).strict()
   .refine(
     (value) =>
       value.comment !== undefined ||
@@ -606,7 +606,7 @@ export const TaskDeliverInputSchema = z.object({
    * omit keep whatever the claim recorded.
    */
   transcript: TranscriptRefSchema.optional(),
-});
+}).strict();
 
 export const TaskDeliverOutputSchema = z.object({
   task: TaskSchema,
@@ -628,7 +628,7 @@ export const TaskDeliverOutputSchema = z.object({
  */
 export const TaskDeleteInputSchema = z.object({
   task_id: TaskIdSchema,
-});
+}).strict();
 
 export const TaskDeleteOutputSchema = z.object({
   deleted: z.literal(true),
@@ -641,7 +641,7 @@ export const TaskDeleteOutputSchema = z.object({
 export const BranchRegisterInputSchema = z.object({
   task_id: TaskIdSchema,
   branch: z.string().min(1),
-});
+}).strict();
 
 export const BranchRegisterOutputSchema = z.object({
   task: TaskSchema,
@@ -649,7 +649,7 @@ export const BranchRegisterOutputSchema = z.object({
 
 export const HarnessRecommendInputSchema = z.object({
   type: CardapioTaskTypeSchema,
-});
+}).strict();
 
 export const HarnessRecommendOutputSchema = z.object({
   harness: z.object({
@@ -712,7 +712,7 @@ export const HarnessSetInputSchema = z
      */
     chain: z.array(z.string().min(1)).min(1).max(8).optional(),
     effort: EffortSchema,
-  })
+  }).strict()
   .refine((input) => Boolean(input.model) || Boolean(input.chain?.length), {
     message: "Send a model, a chain, or both.",
     path: ["model"],
@@ -749,7 +749,7 @@ export const ModelPriceSchema = z.object({
   updated_at: z.string().nullable(),
 });
 
-export const HarnessListInputSchema = z.object({});
+export const HarnessListInputSchema = z.object({}).strict();
 
 export const HarnessListOutputSchema = z.object({
   policy: z.array(CardapioPolicyEntrySchema),
@@ -782,7 +782,7 @@ export const ExecutorsUpdateInputSchema = z
     add_models: z.array(z.string().min(1)).optional(),
     remove_models: z.array(z.string().min(1)).optional(),
     remove: z.boolean().optional(),
-  })
+  }).strict()
   .superRefine((value, ctx) => {
     if (
       value.remove &&
@@ -959,7 +959,7 @@ export const InsightsQueryInputSchema = z.object({
     .datetime()
     .optional()
     .describe("ISO timestamp; attempts that finished after it are excluded."),
-});
+}).strict();
 
 export const InsightsQueryOutputSchema = z.object({
   period: z.object({

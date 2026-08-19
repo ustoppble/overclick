@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   TaskDeliverInputSchema,
+  TaskUpdateInputSchema,
   MCP_TOOL_NAMES,
   MissionCreateInputSchema,
   MissionDeleteInputSchema,
@@ -421,5 +422,40 @@ describe("task_deliver usage and artifacts", () => {
     expect(
       isTelemetryIncomplete({ tokens_in: 10, tokens_out: 20, turns: 2 }),
     ).toBe(true);
+  });
+
+  it("refuses an unknown key instead of dropping it", () => {
+    // The historical case: docs/mcp.md called the flag "reviewed" while the
+    // field is "revisado". Without strict the key vanished, the card was
+    // never marked, and nothing anywhere said so.
+    const typo = TaskUpdateInputSchema.safeParse({
+      task_id: "AGB-1",
+      reviewed: true,
+    });
+    expect(typo.success).toBe(false);
+
+    // The same shape with the real field is accepted, so strict costs the
+    // caller nothing when the caller is right.
+    const correct = TaskUpdateInputSchema.safeParse({
+      task_id: "AGB-1",
+      revisado: true,
+    });
+    expect(correct.success).toBe(true);
+  });
+
+  it("keeps every tool contract strict, so no surface drifts back", () => {
+    for (const name of MCP_TOOL_NAMES) {
+      // A schema can carry several refinements, and each one wraps the
+      // last, so unwrap until the object itself shows up. That is where
+      // strict lives.
+      let object: unknown = toolContracts[name].input;
+      while ((object as { _def?: { schema?: unknown } })._def?.schema) {
+        object = (object as { _def: { schema: unknown } })._def.schema;
+      }
+      expect(
+        (object as { _def: { unknownKeys?: string } })._def.unknownKeys,
+        `${name} must be strict`,
+      ).toBe("strict");
+    }
   });
 });
