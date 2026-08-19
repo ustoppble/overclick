@@ -18,7 +18,8 @@ coding agent to a board over MCP and let it claim a card. Both are described bel
 apps/web           Next.js app — board UI, auth, and the /mcp HTTP endpoint
 packages/mcp-core  Pure TypeScript: contracts, card state machine, harness policy
 packages/db        Drizzle ORM schema, migrations, seed
-docs/              getting-started.md, mcp.md (the 11-tool MCP surface)
+docs/              getting-started.md, mcp.md (the MCP surface),
+                   harness-routing.md, rfcs/
 ```
 
 ## Quick smoke test (no local toolchain)
@@ -214,12 +215,12 @@ or any MCP client) execute them.
 
 3. In your agent's terminal: *"grab the next task from the board."* The agent calls
    `task_claim`, receives a self-contained briefing (contract + harness + branch
-   convention), does the work, and reports back with `handoff_submit` — summary,
+   convention), does the work, and reports back with `task_deliver` — summary,
    evidence, and real usage telemetry (tokens, duration, cost).
 4. A human reviews the card against its *How to confirm* script and validates or reopens
    it. `Done ≠ Validated` — only humans stamp *Validated*.
 
-The full MCP surface (21 tools) is documented in [`docs/mcp.md`](docs/mcp.md).
+The full MCP surface is documented in [`docs/mcp.md`](docs/mcp.md).
 
 ## Pull request checklist
 
