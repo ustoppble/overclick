@@ -7,6 +7,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -32,9 +33,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # apps/web imports @agent-board/mcp-core from dist/, so the package has to
-      # be compiled before its consumers are tested.
-      - run: pnpm --filter @agent-board/mcp-core build
+      # Build from the clean checkout before tests. This catches incomplete
+      # commits that unit tests can miss but the release image cannot compile.
+      - run: pnpm build
 
       # No database service: the integration tests boot an in-memory PGlite.
       - run: pnpm test
