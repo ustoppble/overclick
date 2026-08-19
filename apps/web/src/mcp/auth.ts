@@ -23,7 +23,10 @@ export async function authenticateBearer(
 ): Promise<AuthResult> {
   const secret = parseBearerToken(authorization ?? null);
   if (!secret) {
-    return fail("TOKEN_MISSING", "Authorization: Bearer <token> é obrigatório.");
+    return fail(
+      "TOKEN_MISSING",
+      "Authorization: Bearer <token> is required.",
+    );
   }
 
   const hash = hashToken(secret);
@@ -34,10 +37,10 @@ export async function authenticateBearer(
     .limit(1);
 
   if (!row) {
-    return fail("UNAUTHORIZED", "Token MCP inválido.");
+    return fail("UNAUTHORIZED", "Invalid MCP token.");
   }
   if (row.revoked) {
-    return fail("TOKEN_REVOKED", "Token MCP revogado.");
+    return fail("TOKEN_REVOKED", "MCP token was revoked.");
   }
 
   await db

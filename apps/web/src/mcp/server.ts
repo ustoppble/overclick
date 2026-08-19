@@ -61,40 +61,41 @@ const DESCRIPTIONS: Record<McpToolName, string> = {
     "Updates a project (name, repo_url, context, current_version, id_prefix). Context is limited to 32000 characters. The card prefix is only editable while the project has no cards, because every card carries it in its short id: to reorganize a project that holds cards, move them with task_update passing project_id.",
   project_delete:
     "Hard delete: removes the project. Only an empty one by default; a project with cards comes back refused with the count that blocks it, and force: true destroys the project with every card in it, and their attempts, handoffs and subtasks. Irreversible.",
-  mission_list: "Lista as missões do workspace e o contexto de cada uma.",
+  mission_list:
+    "Lists the workspace missions with the context carried by each one.",
   mission_get:
-    "Devolve a missão completa (objetivo/contexto) para injetar no prompt.",
+    "Returns the full mission (objective and context) to inject into the prompt.",
   mission_create:
-    "Cria uma missão no workspace (title, objective/context em markdown, status). Use o id retornado em task_create.mission.",
+    "Creates a mission in the workspace (title, objective and context in markdown, status). Pass the id it returns as task_create.mission.",
   mission_update:
     "Updates a mission in place (title, objective/context markdown, status). Omitted fields stay unchanged; conventions for one round belong in the mission context.",
   mission_delete:
     "Deletes an empty mission shell. A mission with cards is refused with its count unless force: true explicitly detaches those cards first.",
   task_list:
-    "Fila de cards do workspace. Filtros: projeto, missão, status, prioridade, awaiting_review_by.",
+    "The card queue of the workspace. Filters: project, mission, status, priority, awaiting_review_by.",
   task_get:
-    "Card autocontido: contrato + harness + missão + convenção de branch (markdown).",
+    "The self-contained card: contract, harness, mission and branch convention, in markdown.",
   task_search:
     "Free-text search over the workspace's cards (title, what, why, comments), best match first. Filters: project_id (uuid or prefix), type, status (one or a list), limit (default 5, max 20). Each hit carries resolved_in, comments_count and reports_count, so you can tell whether a card already covers something before creating one. Empty list when nothing matches.",
   task_create:
-    "Cria um card. Workspace vem do token. mission é o id de uma missão existente (mission_create / mission_list); omitido → card solto. mode solo|team. supersedes descarta atomicamente o card anterior em execução; inherit reutiliza o contrato sem copiar comentários.",
+    "Creates a card. The workspace comes from the token. mission is the id of an existing mission (mission_create, mission_list); omit it and the card stands on its own. mode is solo or team. supersedes atomically discards the card that was in execution, and inherit reuses its contract without carrying its comments over.",
   task_claim:
-    "Pega o card (status → em execução), cria ExecutionAttempt e devolve o briefing. Codex deve declarar o modelo exato de --model (por exemplo gpt-5.6-sol), nunca só gpt-5. Um claim sem atividade além do timeout do workspace é abandonado como stale e pode ser retomado sem force; a resposta marca reclaimed_stale: true.",
+    "Takes the card (status becomes em_execucao), opens an ExecutionAttempt and returns the briefing. Codex must declare the exact model it was given in --model (gpt-5.6-sol, for example), never just gpt-5. A claim left without activity past the workspace timeout is abandoned as stale and can be taken over without force; the response marks reclaimed_stale: true.",
   task_release:
-    "Solta o claim atual: o card volta a aberto e o attempt vira abandoned com o reason, preservando usage. Permitido ao mesmo token que fez o claim ou a um token com manage.",
+    "Lets the current claim go: the card returns to aberto and the attempt ends as abandoned with the reason, keeping the usage it reported. Allowed to the token that made the claim, or to a token with manage.",
   task_heartbeat:
-    "Renova a atividade do claim atual para execuções longas e devolve quando o lease expira. Permitido ao token dono do claim ou a um token com manage.",
+    "Renews the activity of the current claim for a long run and returns when the lease expires. Allowed to the token that owns the claim, or to a token with manage.",
   task_update:
-    "Registra progresso, comentário, marca revisado, reclassifica o harness ou reporta/corrige usage do card (inclusive descartado). project_id move o card entre projetos. status descartado + superseded_by encerra o attempt como abandoned e liga a continuação; exige can_manage.",
+    "Records progress, leaves a comment, marks revisado, reclassifies the harness, or reports and corrects the card usage, including on a discarded card. project_id moves the card between projects. status descartado together with superseded_by ends the attempt as abandoned and links the card that continues it; that one needs can_manage.",
   task_deliver:
-    "Entrega o resultado: resumo, evidências, artefatos, usage. usage é OBRIGATÓRIO: sem números exatos, ESTIME tokens, turns e custo e marque estimated: true — o card rotula como estimativa. A duração é medida pelo servidor do claim ao deliver. how_to_verify (URL ou comando) abre o painel de validação leiga. Status → feito.",
+    "Delivers the result: summary, evidence, artifacts, usage. usage is MANDATORY: without exact numbers, ESTIMATE tokens, turns and cost and set estimated: true, and the card labels them as an estimate. Duration is measured by the server, from the claim to the deliver. how_to_verify (a URL or a command) opens the plain-language validation panel. Status becomes feito.",
   task_delete:
-    "Hard delete: remove o card com attempts, handoffs e subtasks em cascata. Irreversível.",
-  branch_register: "Grava a branch criada no card.",
+    "Hard delete: removes the card, cascading to its attempts, handoffs and subtasks. Irreversible.",
+  branch_register: "Records on the card the branch that was created for it.",
   harness_recommend:
-    "Lookup da política do cardápio: tipo → CLI · modelo · effort.",
+    "Policy lookup: reads one activity type off the cardapio and returns its cli, model and effort.",
   harness_list:
-    "Política inteira do workspace (tipo → CLI · modelo · effort) e os executores configurados.",
+    "The whole workspace policy (every activity type to cli, model, effort) and the configured executors.",
   insights_query:
     "Cost, tokens and time over the workspace, grouped by project, mission, model or card, with an optional period, plus the reopened rate per model. Same numbers the Insights page shows: estimated and unreported usage come back counted, never silently summed.",
   executors_update:

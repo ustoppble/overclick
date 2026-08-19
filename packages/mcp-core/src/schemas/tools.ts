@@ -385,7 +385,7 @@ export const TaskCreateInputSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["subtasks"],
-        message: "mode solo cria 1 card — não envie subtasks",
+        message: "mode solo creates 1 card, do not send subtasks",
       });
     }
   });
