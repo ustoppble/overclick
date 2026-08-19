@@ -234,10 +234,24 @@ export const TaskListInputSchema = z.object({
   priority: PrioritySchema.optional(),
   type: TaskTypeSchema.optional(),
   awaiting_review_by: z.union([z.literal("me"), z.string().min(1)]).optional(),
+  /**
+   * Cards to return, oldest first. Default 50, at most 200. The whole answer
+   * goes into the caller's context, so an unbounded board would spend it on
+   * cards nobody asked about.
+   */
+  limit: z.number().int().min(1).max(200).optional(),
 });
 
 export const TaskListOutputSchema = z.object({
   tasks: z.array(TaskSummarySchema),
+  /**
+   * True when the board holds more cards than were returned. Say it out
+   * loud: a caller that cannot tell a full answer from a cut one will read
+   * a truncated queue as the whole queue.
+   */
+  truncated: z.boolean(),
+  /** The limit the answer was cut to, whether asked for or the default. */
+  limit: z.number().int(),
 });
 
 const TaskIdSchema = z

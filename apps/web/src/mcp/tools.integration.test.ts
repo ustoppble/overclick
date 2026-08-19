@@ -1685,6 +1685,46 @@ describe("MCP tool edge cases against a test db", () => {
     expect(byAgent.ok).toBe(true);
   });
 
+  it("cuts task_list to a limit and says when the board holds more", async () => {
+    world = await createTestWorld();
+    // The seeded world already holds a card, so this makes the board bigger
+    // than the limit under test either way.
+    for (let i = 0; i < 4; i++) {
+      const made = await invokeTool(world.db, ctx(), "task_create", {
+        project_id: world.projectId,
+        title: `Card number ${i}`,
+        type: "feature",
+        o_que: "x",
+        por_que: "y",
+        como_confirmo: [{ step: "a", expected: "b" }],
+        origem: { session_id: "sess_limit", cli: "overclock" },
+      });
+      expect(made.ok).toBe(true);
+    }
+
+    const cut = await invokeTool(world.db, ctx(), "task_list", { limit: 2 });
+    expect(cut.ok).toBe(true);
+    if (!cut.ok) return;
+    const cutOut = TaskListOutputSchema.parse(cut.value);
+    expect(cutOut.tasks).toHaveLength(2);
+    expect(cutOut.limit).toBe(2);
+    // The point of the flag: two cards is not the board.
+    expect(cutOut.truncated).toBe(true);
+
+    const whole = await invokeTool(world.db, ctx(), "task_list", { limit: 200 });
+    expect(whole.ok).toBe(true);
+    if (!whole.ok) return;
+    const wholeOut = TaskListOutputSchema.parse(whole.value);
+    expect(wholeOut.truncated).toBe(false);
+    expect(wholeOut.tasks.length).toBeGreaterThan(2);
+
+    // Oldest first still holds, so a limit takes the head of the queue and
+    // not an arbitrary slice of it.
+    expect(cutOut.tasks.map((t) => t.id)).toEqual(
+      wholeOut.tasks.slice(0, 2).map((t) => t.id),
+    );
+  });
+
   it("tells the agent to claim before delivering an open card", async () => {
     world = await createTestWorld();
     const created = await invokeTool(world.db, ctx(), "task_create", {

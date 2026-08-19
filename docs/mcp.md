@@ -49,7 +49,8 @@ context are listed there with a short excerpt and a pointer to `project_get`.
 | `mission_create` | creates a mission (`title`, objective/context markdown, `status`) and returns its id |
 | `mission_update` | partially edits a mission (`title`, objective/context markdown, `status`); omitted fields stay unchanged. Put conventions for one round in mission context and update them here |
 | `mission_delete` | removes an empty mission shell. A mission holding cards is refused with its count; `force: true` detaches those cards (`mission_id: null`) and returns `tasks_detached` before deleting the mission |
-| `task_list` | the queue (project, `mission_id`, status, priority, `awaiting_review_by`) |
+| `task_list` | the queue (project, `mission_id`, status, priority, `awaiting_review_by`, `limit`) |
+| | `limit` defaults to 50 and caps at 200. The response carries `truncated` and the `limit` it used, so a caller can tell a full queue from a cut one instead of reading a page as the whole board |
 | `task_get` | self-contained md briefing (contract + harness + mission + complete project context + branch), plus the latest attempt's frozen `cost_usd`, `cost_source`, `cost_status` and `cost_unpriced_models` |
 | `task_create` | creates the card (`mission` is an existing mission id, `mode` solo\|team, origin); `supersedes` atomically discards an in-execution predecessor, and `inherit: true` reuses its contract without copying comments |
 | | `project_id` takes the project uuid **or** its card prefix (`AGB`), so an agent that just called `project_list` never needs the uuid |

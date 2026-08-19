@@ -116,6 +116,12 @@ import type { AuthContext, McpDatabase } from "./types";
 type Tx = McpDatabase;
 
 /**
+ * Cards task_list returns when the caller names no limit. The answer lands
+ * whole in an agent's context, so the default is a page, not a board.
+ */
+const DEFAULT_TASK_LIST_LIMIT = 50;
+
+/**
  * Ends the active run without erasing its telemetry and links the old and new
  * cards. The caller holds a row lock on `original`, so create + discard can
  * live in one transaction without a zombie window.
@@ -955,8 +961,10 @@ async function taskList(
     priority?: Task["priority"];
     type?: Task["type"];
     awaiting_review_by?: "me" | string;
+    limit?: number;
   },
 ) {
+  const limit = input.limit ?? DEFAULT_TASK_LIST_LIMIT;
   const filters = [eq(project.workspaceId, ctx.workspaceId)];
   if (input.project_id) {
     const proj = await findProject(db, ctx.workspaceId, input.project_id);
@@ -1001,15 +1009,22 @@ async function taskList(
     filters.push(inArray(task.status, statuses));
   }
 
+  // One past the limit: enough to know another card exists without paying
+  // for a second count query on every call.
   const rows = await db
     .select({ task, project })
     .from(task)
     .innerJoin(project, eq(task.projectId, project.id))
     .where(and(...filters))
-    .orderBy(asc(task.createdAt));
+    .orderBy(asc(task.createdAt))
+    .limit(limit + 1);
+
+  const truncated = rows.length > limit;
 
   return {
-    tasks: rows.map((row) => {
+    truncated,
+    limit,
+    tasks: rows.slice(0, limit).map((row) => {
       const mapped = mapTask(row.task, row.project);
       return {
         id: mapped.id,

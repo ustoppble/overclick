@@ -71,7 +71,7 @@ const DESCRIPTIONS: Record<McpToolName, string> = {
   mission_delete:
     "Deletes an empty mission shell. A mission with cards is refused with its count unless force: true explicitly detaches those cards first.",
   task_list:
-    "Fila de cards do workspace. Filtros: projeto, missão, status, prioridade, awaiting_review_by.",
+    "Fila de cards do workspace. Filtros: projeto, missão, status, prioridade, awaiting_review_by, limit (default 50, máx 200). A resposta traz truncated: true quando o board tem mais cards do que coube.",
   task_get:
     "Card autocontido: contrato + harness + missão + convenção de branch (markdown).",
   task_search:
