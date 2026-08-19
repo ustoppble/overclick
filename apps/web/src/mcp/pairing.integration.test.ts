@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createPairingCode,
   exchangePairingCode,
+  MAX_PAIRING_FAILURES,
   pairingStatus,
 } from "../lib/pairing";
 import { authenticateBearer } from "./auth";
@@ -14,6 +15,50 @@ describe("one-time token pairing", () => {
 
   afterEach(async () => {
     if (world) await closeTestWorld(world);
+  });
+
+
+  it("burns the live code once the guessing budget is gone", async () => {
+    world = await createTestWorld();
+    const created = await createPairingCode(world.db, {
+      workspaceId: world.workspaceId,
+      label: "paired via code",
+    });
+
+    // Wrong guesses, all at once. Sequential attempts were never the threat:
+    // the failure path costs a flat delay each, paid in parallel, so a caller
+    // with connections to spare was bounded by its own concurrency and not by
+    // the delay. A budget is what a hundred parallel guesses cannot outrun.
+    const wrong = Array.from({ length: MAX_PAIRING_FAILURES }, (_, i) =>
+      String(i).padStart(6, "9"),
+    ).filter((code) => code !== created.code);
+    await Promise.all(wrong.map((code) => exchangePairingCode(world.db, code)));
+
+    // The real code is gone: the humans generate another one, the guesser
+    // goes back to a fresh million.
+    const withTheRealCode = await exchangePairingCode(world.db, created.code);
+    expect(withTheRealCode.ok).toBe(false);
+
+    const [row] = await world.db
+      .select()
+      .from(pairingCode)
+      .where(eq(pairingCode.id, created.id));
+    expect(row).toBeUndefined();
+  });
+
+  it("does not punish a human who mistypes once and then gets it right", async () => {
+    world = await createTestWorld();
+    const created = await createPairingCode(world.db, {
+      workspaceId: world.workspaceId,
+      label: "paired via code",
+    });
+
+    const typo = created.code === "000000" ? "111111" : "000000";
+    const missed = await exchangePairingCode(world.db, typo);
+    expect(missed.ok).toBe(false);
+
+    const second = await exchangePairingCode(world.db, created.code);
+    expect(second.ok).toBe(true);
   });
 
   it("exchanges a 6-digit code for a working bearer token, once", async () => {

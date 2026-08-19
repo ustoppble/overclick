@@ -7,8 +7,13 @@ export const dynamic = "force-dynamic";
  * Public one-time pairing endpoint. The agent posts the 6-digit code the
  * human read out loud and receives the real bearer token, so the token
  * never travels through a chat. Codes are single-use with a short TTL and
- * only one is active per workspace; failures pay a flat delay to make
- * guessing the 6 digits impractical inside the TTL.
+ * only one is active per workspace.
+ *
+ * The flat delay below is not what makes guessing impractical: it is paid
+ * per request, so parallel guesses wait in parallel and the ceiling is the
+ * caller's connection count. What bounds the guessing is the failure
+ * budget in exchangePairingCode, which burns the live codes once it runs
+ * out. The delay stays because it costs an honest caller nothing.
  */
 export async function POST(request: Request): Promise<Response> {
   const body = (await request.json().catch(() => null)) as
