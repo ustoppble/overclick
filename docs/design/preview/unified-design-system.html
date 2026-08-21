@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>[MOCKUP] OverClock — design system unificado (seletivo vs x.ai total)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; }
+
+    :root {
+      --page-bg: #050505;
+      --page-fg: #f0f0f0;
+      --page-muted: #787878;
+      --page-border: #262626;
+      --font-ui: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-data: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--page-bg);
+      color: var(--page-fg);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page-header {
+      border-bottom: 1px solid var(--page-border);
+      padding: 20px 24px;
+      background: #0a0a0a;
+    }
+
+    .page-header .badge {
+      display: inline-block;
+      font-family: var(--font-data);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: #ff7a17;
+      color: #0a0a0a;
+      margin-right: 10px;
+    }
+
+    .page-header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      display: inline;
+    }
+
+    .page-header p {
+      margin: 8px 0 0;
+      color: var(--page-muted);
+      max-width: 880px;
+      line-height: 1.55;
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      padding: 24px;
+      align-items: start;
+    }
+
+    .direction-label {
+      padding: 12px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+      background: var(--l1);
+      color: var(--text-secondary);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .direction-label strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .viewport {
+      border: 1px solid var(--page-border);
+      border-radius: 16px;
+      overflow: hidden;
+      background: var(--base);
+      display: flex;
+      flex-direction: column;
+      height: 980px;
+      position: relative;
+    }
+
+    /* ============================================================
+       THEME A — EMPRÉSTIMO SELETIVO
+       Adota as camadas de superfície do x.ai, mas mantém o acento
+       vermelho e a voz tipográfica atuais do OverClock.
+       ============================================================ */
+    [data-direction="selective"] {
+      --base: #0a0a0a;
+      --l1: #121212;
+      --l2: #1a1a1a;
+      --l3: #212121;
+      --l4: #262626;
+      --l4-hover: #2b2b2b;
+      --text-primary: #f0f0f0;
+      --text-secondary: #9ca3af;
+      --text-muted: #6b7280;
+      --accent: #ef4444;
+      --accent-contrast: #000000;
+      --accent-hover: #dc2626;
+      --border: #1f2937;
+      --border-subtle: #4b5563;
+      --border-strong: rgba(239, 68, 68, 0.40);
+      --overlay-hover: rgba(255, 255, 255, 0.03);
+      --surface-hover: rgba(255, 255, 255, 0.06);
+      --ok: #22c55e;
+      --danger: #e48585;
+      --font-ui-dir: "Geist Variable", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-data-dir: var(--font-data);
+      --radius-control: 8px;
+      --radius-card: 12px;
+      --radius-panel: 12px;
+      --radius-pill: 999px;
+    }
+
+    /* ============================================================
+       THEME B — ADOÇÃO TOTAL x.ai
+       Assume o visual escuro-em-camadas do x.ai: acento branco,
+       bordas em branco translúcido, tipografia Inter + mono.
+       ============================================================ */
+    [data-direction="full-xai"] {
+      --base: #0a0a0a;
+      --l1: #121212;
+      --l2: #1a1a1a;
+      --l3: #212121;
+      --l4: #262626;
+      --l4-hover: #2b2b2b;
+      --text-primary: #f0f0f0;
+      --text-secondary: #787878;
+      --text-muted: #919191;
+      --accent: #ffffff;
+      --accent-contrast: #0a0a0a;
+      --accent-hover: #e5e5e5;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-subtle: rgba(255, 255, 255, 0.12);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --overlay-hover: rgba(255, 255, 255, 0.03);
+      --surface-hover: rgba(255, 255, 255, 0.06);
+      --solar: #ff7a17;
+      --ok: #16a34a;
+      --danger: #dc2626;
+      --font-ui-dir: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-data-dir: "Geist Mono", "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
+      --radius-control: 8px;
+      --radius-card: 12px;
+      --radius-panel: 12px;
+      --radius-pill: 999px;
+    }
+
+    [data-direction] {
+      font-family: var(--font-ui-dir);
+    }
+
+    .mono { font-family: var(--font-data-dir); }
+
+    /* Topbar */
+    .topbar {
+      background: var(--base);
+      border-bottom: 1px solid var(--border);
+      flex: 0 0 auto;
+    }
+
+    .topbar-l1, .topbar-l2 {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+    }
+
+    .topbar-l1 { height: 48px; }
+    .topbar-l2 { height: 44px; border-top: 1px solid var(--border); }
+
+    .wordmark {
+      font-family: var(--font-data-dir);
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--text-primary);
+      margin-right: auto;
+    }
+
+    .control {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-control);
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: var(--font-ui-dir);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: default;
+      transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    }
+
+    .control:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-strong);
+      color: var(--text-primary);
+    }
+
+    .control .icon {
+      width: 14px;
+      height: 14px;
+      opacity: 0.7;
+    }
+
+    .control.active {
+      color: var(--text-primary);
+      border-color: var(--border-strong);
+    }
+
+    .control.active .count {
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 9px;
+      background: var(--accent);
+      color: var(--accent-contrast);
+      font-family: var(--font-data-dir);
+      font-size: 11px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stat {
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .stat .money {
+      color: var(--text-primary);
+      font-family: var(--font-data-dir);
+      font-weight: 600;
+    }
+
+    .spacer { flex: 1; }
+
+    /* Main layout: board + side panel */
+    .main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .board {
+      flex: 1;
+      display: flex;
+      gap: 16px;
+      padding: 16px;
+      overflow-x: auto;
+      background: var(--base);
+    }
+
+    .column {
+      flex: 0 0 260px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .column-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+
+    .column-header .count {
+      font-family: var(--font-data-dir);
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .card {
+      background: var(--l2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      cursor: default;
+      transition: background 150ms ease, border-color 150ms ease;
+    }
+
+    .card:hover {
+      background: var(--l3);
+      border-color: var(--border-strong);
+    }
+
+    .card.bug { border-left: 3px solid rgba(220, 38, 38, 0.40); }
+
+    .card-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-data-dir);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .card-type {
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .card-cost { font-weight: 600; }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.4;
+      color: var(--text-primary);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-data-dir);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--ok);
+    }
+
+    .side-panel {
+      flex: 0 0 340px;
+      border-left: 1px solid var(--border);
+      background: var(--l1);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    /* Modal / detail card */
+    .detail {
+      border-bottom: 1px solid var(--border);
+      padding: 20px;
+      background: var(--l2);
+    }
+
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .detail-id {
+      font-family: var(--font-data-dir);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .detail-title {
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1.3;
+      color: var(--text-primary);
+      margin: 6px 0 16px;
+    }
+
+    .detail-section {
+      margin-top: 16px;
+    }
+
+    .detail-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin: 0 0 10px;
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .detail-row:last-child { border-bottom: none; }
+    .detail-row .label { color: var(--text-secondary); }
+    .detail-row .value {
+      color: var(--text-primary);
+      font-family: var(--font-data-dir);
+    }
+
+    .detail-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 14px;
+      border-radius: var(--radius-control);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: default;
+      transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border: 1px solid var(--accent);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ghost:hover {
+      background: var(--overlay-hover);
+      border-color: var(--border-subtle);
+      color: var(--text-primary);
+    }
+
+    /* Insights panel */
+    .insights {
+      padding: 20px;
+      flex: 1;
+    }
+
+    .insights-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin: 0 0 16px;
+    }
+
+    .chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      height: 120px;
+      padding: 16px;
+      background: var(--l2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      margin-bottom: 16px;
+    }
+
+    .bar-group {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .bar {
+      width: 100%;
+      max-width: 32px;
+      border-radius: 4px 4px 0 0;
+      background: var(--text-secondary);
+      opacity: 0.6;
+      transition: opacity 150ms ease;
+    }
+
+    .bar.active {
+      background: var(--accent);
+      opacity: 1;
+    }
+
+    .bar-label {
+      font-family: var(--font-data-dir);
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .table-wrap {
+      background: var(--l2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: var(--l1);
+      font-family: var(--font-data-dir);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+
+    td {
+      color: var(--text-primary);
+    }
+
+    td.muted { color: var(--text-secondary); }
+    td.num {
+      font-family: var(--font-data-dir);
+      text-align: right;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    /* Footer trade-offs */
+    .page-footer {
+      border-top: 1px solid var(--page-border);
+      padding: 24px;
+      background: #0a0a0a;
+    }
+
+    .page-footer h2 {
+      margin: 0 0 16px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .tradeoffs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .tradeoff h3 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--page-fg);
+    }
+
+    .tradeoff ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--page-muted);
+      line-height: 1.6;
+    }
+
+    .tradeoff li { margin-bottom: 6px; }
+
+    @media (max-width: 1200px) {
+      .comparison { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <span class="badge">Mockup de decisão</span>
+    <h1>OverClock — design system unificado aproveitando a estética do x.ai</h1>
+    <p>
+      Este arquivo é um <strong>preview visual autocontido</strong>: nenhum componente de produção foi alterado.
+      As duas colunas abaixo mostram a mesma interface do OverClock (topbar, board, modal de detalhe, painel Insights)
+      sob duas direções de adoção do modelo de superfícies em camadas do x.ai.
+    </p>
+  </header>
+
+  <main class="comparison">
+    <!-- ==========================================================
+         DIREÇÃO A — EMPRÉSTIMO SELETIVO
+         ========================================================== -->
+    <section aria-label="Direção A: empréstimo seletivo">
+      <div class="direction-label">
+        <span><strong>A</strong> — Empréstimo seletivo</span>
+        <span class="mono" style="font-size:11px;color:var(--text-muted)">acento OverClock</span>
+      </div>
+      <div class="viewport" data-direction="selective">
+        <header class="topbar">
+          <div class="topbar-l1">
+            <span class="wordmark">overclick</span>
+            <span class="control active"><span class="status-dot"></span> 2 rodando</span>
+            <span class="stat">Custo <span class="money">~US$ 27,10</span></span>
+            <span class="control">⋯</span>
+          </div>
+          <div class="topbar-l2">
+            <span class="control"><span class="icon">▾</span> Todos os projetos</span>
+            <span class="control"><span class="icon">▾</span> V1 — Zero investiga a fundo…</span>
+            <span class="control active"><span class="icon">⧩</span> Filtros <span class="count">2</span></span>
+            <span class="control">limpar</span>
+            <span class="spacer"></span>
+            <span class="control">Mover para missão</span>
+          </div>
+        </header>
+
+        <div class="main">
+          <div class="board">
+            <div class="column">
+              <div class="column-header"><span>Aberto</span><span class="count">8</span></div>
+              <article class="card">
+                <div class="card-meta"><span class="card-type mono">OCL-27 · feature</span><span class="card-cost">~$2.10</span></div>
+                <div class="card-title">Continuação do OCL-15: contexto do projeto (context + current_version…)</div>
+                <div class="card-footer"><span class="status-dot"></span><span>sol · aberto 21 min</span></div>
+              </article>
+              <article class="card bug">
+                <div class="card-meta"><span class="card-type mono">OCL-31 · bug</span><span class="card-cost">~$0.80</span></div>
+                <div class="card-title">Foco do teclado some ao abrir o painel de filtros em telas pequenas</div>
+                <div class="card-footer"><span class="status-dot" style="background:var(--danger)"></span><span>claude · aberto 1 h</span></div>
+              </article>
+              <article class="card">
+                <div class="card-meta"><span class="card-type mono">OCL-33 · rfc</span><span class="card-cost">—</span></div>
+                <div class="card-title">Especificar tokens de motion para reduced-motion</div>
+                <div class="card-footer"><span class="status-dot" style="background:var(--text-muted)"></span><span>kimi · aberto 3 h</span></div>
+              </article>
+            </div>
+
+            <div class="column">
+              <div class="column-header"><span>Em execução</span><span class="count">3</span></div>
+              <article class="card">
+                <div class="card-meta"><span class="card-type mono">OCL-28 · feature</span><span class="card-cost">~$4.20</span></div>
+                <div class="card-title">Migrar topbar para os tokens --oc-* e anatomia Control</div>
+                <div class="card-footer"><span class="status-dot"></span><span>codex · 12 min</span></div>
+              </article>
+              <article class="card">
+                <div class="card-meta"><span class="card-type mono">OCL-30 · feature</span><span class="card-cost">~$1.50</span></div>
+                <div class="card-title">Adicionar teste de contraste nos tokens de tema</div>
+                <div class="card-footer"><span class="status-dot"></span><span>opus · 47 min</span></div>
+              </article>
+            </div>
+
+            <div class="column">
+              <div class="column-header"><span>Feito</span><span class="count">5</span></div>
+              <article class="card">
+                <div class="card-meta"><span class="card-type mono">OCL-24 · feature</span><span class="card-cost">~$3.10</span></div>
+                <div class="card-title">Snap-scroll horizontal entre colunas do board</div>
+                <div class="card-footer"><span class="status-dot" style="background:var(--text-muted)"></span><span>sol · feito 2 h</span></div>
+              </article>
+            </div>
+          </div>
+
+          <aside class="side-panel">
+            <div class="detail">
+              <div class="detail-header">
+                <span class="detail-id">OCL-127 · rfc · alta</span>
+                <span class="control" style="height:28px;padding:0 8px">×</span>
+              </div>
+              <h2 class="detail-title">Preview visual: design system unificado (mockup HTML) aproveitando o x.ai</h2>
+              <div class="detail-section">
+                <h4 class="detail-section-title">Harness</h4>
+                <div class="detail-row"><span class="label">Executor</span><span class="value">kimi · max</span></div>
+                <div class="detail-row"><span class="label">Branch</span><span class="value mono">ocl-127-…</span></div>
+                <div class="detail-row"><span class="label">Custo estimado</span><span class="value">~US$ 8,40</span></div>
+              </div>
+              <div class="detail-actions">
+                <span class="btn btn-primary">Abrir PR</span>
+                <span class="btn btn-ghost">Liberar</span>
+              </div>
+            </div>
+
+            <div class="insights">
+              <h3 class="insights-title">Insights · 7 dias</h3>
+              <div class="chart">
+                <div class="bar-group"><div class="bar" style="height:40%"></div><span class="bar-label">Seg</span></div>
+                <div class="bar-group"><div class="bar" style="height:55%"></div><span class="bar-label">Ter</span></div>
+                <div class="bar-group"><div class="bar active" style="height:85%"></div><span class="bar-label">Qua</span></div>
+                <div class="bar-group"><div class="bar" style="height:60%"></div><span class="bar-label">Qui</span></div>
+                <div class="bar-group"><div class="bar" style="height:45%"></div><span class="bar-label">Sex</span></div>
+                <div class="bar-group"><div class="bar" style="height:30%"></div><span class="bar-label">Sáb</span></div>
+                <div class="bar-group"><div class="bar" style="height:20%"></div><span class="bar-label">Dom</span></div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Modelo</th><th>Cards</th><th class="num">Custo</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>claude-opus-4-8</td><td class="muted">12</td><td class="num">US$ 14,20</td></tr>
+                    <tr><td>kimi-k2.5</td><td class="muted">28</td><td class="num">US$ 6,80</td></tr>
+                    <tr><td>codex</td><td class="muted">9</td><td class="num">US$ 3,10</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================
+         DIREÇÃO B — ADOÇÃO TOTAL x.ai
+         ========================================================== -->
+    <section aria-label="Direção B: adoção total x.ai">
+      <div class="direction-label">
+        <span><strong>B</strong> — Adoção total x.ai</span>
+        <span class="mono" style="font-size:11px;color:var(--text-muted)">acento branco</span>
+      </div>
+      <div class="viewport" data-direction="full-xai">
+        <header class="topbar">
+          <div class="topbar-l1">
+            <span class="wordmark">overclick</span>
+            <span class="control active"><span class="status-dot"></span> 2 rodando</span>
+            <span class="stat">Custo <span class="money">~US$ 27,10</span></span>
+            <span class="control">⋯</span>
+          </div>
+          <div class="topbar-l2">
+            <span class="control"><span class="icon">▾</span> Todos os projetos</span>
+            <span class="control"><span class="icon">▾</span> V1 — Zero investiga a fundo…</span>
+            <span class="control active"><span class="icon">⧩</span> Filtros <span class="count">2</span></span>
+            <span class="control">limpar</span>
+            <span class="spacer"></span>
+            <span class="control">Mover para missão</span>
+          </div>
+        </header>
+
+        <div class="main">
+          <div class="board">
+            <div class="column">
+              <div class="column-header"><span>Aberto</span><span class="count">8</span></div>
+              <article class="card">
+                <div class="card-meta"><span class="card-type mono">OCL-27 · feature</span><span class="card-cost">~$2.10</span></div>
+                <div class="card-title">Continuação do OCL-15: contexto do projeto (context + current_version…)</div>
+                <div class="card-footer"><span class="status-dot"></span><span>sol · aberto 21 min</span></div>
+              </article>
+              <article class="card bug">
+                <div class="card-meta"><span class="card-type mono">OCL-31 · bug</span><span class="card-cost">~$0.80</span></div>
+                <div class="card-title">Foco do teclado some ao abrir o painel de filtros em telas pequenas</div>
+                <div class="card-footer"><span class="status-dot" style="background:var(--danger)"></span><span>claude · aberto 1 h</span></div>
+              </article>
+              <article class="card">
+                <div class="card-meta"><span class="card-type mono">OCL-33 · rfc</span><span class="card-cost">—</span></div>
+                <div class="card-title">Especificar tokens de motion para reduced-motion</div>
+                <div class="card-footer"><span class="status-dot" style="background:var(--text-muted)"></span><span>kimi · aberto 3 h</span></div>
+              </article>
+            </div>
+
+            <div class="column">
+              <div class="column-header"><span>Em execução</span><span class="count">3</span></div>
+              <article class="card">
+                <div class="card-meta"><span class="card-type mono">OCL-28 · feature</span><span class="card-cost">~$4.20</span></div>
+                <div class="card-title">Migrar topbar para os tokens --oc-* e anatomia Control</div>
+                <div class="card-footer"><span class="status-dot"></span><span>codex · 12 min</span></div>
+              </article>
+              <article class="card">
+                <div class="card-meta"><span class="card-type mono">OCL-30 · feature</span><span class="card-cost">~$1.50</span></div>
+                <div class="card-title">Adicionar teste de contraste nos tokens de tema</div>
+                <div class="card-footer"><span class="status-dot"></span><span>opus · 47 min</span></div>
+              </article>
+            </div>
+
+            <div class="column">
+              <div class="column-header"><span>Feito</span><span class="count">5</span></div>
+              <article class="card">
+                <div class="card-meta"><span class="card-type mono">OCL-24 · feature</span><span class="card-cost">~$3.10</span></div>
+                <div class="card-title">Snap-scroll horizontal entre colunas do board</div>
+                <div class="card-footer"><span class="status-dot" style="background:var(--text-muted)"></span><span>sol · feito 2 h</span></div>
+              </article>
+            </div>
+          </div>
+
+          <aside class="side-panel">
+            <div class="detail">
+              <div class="detail-header">
+                <span class="detail-id">OCL-127 · rfc · alta</span>
+                <span class="control" style="height:28px;padding:0 8px">×</span>
+              </div>
+              <h2 class="detail-title">Preview visual: design system unificado (mockup HTML) aproveitando o x.ai</h2>
+              <div class="detail-section">
+                <h4 class="detail-section-title">Harness</h4>
+                <div class="detail-row"><span class="label">Executor</span><span class="value">kimi · max</span></div>
+                <div class="detail-row"><span class="label">Branch</span><span class="value mono">ocl-127-…</span></div>
+                <div class="detail-row"><span class="label">Custo estimado</span><span class="value">~US$ 8,40</span></div>
+              </div>
+              <div class="detail-actions">
+                <span class="btn btn-primary">Abrir PR</span>
+                <span class="btn btn-ghost">Liberar</span>
+              </div>
+            </div>
+
+            <div class="insights">
+              <h3 class="insights-title">Insights · 7 dias</h3>
+              <div class="chart">
+                <div class="bar-group"><div class="bar" style="height:40%"></div><span class="bar-label">Seg</span></div>
+                <div class="bar-group"><div class="bar" style="height:55%"></div><span class="bar-label">Ter</span></div>
+                <div class="bar-group"><div class="bar active" style="height:85%"></div><span class="bar-label">Qua</span></div>
+                <div class="bar-group"><div class="bar" style="height:60%"></div><span class="bar-label">Qui</span></div>
+                <div class="bar-group"><div class="bar" style="height:45%"></div><span class="bar-label">Sex</span></div>
+                <div class="bar-group"><div class="bar" style="height:30%"></div><span class="bar-label">Sáb</span></div>
+                <div class="bar-group"><div class="bar" style="height:20%"></div><span class="bar-label">Dom</span></div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Modelo</th><th>Cards</th><th class="num">Custo</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>claude-opus-4-8</td><td class="muted">12</td><td class="num">US$ 14,20</td></tr>
+                    <tr><td>kimi-k2.5</td><td class="muted">28</td><td class="num">US$ 6,80</td></tr>
+                    <tr><td>codex</td><td class="muted">9</td><td class="num">US$ 3,10</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="page-footer">
+    <h2>Trade-offs: A vs B</h2>
+    <div class="tradeoffs">
+      <div class="tradeoff">
+        <h3>A — Empréstimo seletivo</h3>
+        <ul>
+          <li>Mantém o acento vermelho e a identidade tipográfica do OverClock (Geist Mono como voz de dados).</li>
+          <li>Ganha a disciplina das superfícies em camadas e a restrição cromática do x.ai sem parecer um produto diferente.</li>
+          <li>Menor choque para usuários atuais; a transição é evolutiva, não revolucionária.</li>
+          <li>Risco: o acento vermelho em alta densidade pode competir com status verde/vermelho se não for contido.</li>
+        </ul>
+      </div>
+      <div class="tradeoff">
+        <h3>B — Adoção total x.ai</h3>
+        <ul>
+          <li>Visual mais limpo e imediatamente reconhecível como “escola x.ai”: branco puro sobre near-black, pouca cor.</li>
+          <li>Acento branco funciona bem como ênfase, mas exige cuidado para não confundir “selecionado” com “desabilitado”.</li>
+          <li>Perde a identidade vermelha do OverClock; pode parecer genérico se o mono/tipografia não forem bem ajustados.</li>
+          <li>Maior impacto de mudança; exige revisitar ilustrações, landing e tom de voz para não parecer um tema genérico dark.</li>
+        </ul>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
