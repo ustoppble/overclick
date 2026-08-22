@@ -338,7 +338,7 @@ write_codex_mcp() {
 merge_json_config() {
   local mode=$1 file=$2 source_hooks=${3:-}
   mkdir -p "$(dirname -- "$file")"
-  if command -v python3 >/dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1 && runtime_works python3; then
     OC_JSON_MODE=$mode OC_JSON_FILE=$file OC_MCP_URL=$mcp_url OC_MCP_TOKEN=$token \
       OC_HOOK_SOURCE=$source_hooks OC_PLUGIN_TARGET=$plugin_target python3 <<'PY'
 import json, os, pathlib, tempfile
@@ -397,7 +397,7 @@ PY
     return
   fi
 
-  if command -v node >/dev/null 2>&1; then
+  if command -v node >/dev/null 2>&1 && runtime_works node; then
     OC_JSON_MODE=$mode OC_JSON_FILE=$file OC_MCP_URL=$mcp_url OC_MCP_TOKEN=$token \
       OC_HOOK_SOURCE=$source_hooks OC_PLUGIN_TARGET=$plugin_target node <<'JS'
 const fs = require("node:fs");
@@ -511,7 +511,7 @@ quiet_try() {
 verify_claude_plugin() {
   local listing
   listing=$(claude plugin list --json 2>/dev/null) || return 1
-  if command -v python3 >/dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1 && runtime_works python3; then
     printf '%s' "$listing" | python3 -c '
 import json, sys
 try:
@@ -526,7 +526,7 @@ sys.exit(1)
 '
     return $?
   fi
-  if command -v node >/dev/null 2>&1; then
+  if command -v node >/dev/null 2>&1 && runtime_works node; then
     printf '%s' "$listing" | node -e '
 let data = "";
 process.stdin.on("data", chunk => { data += chunk; });
@@ -548,7 +548,7 @@ process.stdin.on("end", () => {
 verify_codex_plugin() {
   local listing
   listing=$(codex plugin list --json 2>/dev/null) || return 1
-  if command -v python3 >/dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1 && runtime_works python3; then
     printf '%s' "$listing" | python3 -c '
 import json, sys
 try:
@@ -727,7 +727,7 @@ KIMIPY
 
 if has_cli kimi; then
   merge_json_config mcp-kimi "$install_home/.kimi-code/mcp.json"
-  if command -v python3 >/dev/null 2>&1 && kimi_register_plugin; then
+  if command -v python3 >/dev/null 2>&1 && runtime_works python3 && kimi_register_plugin; then
     printf '%s\n' "Kimi plugin configured."
   else
     printf '%s\n' "Kimi plugin needs manual confirmation: run /plugins install $plugin_target inside Kimi Code." >&2
