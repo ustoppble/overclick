@@ -294,4 +294,84 @@ describe("one-time token pairing", () => {
     const live = await exchangePairingCode(world.db, second.code);
     expect(live.ok).toBe(true);
   });
+  /**
+   * The second pairing on a workspace used to be impossible.
+   *
+   * `mcp_token_workspace_label` is unique on (workspace_id, label) and the
+   * default label is a constant, so the insert threw and `/api/pair` answered
+   * 500 — permanently, because nothing in the UI can free a label. The path
+   * there is the most ordinary one there is: pair again after a first attempt
+   * died before the token reached the agent.
+   */
+  it("pairs a second agent when the default label is already taken", async () => {
+    world = await createTestWorld();
+
+    const first = await createPairingCode(world.db, {
+      workspaceId: world.workspaceId,
+      label: "paired agent",
+    });
+    const one = await exchangePairingCode(world.db, first.code, AGENT);
+    expect(one.ok).toBe(true);
+    if (one.ok) expect(one.label).toBe("paired agent");
+
+    const second = await createPairingCode(world.db, {
+      workspaceId: world.workspaceId,
+      label: "paired agent",
+    });
+    const two = await exchangePairingCode(world.db, second.code, AGENT);
+
+    // Before the fix this was `{ ok: false }` via a thrown unique violation,
+    // surfaced to the caller as HTTP 500.
+    expect(two.ok).toBe(true);
+    if (two.ok) expect(two.label).toBe("paired agent (2)");
+
+    // Two usable tokens, and the labels still tell them apart. The world is
+    // seeded with fixture tokens of its own, so look only at the ones this
+    // test paired.
+    const rows = await world.db
+      .select({ label: mcpToken.label })
+      .from(mcpToken)
+      .where(eq(mcpToken.workspaceId, world.workspaceId));
+    const paired = rows
+      .map((r) => r.label)
+      .filter((label) => label.startsWith("paired agent"))
+      .sort();
+    expect(paired).toEqual(["paired agent", "paired agent (2)"]);
+    if (one.ok) expect(await authenticateBearer(world.db, `Bearer ${one.token}`)).toBeTruthy();
+    if (two.ok) expect(await authenticateBearer(world.db, `Bearer ${two.token}`)).toBeTruthy();
+  });
+
+  /**
+   * Revoking is what an operator reaches for after a pairing goes wrong, so it
+   * is the one action that must not make the next attempt worse. The unique
+   * constraint does not exclude revoked rows, so the label outlives the token
+   * it belonged to.
+   */
+  it("does not let a revoked token hold its label hostage", async () => {
+    world = await createTestWorld();
+
+    const first = await createPairingCode(world.db, {
+      workspaceId: world.workspaceId,
+      label: "paired agent",
+    });
+    const one = await exchangePairingCode(world.db, first.code, AGENT);
+    expect(one.ok).toBe(true);
+
+    await world.db
+      .update(mcpToken)
+      .set({ revoked: true })
+      .where(eq(mcpToken.workspaceId, world.workspaceId));
+
+    const second = await createPairingCode(world.db, {
+      workspaceId: world.workspaceId,
+      label: "paired agent",
+    });
+    const two = await exchangePairingCode(world.db, second.code, AGENT);
+
+    expect(two.ok).toBe(true);
+    if (two.ok) {
+      expect(two.label).toBe("paired agent (2)");
+      expect(await authenticateBearer(world.db, `Bearer ${two.token}`)).toBeTruthy();
+    }
+  });
 });
