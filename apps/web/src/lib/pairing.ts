@@ -148,6 +148,39 @@ export async function createPairingCode(
   return { id: row.id, code, expiresAt };
 }
 
+/**
+ * A workspace may not hold two tokens under the same label, and revoking one
+ * does not free it: `mcp_token_workspace_label` does not exclude revoked rows.
+ * The default label is a constant ("paired agent"), so the second pairing on a
+ * workspace collided, the insert below threw, and `/api/pair` answered 500 with
+ * no way back through the UI — the instance was simply unpairable from then on.
+ * That state is reached by the most ordinary action there is: pairing again
+ * after a first attempt died before the token reached the agent.
+ *
+ * So the label the human chose is a preference, not a key: when it is taken,
+ * the next free "<label> (n)" is used. The name still says which agent it is,
+ * and pairing stays repeatable.
+ */
+async function freeTokenLabel(
+  tx: McpDatabase,
+  workspaceId: string,
+  desired: string,
+): Promise<string> {
+  const rows = await tx
+    .select({ label: mcpToken.label })
+    .from(mcpToken)
+    .where(eq(mcpToken.workspaceId, workspaceId));
+  const taken = new Set(rows.map((r) => r.label));
+  if (!taken.has(desired)) return desired;
+  for (let n = 2; n <= 500; n += 1) {
+    const candidate = `${desired} (${n})`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  // 500 tokens deep the suffix is no longer telling anyone anything; fall back
+  // to something that cannot collide rather than throwing the 500 back.
+  return `${desired} (${randomInt(1_000_000, 10_000_000)})`;
+}
+
 export type ExchangeResult =
   | { ok: true; token: string; label: string }
   | { ok: false; error: string };
@@ -191,11 +224,12 @@ export async function exchangePairingCode(
     if (consumed.expiresAt.getTime() < Date.now()) return notFound;
 
     const secret = consumed.secret;
+    const label = await freeTokenLabel(tx, consumed.workspaceId, consumed.label);
     const [token] = await tx
       .insert(mcpToken)
       .values({
         workspaceId: consumed.workspaceId,
-        label: consumed.label,
+        label,
         hash: hashToken(secret),
         tokenPrefix: secret.slice(0, 12),
         createdByUserId: consumed.createdByUserId,
@@ -209,7 +243,7 @@ export async function exchangePairingCode(
       .set({ secret: "", tokenId: token.id })
       .where(eq(pairingCode.id, consumed.id));
 
-    return { ok: true, token: secret, label: consumed.label };
+    return { ok: true, token: secret, label };
   });
 
   if (result.ok) await clearAttempts(db, scope);
