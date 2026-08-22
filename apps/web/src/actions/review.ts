@@ -118,6 +118,44 @@ export async function unvalidateTaskAction(taskId: string): Promise<ActionResult
   return { ok: true };
 }
 
+/**
+ * Adds a prose comment to an open card without moving it — the only path in
+ * the product for a human to answer an `aberto` card. Every other write path
+ * (tick, validate, reopen) requires the card to already be `feito`; a request
+ * for a decision (`tipo: "rfc"`) is asked before any work starts, so it never
+ * reaches that state on its own. Scoped to `rfc` on purpose: `feature`/`bug`
+ * cards keep the existing claim → deliver → validate flow untouched.
+ */
+export async function answerOpenTaskAction(
+  taskId: string,
+  comment: string,
+): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Session expired. Sign in again." };
+
+  const body = comment.trim();
+  if (!body) {
+    return { ok: false, error: "Write an answer before sending." };
+  }
+
+  const row = await db().query.task.findFirst({ where: eq(task.id, taskId) });
+  if (!row) return { ok: false, error: "Card not found." };
+  if (row.status !== "aberto") {
+    return { ok: false, error: "You can only answer a card that is open." };
+  }
+  if (row.tipo !== "rfc") {
+    return { ok: false, error: "Only a decision card (rfc) takes a free-form answer." };
+  }
+
+  await db().insert(taskComment).values({
+    taskId,
+    authorUserId: session.userId,
+    body,
+  });
+  revalidatePath("/home");
+  return { ok: true };
+}
+
 /** feito → aberto, recording the comment the agent reads on its next claim. */
 export async function reopenTaskAction(
   taskId: string,
