@@ -61,7 +61,7 @@ plugin ships no hostname of ours at all.
   `${XDG_CONFIG_HOME:-~/.config}/overclick/config` with mode `600`, or you pass it to your
   CLI's own MCP config. It is never committed, never printed, and never leaves your machine
   except as the `Authorization` header on requests to your instance.
-- **Hook traffic:** `session-start.sh` reads your current cards, and the enforcement guards
+- **Hook traffic:** `session-start.mjs` reads your current cards, and the enforcement guards
   ask the board whether you hold a claim. Both hit the same instance URL.
 
 ## Hooks and least privilege
@@ -71,13 +71,16 @@ board snapshot, and the `PostToolUse` bookkeeping that records or clears the loc
 marker after `task_claim` / `task_deliver` / `task_release`.
 
 The **enforcement** guards are opt-in and ship disabled (`enforce_claim=0`,
-`enforce_stop=0`, `enforce_harness=0` in the config file). `claim-guard.sh` is the one
+`enforce_stop=0`, `enforce_harness=0` in the config file). `claim-guard.mjs` is the one
 matched on `Edit|Write|Bash`: with `enforce_claim=0` it exits silently without inspecting
 anything, and only when you deliberately turn it on does it block a write that has no
 claimed card behind it. Turning it on is a choice you make about your own workflow.
 
-No hook downloads or executes remote content. They are plain POSIX shell, readable in
-`hooks/`, and they use `jq`, `python3`, or `node` — whichever your machine already has.
+No hook downloads or executes remote content. They are plain Node scripts, readable in
+`hooks/`, run as `node "<plugin root>/hooks/x.mjs"`, and they depend on nothing but Node
+itself — no `jq`, no `python3`, no `curl`, no shell. That is also what makes them work on
+Windows without Git Bash, where the previous POSIX-shell hooks could not even be parsed by
+PowerShell.
 
 ## License
 

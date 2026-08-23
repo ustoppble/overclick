@@ -380,7 +380,7 @@ elif mode in ("hooks", "hooks-no-claim-guard"):
             if not any("overclick" in command.lower() for command in commands):
                 kept.append(rule)
         for rule in rules:
-            if mode == "hooks-no-claim-guard" and any("claim-guard.sh" in hook.get("command", "") for hook in rule.get("hooks", [])):
+            if mode == "hooks-no-claim-guard" and any("claim-guard.mjs" in hook.get("command", "") for hook in rule.get("hooks", [])):
                 continue
             serialized = json.dumps(rule).replace("${CLAUDE_PLUGIN_ROOT}", target)
             kept.append(json.loads(serialized))
@@ -427,7 +427,7 @@ if (process.env.OC_JSON_MODE === "mcp-kimi") {
       !(rule.hooks ?? []).some(h => (h.command ?? "").toLowerCase().includes("overclick"))
     );
     const selected = process.env.OC_JSON_MODE === "hooks-no-claim-guard"
-      ? rules.filter(rule => !(rule.hooks ?? []).some(hook => (hook.command ?? "").includes("claim-guard.sh")))
+      ? rules.filter(rule => !(rule.hooks ?? []).some(hook => (hook.command ?? "").includes("claim-guard.mjs")))
       : rules;
     const serialized = JSON.stringify(selected).split("${CLAUDE_PLUGIN_ROOT}").join(process.env.OC_PLUGIN_TARGET);
     data.hooks[event] = [...kept, ...JSON.parse(serialized)];

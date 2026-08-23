@@ -3,7 +3,14 @@ set -eu
 
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 TEST_ROOT=$(mktemp -d)
-trap 'rm -rf -- "$TEST_ROOT"' EXIT
+stop_fixture_board() {
+  [ -n "${FIXTURE_PID:-}" ] || return 0
+  kill "$FIXTURE_PID" 2>/dev/null || true
+  # Reap it, or the shell reports the signal as a job notice on stderr.
+  wait "$FIXTURE_PID" 2>/dev/null || true
+  FIXTURE_PID=""
+}
+trap 'stop_fixture_board; rm -rf -- "$TEST_ROOT"' EXIT
 FIXTURE_URL=$(printf '%s%s%s' 'https' '://' 'fixture')
 
 # Every plugin manifest ships the same version as package.json (OCL-105). The
@@ -51,14 +58,28 @@ fi
 # mcpServers: a registry install cannot know the instance URL, and Kimi drops an
 # unresolvable url silently.
 jq -e '(.skills | index("./plugin/skills/overclick")) and .commands == "./plugin/commands"
-  and (.hooks | length == 6) and (.hooks | all(.command | startswith("./plugin/hooks/")))
+  and (.hooks | length == 6)
+  and (.hooks | all(.command | startswith("node \"./plugin/hooks/") and endswith(".mjs\"")))
   and (has("mcpServers") | not)' \
   "$REPO_ROOT/.kimi-plugin/plugin.json" >/dev/null
 jq -e '.hooks | keys | sort == ["PostToolUse", "PreToolUse", "SessionStart", "Stop"]' \
   "$REPO_ROOT/plugin/hooks/hooks.json" >/dev/null
 jq -e '(.hooks.PostToolUse | length == 2) and (.hooks.PreToolUse | length == 2)' \
   "$REPO_ROOT/plugin/hooks/hooks.json" >/dev/null
-test -x "$REPO_ROOT/plugin/hooks/claim-guard.sh"
+# OCL-132. Claude Code on Windows without Git Bash runs hook commands through
+# PowerShell, which cannot even parse `"${CLAUDE_PLUGIN_ROOT}"/hooks/x.sh` (the
+# bare slash after the closing quote reads as a division operator) and has no
+# bash to run the script anyway, so every hook died silently there. The whole
+# path now lives inside the quotes and node — guaranteed on any Claude Code
+# client — is the interpreter. antigravity.sh is the one shell script left: it
+# is an install.sh-side dialect adapter, not a Claude Code hook.
+jq -e '[.hooks[][].hooks[].command]
+  | all(startswith("node \"${CLAUDE_PLUGIN_ROOT}/hooks/") and endswith(".mjs\""))' \
+  "$REPO_ROOT/plugin/hooks/hooks.json" >/dev/null
+for entrypoint in common claim-guard session-start stop-guard post-deliver pre-create; do
+  test -f "$REPO_ROOT/plugin/hooks/$entrypoint.mjs"
+done
+test "$(find "$REPO_ROOT/plugin/hooks" -name '*.sh' | wc -l | tr -d ' ')" -eq 1
 test "$(find "$REPO_ROOT/plugin/commands" -name '*.md' | wc -l | tr -d ' ')" -eq 5
 test "$(find "$REPO_ROOT/plugin/skills" -name SKILL.md | wc -l | tr -d ' ')" -eq 1
 
@@ -198,8 +219,8 @@ fi
 test "$(grep -c '<!-- overclick:start -->' "$TEST_ROOT/home/.claude/CLAUDE.md")" -eq 1
 test "$(grep -c '^# overclick:start$' "$TEST_ROOT/home/.codex/config.toml")" -eq 1
 test "$(grep -c 'existing-hook' "$TEST_ROOT/home/.codex/hooks.json")" -eq 1
-test "$(grep -c 'session-start.sh' "$TEST_ROOT/home/.codex/hooks.json")" -eq 1
-test "$(grep -c 'claim-guard.sh' "$TEST_ROOT/home/.codex/hooks.json" || true)" -eq 0
+test "$(grep -c 'session-start.mjs' "$TEST_ROOT/home/.codex/hooks.json")" -eq 1
+test "$(grep -c 'claim-guard.mjs' "$TEST_ROOT/home/.codex/hooks.json" || true)" -eq 0
 test "$(grep -c '^enforce_claim=0$' "$TEST_ROOT/home/.config/overclick/config")" -eq 1
 test "$(grep -c '^token=' "$TEST_ROOT/home/.config/overclick/config")" -eq 1
 test "$(file_mode "$TEST_ROOT/home/.config/overclick/config")" -eq 600
@@ -217,7 +238,7 @@ jq -e --arg url "$FIXTURE_URL/mcp" '.mcpServers.overclick.transport == "http"
   and .mcpServers.overclick.url == $url
   and (.mcpServers.overclick | has("type") | not)' \
   "$TEST_ROOT/home/.kimi-code/mcp.json" >/dev/null
-test -x "$TEST_ROOT/home/.kimi-code/plugins/managed/overclick/hooks/claim-guard.sh"
+test -f "$TEST_ROOT/home/.kimi-code/plugins/managed/overclick/hooks/claim-guard.mjs"
 
 # Antigravity gets the package through its own manager, so what has to hold is
 # what the manager ends up holding: the MCP shape it actually parses
@@ -473,102 +494,177 @@ esac
 SH
 chmod +x "$TEST_ROOT/bin/curl"
 
+# OCL-132. The hooks are Node now, so the board fixture stops being a curl stub
+# on PATH and becomes a real HTTP server they reach with fetch. The state file
+# is what the old OC_TEST_HAS_CLAIM env var used to be: the curl stub read it
+# per invocation, and a server started once has to read it per request.
+cat >"$TEST_ROOT/fixture-board.mjs" <<'JS'
+import fs from "node:fs";
+import http from "node:http";
+
+const card = { short_id: "T-1", title: "Fixture card", status: "em_execucao" };
+const hasClaim = () => {
+  try {
+    return fs.readFileSync(process.env.OC_FIXTURE_STATE, "utf8").trim() !== "0";
+  } catch {
+    return true;
+  }
+};
+
+http
+  .createServer((request, response) => {
+    let raw = "";
+    request.on("data", (chunk) => {
+      raw += chunk;
+    });
+    request.on("end", () => {
+      // The hook has to authenticate. An unauthenticated call is the board
+      // refusing, not a fixture shortcut.
+      if (request.headers.authorization !== "Bearer fixture") {
+        response.writeHead(401).end("{}");
+        return;
+      }
+      let body;
+      if (raw.includes("harness_recommend")) {
+        body = {
+          result: {
+            structuredContent: {
+              harness: { cli: "codex", model: "model-fixture", effort: "high" },
+            },
+          },
+        };
+      } else if (raw.includes("task_list") && !hasClaim()) {
+        body = { result: { structuredContent: { tasks: [], truncated: false } } };
+      } else {
+        body = { result: { structuredContent: { tasks: [card], truncated: false } } };
+      }
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(body));
+    });
+  })
+  .listen(0, "127.0.0.1", function listening() {
+    fs.writeFileSync(process.env.OC_FIXTURE_PORT, String(this.address().port));
+  });
+JS
+
+FIXTURE_STATE="$TEST_ROOT/fixture-has-claim"
+FIXTURE_PORT_FILE="$TEST_ROOT/fixture-port"
+printf '1' >"$FIXTURE_STATE"
+has_claim() { printf '%s' "$1" >"$FIXTURE_STATE"; }
+
+OC_FIXTURE_STATE="$FIXTURE_STATE" OC_FIXTURE_PORT="$FIXTURE_PORT_FILE" \
+  node "$TEST_ROOT/fixture-board.mjs" &
+FIXTURE_PID=$!
+waited=0
+while [ ! -s "$FIXTURE_PORT_FILE" ]; do
+  waited=$((waited + 1))
+  test "$waited" -lt 150 || { echo "the fixture board never came up" >&2; exit 1; }
+  sleep 0.1
+done
+FIXTURE_PORT=$(cat "$FIXTURE_PORT_FILE")
+
 HOOK_CONFIG="$TEST_ROOT/hook-config"
-cat >"$HOOK_CONFIG" <<'EOF'
-url=fixture
+cat >"$HOOK_CONFIG" <<EOF
+url=http://127.0.0.1:$FIXTURE_PORT/mcp
 token=fixture
 enforce_stop=0
 enforce_harness=0
 enforce_claim=0
 EOF
-snapshot=$(PATH="$TEST_ROOT/bin:$PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/session-start.sh")
+
+# The point of the port: no jq, no python3, no curl, no shell utility. Every
+# hook below runs against a PATH holding nothing but node.
+mkdir -p "$TEST_ROOT/nodeonly"
+ln -s "$(command -v node)" "$TEST_ROOT/nodeonly/node"
+HOOK_PATH="$TEST_ROOT/nodeonly"
+
+snapshot=$(PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/session-start.mjs")
 printf '%s' "$snapshot" | grep -q 'T-1'
+printf '%s' "$snapshot" | grep -q 'OverClick board snapshot'
 
-mkdir -p "$TEST_ROOT/nojq"
-for utility in python3 grep tail dirname cat date mkdir mktemp chmod mv rm sed; do
-  ln -s "$(command -v "$utility")" "$TEST_ROOT/nojq/$utility"
-done
-ln -s "$TEST_ROOT/bin/curl" "$TEST_ROOT/nojq/curl"
-python_snapshot=$(PATH="$TEST_ROOT/nojq" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/session-start.sh")
-printf '%s' "$python_snapshot" | grep -q 'T-1'
+# A board the hook cannot authenticate against says nothing at all, rather than
+# leaking an HTTP error into the session transcript.
+cat >"$TEST_ROOT/hook-config-bad-token" <<EOF
+url=http://127.0.0.1:$FIXTURE_PORT/mcp
+token=wrong
+EOF
+test -z "$(PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$TEST_ROOT/hook-config-bad-token" node "$REPO_ROOT/plugin/hooks/session-start.mjs")"
 
-mkdir -p "$TEST_ROOT/nojq-node"
-for utility in node grep tail dirname cat date mkdir mktemp chmod mv rm sed; do
-  ln -s "$(command -v "$utility")" "$TEST_ROOT/nojq-node/$utility"
-done
-ln -s "$TEST_ROOT/bin/curl" "$TEST_ROOT/nojq-node/curl"
-
-test -z "$(PATH="$TEST_ROOT/bin:$PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/stop-guard.sh")"
+test -z "$(PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/stop-guard.mjs")"
 sed -i.bak 's/enforce_stop=0/enforce_stop=1/' "$HOOK_CONFIG"
-stop_result=$(PATH="$TEST_ROOT/bin:$PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/stop-guard.sh")
+stop_result=$(PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/stop-guard.mjs")
 printf '%s' "$stop_result" | grep -q '"decision":"block"'
 
 sed -i.bak 's/enforce_harness=0/enforce_harness=1/' "$HOOK_CONFIG"
 matching_input='{"tool_input":{"type":"feature","harness":{"cli":"codex","model":"model-fixture","effort":"high"}}}'
-test -z "$(printf '%s' "$matching_input" | PATH="$TEST_ROOT/bin:$PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/pre-create.sh")"
+test -z "$(printf '%s' "$matching_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/pre-create.mjs")"
 mismatched_input='{"tool_input":{"type":"feature","harness":{"cli":"codex","model":"other-model","effort":"high"}}}'
-pre_result=$(printf '%s' "$mismatched_input" | PATH="$TEST_ROOT/bin:$PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/pre-create.sh")
+pre_result=$(printf '%s' "$mismatched_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/pre-create.mjs")
 printf '%s' "$pre_result" | grep -q '"decision":"block"'
 
+has_claim 0
 write_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"Write",tool_input:{file_path:"changed.txt",content:"fixture"}}')
-test -z "$(printf '%s' "$write_input" | PATH="$TEST_ROOT/bin:$PATH" OC_TEST_HAS_CLAIM=0 OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh")"
+test -z "$(printf '%s' "$write_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs")"
 
 sed -i.bak 's/enforce_claim=0/enforce_claim=1/' "$HOOK_CONFIG"
-blocked_write=$(printf '%s' "$write_input" | PATH="$TEST_ROOT/bin:$PATH" OC_TEST_HAS_CLAIM=0 OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh")
+blocked_write=$(printf '%s' "$write_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs")
 printf '%s' "$blocked_write" | grep -Fq 'claima um card no board antes: task_claim {id}'
 
 read_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"Bash",tool_input:{command:"git status --short"}}')
-test -z "$(printf '%s' "$read_input" | PATH="$TEST_ROOT/bin:$PATH" OC_TEST_HAS_CLAIM=0 OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh")"
+test -z "$(printf '%s' "$read_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs")"
 write_bash_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"Bash",tool_input:{command:"printf fixture > changed.txt"}}')
-blocked_bash=$(printf '%s' "$write_bash_input" | PATH="$TEST_ROOT/bin:$PATH" OC_TEST_HAS_CLAIM=0 OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh")
+blocked_bash=$(printf '%s' "$write_bash_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs")
 printf '%s' "$blocked_bash" | grep -Fq 'claima um card no board antes: task_claim {id}'
+# A write hidden behind a redirection the guard must not mistake for a discard.
+commit_bash_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"Bash",tool_input:{command:"git commit -m fixture >/dev/null 2>&1"}}')
+blocked_commit=$(printf '%s' "$commit_bash_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs")
+printf '%s' "$blocked_commit" | grep -Fq 'claima um card no board antes: task_claim {id}'
 
 failed_claim_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"task_claim",tool_input:{task_id:"T-1"},tool_response:{isError:true,content:[{type:"text",text:"claim failed"}]}}')
-printf '%s' "$failed_claim_input" | PATH="$TEST_ROOT/bin:$PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh"
+printf '%s' "$failed_claim_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs"
 test ! -e "$TEST_ROOT/project/.overclick/claim.json"
 
 claim_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"mcp__overclick__task_claim",tool_input:{task_id:"T-1"},tool_response:{structuredContent:{task:{short_id:"T-1",status:"em_execucao"},attempt:{id:"attempt-fixture",started_at:"2026-08-19T12:00:00.000Z"}}}}')
-printf '%s' "$claim_input" | PATH="$TEST_ROOT/bin:$PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh"
+printf '%s' "$claim_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs"
 test -f "$TEST_ROOT/project/.overclick/claim.json"
 test "$(file_mode "$TEST_ROOT/project/.overclick/claim.json")" -eq 600
 jq -e '.task_id == "T-1" and .claimed_at == "2026-08-19T12:00:00.000Z" and .session_id == "session-fixture"' "$TEST_ROOT/project/.overclick/claim.json" >/dev/null
-test -z "$(printf '%s' "$write_input" | PATH="$TEST_ROOT/bin:$PATH" OC_TEST_HAS_CLAIM=0 OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh")"
+test -z "$(printf '%s' "$write_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs")"
 other_session_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"another-session",tool_name:"Write",tool_input:{file_path:"changed.txt",content:"fixture"}}')
-blocked_other_session=$(printf '%s' "$other_session_input" | PATH="$TEST_ROOT/bin:$PATH" OC_TEST_HAS_CLAIM=0 OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh")
+blocked_other_session=$(printf '%s' "$other_session_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs")
 printf '%s' "$blocked_other_session" | grep -Fq 'claima um card no board antes: task_claim {id}'
 
 deliver_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"mcp__overclick__task_deliver",tool_input:{task_id:"T-1"}}')
-printf '%s' "$deliver_input" | PATH="$TEST_ROOT/bin:$PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh"
+printf '%s' "$deliver_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs"
 test ! -e "$TEST_ROOT/project/.overclick/claim.json"
-blocked_after_deliver=$(printf '%s' "$write_input" | PATH="$TEST_ROOT/bin:$PATH" OC_TEST_HAS_CLAIM=0 OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh")
+blocked_after_deliver=$(printf '%s' "$write_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs")
 printf '%s' "$blocked_after_deliver" | grep -Fq 'claima um card no board antes: task_claim {id}'
 
-test -z "$(printf '%s' "$write_input" | PATH="$TEST_ROOT/bin:$PATH" OC_TEST_HAS_CLAIM=1 OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh")"
+has_claim 1
+test -z "$(printf '%s' "$write_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs")"
+has_claim 0
 
-printf '%s' "$claim_input" | PATH="$TEST_ROOT/bin:$PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh"
+printf '%s' "$claim_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs"
 release_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"task_release",tool_input:{task_id:"T-1"}}')
-printf '%s' "$release_input" | PATH="$TEST_ROOT/bin:$PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh"
+printf '%s' "$release_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs"
 test ! -e "$TEST_ROOT/project/.overclick/claim.json"
 
-mkdir -p "$TEST_ROOT/project-python"
-python_claim_input=$(jq -nc --arg cwd "$TEST_ROOT/project-python" '{cwd:$cwd,session_id:"python-session",tool_name:"task_claim",tool_input:{task_id:"T-2"},tool_response:{structuredContent:{task:{short_id:"T-2",status:"em_execucao"},attempt:{started_at:"2026-08-19T12:30:00.000Z"}}}}')
-printf '%s' "$python_claim_input" | PATH="$TEST_ROOT/nojq" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh"
-test -f "$TEST_ROOT/project-python/.overclick/claim.json"
-python_write_input=$(jq -nc --arg cwd "$TEST_ROOT/project-python" '{cwd:$cwd,session_id:"python-session",tool_name:"Write",tool_input:{file_path:"changed.txt",content:"fixture"}}')
-test -z "$(printf '%s' "$python_write_input" | PATH="$TEST_ROOT/nojq" OC_TEST_HAS_CLAIM=0 OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh")"
-python_deliver_input=$(jq -nc --arg cwd "$TEST_ROOT/project-python" '{cwd:$cwd,session_id:"python-session",tool_name:"task_deliver",tool_input:{task_id:"T-2"}}')
-printf '%s' "$python_deliver_input" | PATH="$TEST_ROOT/nojq" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh"
-test ! -e "$TEST_ROOT/project-python/.overclick/claim.json"
-
-mkdir -p "$TEST_ROOT/project-node"
-node_claim_input=$(jq -nc --arg cwd "$TEST_ROOT/project-node" '{cwd:$cwd,session_id:"node-session",tool_name:"task_claim",tool_input:{task_id:"T-3"},tool_response:{structuredContent:{task:{short_id:"T-3",status:"em_execucao"},attempt:{started_at:"2026-08-19T13:00:00.000Z"}}}}')
-printf '%s' "$node_claim_input" | PATH="$TEST_ROOT/nojq-node" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh"
-test -f "$TEST_ROOT/project-node/.overclick/claim.json"
-node_write_input=$(jq -nc --arg cwd "$TEST_ROOT/project-node" '{cwd:$cwd,session_id:"node-session",tool_name:"Write",tool_input:{file_path:"changed.txt",content:"fixture"}}')
-test -z "$(printf '%s' "$node_write_input" | PATH="$TEST_ROOT/nojq-node" OC_TEST_HAS_CLAIM=0 OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh")"
-node_deliver_input=$(jq -nc --arg cwd "$TEST_ROOT/project-node" '{cwd:$cwd,session_id:"node-session",tool_name:"task_deliver",tool_input:{task_id:"T-3"}}')
-printf '%s' "$node_deliver_input" | PATH="$TEST_ROOT/nojq-node" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$REPO_ROOT/plugin/hooks/claim-guard.sh"
-test ! -e "$TEST_ROOT/project-node/.overclick/claim.json"
+# The floor the port promises: an EMPTY PATH. The plugin invokes the hook as
+# `node "<plugin root>/hooks/x.mjs"`, and past that node call there is nothing
+# external left to find — no jq, no python3, no curl, no bash.
+NODE_BIN=$(command -v node)
+mkdir -p "$TEST_ROOT/project-bare"
+bare_claim_input=$(jq -nc --arg cwd "$TEST_ROOT/project-bare" '{cwd:$cwd,session_id:"bare-session",tool_name:"task_claim",tool_input:{task_id:"T-2"},tool_response:{structuredContent:{task:{short_id:"T-2",status:"em_execucao"},attempt:{started_at:"2026-08-19T12:30:00.000Z"}}}}')
+printf '%s' "$bare_claim_input" | PATH= OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$NODE_BIN" "$REPO_ROOT/plugin/hooks/claim-guard.mjs"
+test -f "$TEST_ROOT/project-bare/.overclick/claim.json"
+bare_write_input=$(jq -nc --arg cwd "$TEST_ROOT/project-bare" '{cwd:$cwd,session_id:"bare-session",tool_name:"Write",tool_input:{file_path:"changed.txt",content:"fixture"}}')
+test -z "$(printf '%s' "$bare_write_input" | PATH= OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$NODE_BIN" "$REPO_ROOT/plugin/hooks/claim-guard.mjs")"
+bare_deliver_input=$(jq -nc --arg cwd "$TEST_ROOT/project-bare" '{cwd:$cwd,session_id:"bare-session",tool_name:"task_deliver",tool_input:{task_id:"T-2"}}')
+printf '%s' "$bare_deliver_input" | PATH= OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$NODE_BIN" "$REPO_ROOT/plugin/hooks/claim-guard.mjs"
+test ! -e "$TEST_ROOT/project-bare/.overclick/claim.json"
+has_claim 1
+bare_snapshot=$(PATH= OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" "$NODE_BIN" "$REPO_ROOT/plugin/hooks/session-start.mjs")
+printf '%s' "$bare_snapshot" | grep -q 'T-1'
 
 mkdir -p "$TEST_ROOT/git/remote.git" "$TEST_ROOT/git/work"
 git init --bare "$TEST_ROOT/git/remote.git" >/dev/null 2>&1
@@ -581,7 +677,13 @@ git -C "$TEST_ROOT/git/work" commit -m fixture >/dev/null 2>&1
 git -C "$TEST_ROOT/git/work" remote add origin "$TEST_ROOT/git/remote.git"
 git -C "$TEST_ROOT/git/work" push -u origin HEAD >/dev/null 2>&1
 commit=$(git -C "$TEST_ROOT/git/work" rev-parse HEAD)
-(cd "$TEST_ROOT/git/work" && printf '{"tool_input":{"evidence":[{"text":"commit %s"}]}}' "$commit" | "$REPO_ROOT/plugin/hooks/post-deliver.sh")
+(cd "$TEST_ROOT/git/work" && printf '{"tool_input":{"evidence":[{"text":"commit %s"}]}}' "$commit" | node "$REPO_ROOT/plugin/hooks/post-deliver.mjs")
+# Evidence with no commit id is refused with exit 2, which is what makes the
+# hook a guard rather than a log line.
+if (cd "$TEST_ROOT/git/work" && printf '{"tool_input":{"evidence":[{"text":"shipped it"}]}}' | node "$REPO_ROOT/plugin/hooks/post-deliver.mjs" 2>/dev/null); then
+  echo "post-deliver accepted evidence without a commit id" >&2
+  exit 1
+fi
 
 # OCL-114, the shape of the original failure: a run pointed at a reserved,
 # unresolvable namespace baked that host into the agent configs and every agent
