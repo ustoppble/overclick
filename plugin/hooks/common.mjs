@@ -261,6 +261,47 @@ export function bashWrites(command) {
   return WRITE_COMMANDS.test(command);
 }
 
+// The same question in the other dialect. WRITE_COMMANDS still applies -- git,
+// npm and the coreutils aliases (rm, mv, cp, mkdir) are all real in PowerShell
+// -- so this only adds what is native to it: the *-Item / *-Content verbs and
+// the .NET file APIs, which no amount of coreutils vocabulary would catch.
+const PS_WRITE_COMMANDS = new RegExp(
+  "(^|[;&|(){}\\s])(" +
+    "Set-Content|Add-Content|Clear-Content|Out-File|Tee-Object|" +
+    "New-Item|Remove-Item|Move-Item|Copy-Item|Rename-Item|" +
+    "New-ItemProperty|Set-ItemProperty|Remove-ItemProperty|Rename-ItemProperty|" +
+    "Export-Csv|Export-Clixml|Export-ModuleMember|Set-Acl|" +
+    "New-Item[A-Za-z]*|Write-EventLog" +
+    ")([;&|(){}\\s]|$)" +
+    // Invoke-WebRequest is a read until -OutFile turns it into a download.
+    "|(^|[;&|(){}\\s])(Invoke-WebRequest|Invoke-RestMethod|curl|wget)\\b[^;&|]*-OutFile" +
+    // [System.IO.File]::WriteAllText(...) and friends, short form included.
+    "|\\[\\s*(System\\.)?IO\\.(File|Directory|FileInfo|DirectoryInfo)\\s*\\]\\s*::" +
+    "\\s*(Write|Append|Create|Delete|Move|Copy|Replace|Encrypt|Decrypt|SetAttributes)",
+  "i",
+);
+
+export function powershellWrites(command) {
+  if (!command) return false;
+  // PowerShell discards to $null, not /dev/null, and `2>&1` is a merge rather
+  // than a write. Strip both before asking about redirection.
+  const withoutDiscards = command
+    .replace(/[0-9]*>>?\s*\$null/gi, "")
+    .replace(/[0-9]*>&[0-9]+/g, "");
+  if (REDIRECTION.test(withoutDiscards)) return true;
+  if (PS_WRITE_COMMANDS.test(command)) return true;
+  return WRITE_COMMANDS.test(command);
+}
+
+// Which dialect to ask. An unknown shell tool is NOT assumed harmless: the
+// vocabulary check is a heuristic either way, so the wider of the two runs.
+// This is still an allowlist by tool name -- see SHELL_TOOLS in claim-guard.
+export function shellWrites(toolName, command) {
+  return /^bash$/i.test(toolName ?? "")
+    ? bashWrites(command)
+    : powershellWrites(command);
+}
+
 // A hook that throws is a hook that fails closed on the wrong side: Claude Code
 // prints the stack trace and the guard decision is lost. Every entrypoint wraps
 // its body with this.

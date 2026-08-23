@@ -64,7 +64,7 @@
         ]
       },
       {
-        "matcher": "Edit|Write|Bash",
+        "matcher": "Edit|Write|NotebookEdit|Bash|PowerShell|Shell|Terminal|run_command|execute_command|write_to_file|replace_file_content|edit_notebook",
         "hooks": [
           {
             "type": "command",
