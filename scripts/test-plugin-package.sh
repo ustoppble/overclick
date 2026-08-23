@@ -381,20 +381,30 @@ test "$(grep -c '<!-- overclick:start -->' "$TEST_ROOT/project/AGENTS.md")" -eq 
 mkdir -p "$TEST_ROOT/pair-bin"
 cat >"$TEST_ROOT/pair-bin/curl" <<'SH'
 #!/bin/sh
+# exchange_pairing_code now calls `curl -sS -o <file> -w '%{http_code}'`: the
+# body lands in the -o file and only the HTTP status is on stdout. Emulate that
+# contract, not the old "print the body on stdout" one, or the exchange reads
+# the JSON as a status, falls to the refusal branch, and the install exits 1.
 url=""
 body=""
+out=""
 previous=""
 for argument in "$@"; do
   case "$argument" in
     http://*|https://*) url=$argument ;;
   esac
-  if [ "$previous" = "-d" ]; then body=$argument; fi
+  case "$previous" in
+    -d) body=$argument ;;
+    -o) out=$argument ;;
+  esac
   previous=$argument
 done
 printf '%s %s\n' "$url" "$body" >>"$OC_TEST_PAIR_LOG"
 case "$url:$body" in
   */api/pair:*'"code":"482913"'*)
-    printf '%s' '{"token":"paired-secret","label":"agent","url":"/mcp"}'
+    payload='{"token":"paired-secret","label":"agent","url":"/mcp"}'
+    if [ -n "$out" ]; then printf '%s' "$payload" >"$out"; else printf '%s' "$payload"; fi
+    printf '200'
     exit 0
     ;;
 esac
