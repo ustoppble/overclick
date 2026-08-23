@@ -18,37 +18,37 @@
     {
       "event": "SessionStart",
       "matcher": "*",
-      "command": "./hooks/session-start.sh",
+      "command": "node \"./hooks/session-start.mjs\"",
       "timeout": 15
     },
     {
       "event": "PostToolUse",
       "matcher": "task_claim|mcp__.*__task_claim|task_deliver|mcp__.*__task_deliver|task_release|mcp__.*__task_release",
-      "command": "./hooks/claim-guard.sh",
+      "command": "node \"./hooks/claim-guard.mjs\"",
       "timeout": 15
     },
     {
       "event": "PostToolUse",
       "matcher": "task_deliver|mcp__.*__task_deliver",
-      "command": "./hooks/post-deliver.sh",
+      "command": "node \"./hooks/post-deliver.mjs\"",
       "timeout": 30
     },
     {
       "event": "Stop",
       "matcher": "*",
-      "command": "./hooks/stop-guard.sh",
+      "command": "node \"./hooks/stop-guard.mjs\"",
       "timeout": 15
     },
     {
       "event": "PreToolUse",
       "matcher": "task_create|mcp__.*__task_create",
-      "command": "./hooks/pre-create.sh",
+      "command": "node \"./hooks/pre-create.mjs\"",
       "timeout": 15
     },
     {
       "event": "PreToolUse",
       "matcher": "Edit|Write|Bash",
-      "command": "./hooks/claim-guard.sh",
+      "command": "node \"./hooks/claim-guard.mjs\"",
       "timeout": 15
     }
   ],

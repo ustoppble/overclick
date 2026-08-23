@@ -204,7 +204,7 @@ installing the package:
 - `skills`, `agents` and `commands` are `./`-relative and must resolve inside the
   plugin. `hooks` entries are `{event, matcher?, command, timeout?}` and are validated
   strictly: an unknown key rejects the whole hook. Plugin hooks run with the plugin
-  root as working directory and `KIMI_PLUGIN_ROOT` exported, so `./hooks/x.sh` is correct.
+  root as working directory and `KIMI_PLUGIN_ROOT` exported, so `node "./hooks/x.mjs"` is correct.
 - `mcpServers` uses `transport`, not `type`. A `type` key is silently dropped and the
   transport re-inferred from `url`, so the previous manifest worked by accident; it now
   declares `transport` explicitly.

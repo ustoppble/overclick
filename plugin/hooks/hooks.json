@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/session-start.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\"",
             "timeout": 15,
             "statusMessage": "Loading the OverClick board"
           }
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/claim-guard.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/claim-guard.mjs\"",
             "timeout": 15,
             "statusMessage": "Updating the local OverClick claim marker"
           }
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/post-deliver.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/post-deliver.mjs\"",
             "timeout": 30,
             "statusMessage": "Checking the delivered commit"
           }
@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/stop-guard.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop-guard.mjs\"",
             "timeout": 15,
             "statusMessage": "Checking active OverClick claims"
           }
@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pre-create.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-create.mjs\"",
             "timeout": 15,
             "statusMessage": "Checking the current harness recommendation"
           }
@@ -68,7 +68,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/claim-guard.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/claim-guard.mjs\"",
             "timeout": 15,
             "statusMessage": "Checking for an OverClick claim"
           }

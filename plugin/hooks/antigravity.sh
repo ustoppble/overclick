@@ -19,8 +19,6 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-# shellcheck disable=SC1091
-. "$SCRIPT_DIR/common.sh"
 
 event=${1:-}
 payload=$(cat)
@@ -187,7 +185,7 @@ case "$event" in
   pre-invocation)
     invocation=$(printf '%s' "$normalized" | oc_agy_field invocation_num 2>/dev/null || printf '1')
     [ "$invocation" = "0" ] || { printf '%s\n' '{}'; exit 0; }
-    snapshot=$(sh "$SCRIPT_DIR/session-start.sh" </dev/null 2>/dev/null || true)
+    snapshot=$(node "$SCRIPT_DIR/session-start.mjs" </dev/null 2>/dev/null || true)
     [ -n "$snapshot" ] || { printf '%s\n' '{}'; exit 0; }
     printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}\n' "$(oc_agy_escape "$snapshot")"
     ;;
@@ -195,7 +193,7 @@ case "$event" in
   pre-tool)
     case "$tool_name" in
       task_create|mcp__*__task_create)
-        verdict=$(printf '%s' "$normalized" | sh "$SCRIPT_DIR/pre-create.sh" 2>/dev/null || true)
+        verdict=$(printf '%s' "$normalized" | node "$SCRIPT_DIR/pre-create.mjs" 2>/dev/null || true)
         case "$verdict" in
           *'"decision":"block"'*)
             printf '{"decision":"deny","reason":"%s"}\n' "$(oc_agy_escape "$(oc_agy_reason "$verdict")")"
@@ -207,9 +205,9 @@ case "$event" in
         # Antigravity's PostToolUse has no channel back to the model, so the
         # push check moves ahead of the call. It asks instead of denying: the
         # blocking guards stay opt-in, and the human keeps the last word.
-        # post-deliver.sh inspects the repository through its own working
+        # post-deliver.mjs inspects the repository through its own working
         # directory, and Antigravity starts hooks in the plugin directory.
-        if complaint=$(cd "${repo_root:-.}" && printf '%s' "$normalized" | sh "$SCRIPT_DIR/post-deliver.sh" 2>&1 >/dev/null); then
+        if complaint=$(cd "${repo_root:-.}" && printf '%s' "$normalized" | node "$SCRIPT_DIR/post-deliver.mjs" 2>&1 >/dev/null); then
           oc_agy_allow
         else
           [ -n "$complaint" ] || complaint="OverClick could not verify the delivered commit."
@@ -217,7 +215,7 @@ case "$event" in
         fi
         ;;
       Bash|Edit|Write)
-        verdict=$(printf '%s' "$normalized" | sh "$SCRIPT_DIR/claim-guard.sh" 2>/dev/null || true)
+        verdict=$(printf '%s' "$normalized" | node "$SCRIPT_DIR/claim-guard.mjs" 2>/dev/null || true)
         case "$verdict" in
           *'"decision":"block"'*)
             printf '{"decision":"deny","reason":"%s"}\n' "$(oc_agy_escape "$(oc_agy_reason "$verdict")")"
@@ -233,7 +231,7 @@ case "$event" in
     if [ -z "$tool_error" ]; then
       case "$tool_name" in
         task_claim|mcp__*__task_claim|task_deliver|mcp__*__task_deliver|task_release|mcp__*__task_release)
-          printf '%s' "$normalized" | sh "$SCRIPT_DIR/claim-guard.sh" >/dev/null 2>&1 || true
+          printf '%s' "$normalized" | node "$SCRIPT_DIR/claim-guard.mjs" >/dev/null 2>&1 || true
           ;;
       esac
     fi
@@ -241,7 +239,7 @@ case "$event" in
     ;;
 
   stop)
-    verdict=$(printf '%s' "$normalized" | sh "$SCRIPT_DIR/stop-guard.sh" 2>/dev/null || true)
+    verdict=$(printf '%s' "$normalized" | node "$SCRIPT_DIR/stop-guard.mjs" 2>/dev/null || true)
     case "$verdict" in
       *'"decision":"block"'*)
         printf '{"decision":"continue","reason":"%s"}\n' "$(oc_agy_escape "$(oc_agy_reason "$verdict")")"
