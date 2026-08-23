@@ -40,6 +40,7 @@ import {
   evaluateClaim,
   isMcpCoreError,
   isTelemetryIncomplete,
+  telemetryIncompleteReason,
   lookupCardapioPolicy,
   MCP_TOOL_NAMES,
   ok,
@@ -3791,6 +3792,9 @@ async function taskDeliver(
       ? resolveUsageSegments(input.usage, openAttempt?.model ?? null)
       : undefined;
     const incomplete = isTelemetryIncomplete(usage);
+    // A flag that only says something is missing leaves the agent guessing
+    // which field to send; the reason names them.
+    const incompleteReason = telemetryIncompleteReason(usage);
 
     // The delivery usually knows the path the claim could not: the recipe
     // only prints it once the run is done. Fields it omits keep the claimed
@@ -3945,6 +3949,7 @@ async function taskDeliver(
       proj: found.proj,
       saved,
       incomplete,
+      incompleteReason,
       usage: storedUsage,
       routedTo: reviewerFromRow(updated),
       attemptExecutor: openAttempt
@@ -3981,6 +3986,9 @@ async function taskDeliver(
         telemetry_incomplete: persisted.value.incomplete,
         ...(input.usage ? { usage_recorded: true } : {}),
       }),
+      ...(persisted.value.incompleteReason
+        ? { telemetry_incomplete_reason: persisted.value.incompleteReason }
+        : {}),
       handoff_id: persisted.value.saved.id,
       cost_usd: persisted.value.attemptCostUsd,
       delivery_unverified: persisted.value.saved.deliveryUnverified,
@@ -4017,6 +4025,9 @@ async function taskDeliver(
       created_at: iso(persisted.value.saved.createdAt),
     },
     telemetry_incomplete: persisted.value.incomplete,
+    ...(persisted.value.incompleteReason
+      ? { telemetry_incomplete_reason: persisted.value.incompleteReason }
+      : {}),
     usage_suspect: persisted.value.usageGuard.suspect,
     usage_suspect_reason: persisted.value.usageGuard.reason,
     delivery_unverified: persisted.value.saved.deliveryUnverified,

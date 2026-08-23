@@ -85,6 +85,8 @@ export {
   type TranscriptRefInput,
 } from "./transcript";
 export {
+  bindRecipeSettings,
+  encodeRecipeSetting,
   factoryUsageRecipes,
   findUsageRecipe,
   recipeCoverage,

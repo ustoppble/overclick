@@ -236,7 +236,7 @@ function toTranscriptView(
     sessionId: ref.sessionId,
     path: ref.path,
     resume: ref.resume,
-    usageCommand: recomputeUsageCommand(recipe?.command, ref.path),
+    usageCommand: recomputeUsageCommand(recipe?.command, ref.path, recipe?.source),
   };
 }
 

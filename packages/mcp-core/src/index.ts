@@ -128,6 +128,8 @@ export {
   WriteReturnSchema,
   branchConvention,
   isTelemetryIncomplete,
+  telemetryGaps,
+  telemetryIncompleteReason,
   type Artifact,
   type BranchConvention,
   type ConfirmationStep,

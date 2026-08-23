@@ -122,7 +122,10 @@ describe("self-contained briefing markdown", () => {
     expect(recipeAt).toBeLessThan(contractAt);
     expect(md).toContain("CLAUDE_CODE_SESSION_ID");
     expect(md).toContain("cache_read_input_tokens");
-    expect(md.slice(recipeAt, contractAt)).toContain("```bash");
+    // The fence carries no language: the command is not bash-only any more.
+    expect(md.slice(recipeAt, contractAt)).toContain("```");
+    expect(md.slice(recipeAt, contractAt)).not.toContain("```bash");
+    expect(md.slice(recipeAt, contractAt)).toContain("node -e");
   });
 
   it("names the claim boundary and excludes earlier session work", () => {

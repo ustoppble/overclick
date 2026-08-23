@@ -263,7 +263,9 @@ numbers, estimate and set `estimated: true`.
 **The transcript reference.** `task_claim` and `task_deliver` both accept
 `transcript {cli, session_id, path, resume}`, and the card detail shows it with three copy
 actions: the path, the command that reopens the session in that CLI, and the recipe
-command pinned to that transcript with `TRANSCRIPT_PATH`. Send `path` at deliver time,
+command pinned to that transcript with a `transcript=` argument (the shipped recipes are one
+`node -e` command that bash, zsh and PowerShell all run; they also still read `TRANSCRIPT_PATH`
+from the environment). Send `path` at deliver time,
 when the recipe has printed it; fields you omit keep what the claim recorded, and the
 `session_id` an executor already sends becomes the reference on its own, so a card claimed
 before this existed still points somewhere. The board stores the reference and never the

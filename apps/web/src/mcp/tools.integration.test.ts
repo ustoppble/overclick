@@ -414,6 +414,8 @@ describe("MCP tool edge cases against a test db", () => {
     if (!submitted.ok) return;
     const delivered = TaskDeliverOutputSchema.parse(submitted.value);
     expect(delivered.telemetry_incomplete).toBe(true);
+    // The flag alone left the agent guessing which field was missing.
+    expect(delivered.telemetry_incomplete_reason).toContain("no usage was sent");
     expect(delivered.task.status).toBe("feito");
     // Usage is required by contract: a usage-less delivery still lands, but
     // the response tells the agent how to fix it after the fact.
@@ -568,15 +570,19 @@ describe("MCP tool edge cases against a test db", () => {
     if (!claimed.ok) return;
     const payload = TaskClaimOutputSchema.parse(claimed.value);
 
+    // Settings ride as percent-encoded arguments, not as a POSIX environment
+    // prefix: PowerShell has no VAR=value syntax, so the old form bound
+    // nothing on Windows and the recipe measured the wrong session.
     expect(payload.usage_recipe?.command).toContain(
-      `CODEX_SESSION_ID='codex-session-with-'"'"'quote'`,
+      "codex_session=codex-session-with-%27quote",
     );
     expect(payload.usage_recipe?.command).toContain(
-      "CODEX_HARNESS_MODEL='gpt-5-6-sol'",
+      "codex_model=gpt-5-6-sol",
     );
     expect(payload.usage_recipe?.command).toContain(
-      `OVERCLICK_CLAIMED_AT='${payload.attempt.started_at}'`,
+      `claimed_at=${payload.attempt.started_at}`,
     );
+    expect(payload.usage_recipe?.command).not.toContain("OVERCLICK_CLAIMED_AT=");
     expect(payload.briefing_markdown).toContain(
       `claimed_at: \`${payload.attempt.started_at}\``,
     );
@@ -584,7 +590,7 @@ describe("MCP tool edge cases against a test db", () => {
       "work before the claim",
     );
     expect(payload.briefing_markdown).toContain(
-      "CODEX_HARNESS_MODEL='gpt-5-6-sol'",
+      "codex_model=gpt-5-6-sol",
     );
   });
 
