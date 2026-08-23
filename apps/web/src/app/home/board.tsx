@@ -14,6 +14,7 @@ import {
 import { assignCardsToMissionAction } from "../../actions/missions";
 import { releaseClaimAction } from "../../actions/claims";
 import {
+  answerOpenTaskAction,
   reopenTaskAction,
   tickValidationStepAction,
   validateTaskAction,
@@ -925,6 +926,45 @@ function DetailActions({
             title={t.detail.releaseClaimTitle}
           >
             {pending ? t.detail.releasingClaim : t.detail.releaseClaim}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // A decision card (rfc) is asked before any work starts, so it never
+  // reaches "feito" on its own — this is the only write path an open rfc
+  // card has. feature/bug cards are untouched: they keep going through
+  // claim → deliver → validate exactly as before.
+  if (card.status === "aberto" && card.tipo === "rfc") {
+    const answer = () =>
+      start(async () => {
+        setErr(null);
+        const r = await answerOpenTaskAction(card.id, comment);
+        if (!r.ok) setErr(r.error);
+        else {
+          setComment("");
+          router.refresh();
+        }
+      });
+
+    return (
+      <div className="d-actions d-actions-answer">
+        <textarea
+          className="d-textarea"
+          rows={3}
+          placeholder={t.detail.answerPlaceholder}
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+        />
+        {err ? <p className="d-err">{err}</p> : null}
+        <div className="d-actions-row">
+          <button
+            className="d-btn-pri oc-tappable"
+            disabled={pending || !comment.trim()}
+            onClick={answer}
+          >
+            {pending ? t.detail.answerSending : t.detail.answerSend}
           </button>
         </div>
       </div>
