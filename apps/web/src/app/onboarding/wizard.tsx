@@ -22,6 +22,7 @@ import {
   type PluginPairing,
 } from "../../components/plugin-install";
 import { dict } from "../../lib/i18n";
+import { commandFor } from "./commands";
 
 type ProjectData = {
   name: string;
@@ -36,23 +37,6 @@ const CMD_TABS = [
   { id: "gemini-cli", label: "Gemini" },
   { id: "outro", label: "Other" },
 ] as const;
-
-function commandFor(cli: string, baseUrl: string, secret: string): string {
-  const header = `--header "Authorization: Bearer ${secret}"`;
-  switch (cli) {
-    case "claude-code":
-      return `claude mcp add --transport http overclick \\\n  ${baseUrl} \\\n  ${header}`;
-    case "codex":
-      // `codex mcp add` takes no --header: the flag does not exist, and the
-      // command errors out on it. A remote server carries its Authorization in
-      // config.toml, which is exactly what the CLI reads back.
-      return `cat >> ~/.codex/config.toml <<'TOML'\n[mcp_servers.overclick]\nurl = "${baseUrl}"\nhttp_headers = { Authorization = "Bearer ${secret}" }\nTOML`;
-    case "gemini-cli":
-      return `gemini mcp add --transport http overclick ${baseUrl} \\\n  ${header}`;
-    default:
-      return `# generic MCP over HTTP\n# url:    ${baseUrl}\n# header: Authorization: Bearer ${secret}`;
-  }
-}
 
 export function Wizard({
   host,
