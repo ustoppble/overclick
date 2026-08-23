@@ -72,9 +72,15 @@ marker after `task_claim` / `task_deliver` / `task_release`.
 
 The **enforcement** guards are opt-in and ship disabled (`enforce_claim=0`,
 `enforce_stop=0`, `enforce_harness=0` in the config file). `claim-guard.mjs` is the one
-matched on `Edit|Write|Bash`: with `enforce_claim=0` it exits silently without inspecting
+matched on every tool: with `enforce_claim=0` it exits silently without inspecting
 anything, and only when you deliberately turn it on does it block a write that has no
 claimed card behind it. Turning it on is a choice you make about your own workflow.
+
+It is matched on every tool rather than on `Edit|Write|Bash` because a hand-written list
+of shell names cannot fail closed — on Windows the shell tool is called `PowerShell` and
+the old list missed it entirely (issue #72). With enforcement on, a command runs unclaimed
+only when it is provably read-only; anything else, in any dialect, under any tool name,
+waits for a claim. See `OVERCLICK.md` for the exact rule and its known limit.
 
 No hook downloads or executes remote content. They are plain Node scripts, readable in
 `hooks/`, run as `node "<plugin root>/hooks/x.mjs"`, and they depend on nothing but Node

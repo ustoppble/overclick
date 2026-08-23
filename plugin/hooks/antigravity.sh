@@ -214,7 +214,17 @@ case "$event" in
           printf '{"decision":"ask","reason":"%s"}\n' "$(oc_agy_escape "$complaint")"
         fi
         ;;
-      Bash|Edit|Write)
+      task_claim|mcp__*__task_claim|task_release|mcp__*__task_release)
+        # The marker is written by post-tool, once the board has answered. A
+        # pre-tool run would record a claim that may never happen.
+        oc_agy_allow
+        ;;
+      *)
+        # OCL-134. This used to be `Bash|Edit|Write)` with everything else
+        # allowed, which is the same fail-open hole issue #72 hit on Windows:
+        # a shell under any other name, or an MCP tool forwarded by
+        # call_mcp_tool, was waved through. claim-guard.mjs now sees every tool
+        # and decides; with enforce_claim=0 it returns silently.
         verdict=$(printf '%s' "$normalized" | node "$SCRIPT_DIR/claim-guard.mjs" 2>/dev/null || true)
         case "$verdict" in
           *'"decision":"block"'*)
@@ -223,7 +233,6 @@ case "$event" in
           *) oc_agy_allow ;;
         esac
         ;;
-      *) oc_agy_allow ;;
     esac
     ;;
 
