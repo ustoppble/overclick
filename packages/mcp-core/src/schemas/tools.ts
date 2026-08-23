@@ -72,6 +72,8 @@ const TaskDeliverAckSchema = TaskWriteAckSchema.extend({
   delivery_warning: z.string().nullable(),
   usage_suspect: z.boolean(),
   usage_suspect_reason: z.string().nullable(),
+  /** What telemetry is still missing, when telemetry_incomplete is true. */
+  telemetry_incomplete_reason: z.string().optional(),
 });
 
 export const MissionListInputSchema = z.object({
@@ -940,6 +942,8 @@ export const TaskDeliverFullOutputSchema = z.object({
   delivery_verification: DeliveryVerificationSchema.nullable(),
   delivery_warning: z.string().nullable(),
   telemetry_incomplete: z.boolean(),
+  /** What telemetry is still missing, when telemetry_incomplete is true. */
+  telemetry_incomplete_reason: z.string().optional(),
   usage_suspect: z.boolean(),
   usage_suspect_reason: z.string().nullable(),
   /** Actionable warning returned when the delivery came without usage. */

@@ -1,3 +1,5 @@
+import { bindRecipeSettings, type RecipeSource } from "./usage-recipe";
+
 /**
  * Transcript references: the pointer back to what the agent actually did.
  *
@@ -137,13 +139,22 @@ function shellQuote(value: string): string {
  * The workspace recipe command, pinned to one transcript. Null when the CLI
  * has no command to run or the reference has no path: the board would rather
  * show no button than one that measures whichever session ran last.
+ *
+ * A shipped recipe takes the path as a `transcript=` argument, which every
+ * shell passes through, including PowerShell, where the `VAR=value command`
+ * prefix is not syntax at all. A recipe the workspace rewrote keeps the
+ * environment prefix: it was written against the old form and the board does
+ * not get to reinterpret somebody else's command.
  */
 export function recomputeUsageCommand(
   command: string | null | undefined,
   path: string | null | undefined,
+  source: RecipeSource = "seed",
 ): string | null {
   const script = clean(command);
   const target = clean(path);
   if (!script || !target) return null;
-  return `${TRANSCRIPT_PATH_ENV}=${shellQuote(target)} ${script}`;
+  return source === "custom"
+    ? `${TRANSCRIPT_PATH_ENV}=${shellQuote(target)} ${script}`
+    : bindRecipeSettings(script, { transcript: target });
 }

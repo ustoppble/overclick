@@ -695,6 +695,38 @@ export type TelemetryUsage = {
   turns?: number;
 };
 
+/**
+ * What the delivery still owes, field by field.
+ *
+ * `telemetry_incomplete: true` on its own tells an agent that something is
+ * missing without saying what, which is a flag it can only answer by guessing.
+ * Naming the fields turns it into a fix: send turns, send duration_ms, run the
+ * recipe again.
+ */
+export function telemetryGaps(usage?: TelemetryUsage | null): string[] {
+  if (!usage) return ["usage"];
+  const hasSegments = (usage.segments?.length ?? 0) > 0;
+  const gaps: string[] = [];
+  if (!hasSegments) {
+    if (usage.tokens_in === undefined) gaps.push("tokens_in");
+    if (usage.tokens_out === undefined) gaps.push("tokens_out");
+  }
+  if (usage.duration_ms === undefined) gaps.push("duration_ms");
+  if (usage.turns === undefined) gaps.push("turns");
+  return gaps;
+}
+
+/** One line saying what is missing, or null when nothing is. */
+export function telemetryIncompleteReason(
+  usage?: TelemetryUsage | null,
+): string | null {
+  const gaps = telemetryGaps(usage);
+  if (gaps.length === 0) return null;
+  return gaps[0] === "usage"
+    ? "no usage was sent — send it with task_update, measured or estimated"
+    : `usage is missing ${gaps.join(", ")} — send them with task_update`;
+}
+
 export function isTelemetryIncomplete(usage?: TelemetryUsage | null): boolean {
   if (!usage) {
     return true;

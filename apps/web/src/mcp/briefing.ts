@@ -12,8 +12,11 @@ import type {
  * the delivery contract, because that is the moment the agent needs it.
  */
 function renderRecipe(recipe: UsageRecipe): string[] {
+  // No language on the fence on purpose: the shipped commands are one node
+  // invocation that bash, zsh and PowerShell all run, and labelling the block
+  // bash told a Windows agent it needed a shell it does not have.
   const block = recipe.command
-    ? ["```bash", recipe.command, "```"]
+    ? ["```", recipe.command, "```"]
     : ["(no command for this CLI yet)"];
   return [
     `## Measuring this run — ${recipe.label}`,

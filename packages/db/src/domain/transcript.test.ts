@@ -109,15 +109,25 @@ describe("reading what was stored", () => {
 });
 
 describe("recomputing usage from one transcript", () => {
-  it("pins the recipe command to the path", () => {
-    expect(recomputeUsageCommand("python3 count.py", "/home/a/s.jsonl")).toBe(
-      `${TRANSCRIPT_PATH_ENV}='/home/a/s.jsonl' python3 count.py`,
+  it("pins a shipped recipe to the path with an argument every shell passes", () => {
+    // The environment prefix was POSIX-only syntax: on Windows PowerShell it
+    // bound nothing and the recipe measured whichever session ran last.
+    expect(recomputeUsageCommand("node -e script", "/home/a/s.jsonl")).toBe(
+      "node -e script transcript=/home/a/s.jsonl",
     );
   });
 
-  it("quotes a path with a space so the shell keeps it whole", () => {
-    expect(recomputeUsageCommand("run", "/My Repo/s.jsonl")).toBe(
-      `${TRANSCRIPT_PATH_ENV}='/My Repo/s.jsonl' run`,
+  it("encodes a path with a space so no shell splits it", () => {
+    expect(recomputeUsageCommand("node -e script", "/My Repo/s.jsonl")).toBe(
+      "node -e script transcript=/My%20Repo/s.jsonl",
+    );
+  });
+
+  it("keeps the environment prefix for a recipe the workspace rewrote", () => {
+    // A custom command was written against the old form; the board pins it the
+    // way its author expects instead of reinterpreting it.
+    expect(recomputeUsageCommand("python3 count.py", "/My Repo/s.jsonl", "custom")).toBe(
+      `${TRANSCRIPT_PATH_ENV}='/My Repo/s.jsonl' python3 count.py`,
     );
   });
 

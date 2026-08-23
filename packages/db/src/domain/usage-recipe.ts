@@ -7,6 +7,22 @@
  * the recipe so the briefing can hand it over at claim time, and so a CLI
  * changing its transcript format is fixed in one place instead of in every
  * agent's head.
+ *
+ * Every shipped command is a single `node -e "..."` invocation on purpose.
+ * The recipes used to be a bash heredoc feeding python3, which is two
+ * assumptions a Windows machine breaks at once: PowerShell has no heredoc, and
+ * the `python3` on PATH there is the Microsoft Store execution alias, which
+ * satisfies `command -v`, runs, prints "Python was not found" and exits 0 with
+ * empty stdout. The install script already learned to probe capability instead
+ * of presence; the recipe answers the same lesson by running on the runtime
+ * that is guaranteed to be there — Claude Code, Codex, Grok and Kimi all ship
+ * as Node programs, so node is the interpreter that really runs.
+ *
+ * The script text inside the quotes therefore contains no double quote, no
+ * dollar sign, no backtick, no backslash and no `!` before a word: those are
+ * exactly the characters bash, zsh and PowerShell disagree about inside a
+ * double-quoted argument. Keep that discipline when editing a script here, or
+ * the same command stops surviving the trip through one of the shells.
  */
 
 /** What a recipe can honestly produce. */
@@ -39,318 +55,449 @@ export type UsageRecipeRow = UsageRecipe & {
 /** The recipe used when no CLI-specific one matches. */
 export const GENERIC_RECIPE_CLI = "generic";
 
-const CLAUDE_COMMAND = `python3 - <<'PY'
-import collections, datetime, glob, json, os
+/**
+ * Characters a setting keeps as itself on the command line. Everything else is
+ * percent-encoded, so a value never needs quoting and never means something to
+ * a shell: a space, a quote, a backslash or a dollar sign travels as %20, %22,
+ * %5C or %24 and the script decodes it back.
+ */
+const SETTING_SAFE =
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._:/";
 
-# TRANSCRIPT_PATH pins one transcript, which is what the card's recompute
-# button sets. Without it, Claude Code writes one jsonl per session under
-# ~/.claude/projects/<cwd slug>.
-path = os.environ.get("TRANSCRIPT_PATH")
-claimed_at = os.environ.get("OVERCLICK_CLAIMED_AT")
-if not path:
-    folder = os.path.expanduser("~/.claude/projects/" + os.getcwd().replace("/", "-"))
-    session = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    path = os.path.join(folder, session + ".jsonl") if session else max(
-        glob.glob(folder + "/*.jsonl"), key=os.path.getmtime
-    )
+/** Percent-encodes one recipe setting value for any shell. */
+export function encodeRecipeSetting(value: string): string {
+  let out = "";
+  for (const byte of Buffer.from(value, "utf8")) {
+    const char = String.fromCharCode(byte);
+    out +=
+      SETTING_SAFE.includes(char) && byte < 128
+        ? char
+        : "%" + byte.toString(16).toUpperCase().padStart(2, "0");
+  }
+  return out;
+}
 
-def at_or_after_claim(entry):
-    if not claimed_at:
-        return True
-    value = entry.get("timestamp") or entry.get("created_at") or entry.get("createdAt")
-    if value is None:
-        return False
-    try:
-        at = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        claim = datetime.datetime.fromisoformat(claimed_at.replace("Z", "+00:00"))
-        return at >= claim
-    except ValueError:
-        return False
+/**
+ * Appends `key=value` settings to a shipped recipe command.
+ *
+ * The old form was a POSIX environment prefix (`VAR=value command`), which is
+ * a bash-only syntax: PowerShell reads it as a stray argument and the recipe
+ * measures the wrong window, or nothing at all. Arguments after `node -e` land
+ * in process.argv on every platform, and the scripts still read the matching
+ * environment variable when a caller sets one.
+ */
+export function bindRecipeSettings(
+  command: string,
+  settings: Readonly<Record<string, string | null | undefined>>,
+): string {
+  const parts = Object.entries(settings)
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([key, value]) => `${key}=${encodeRecipeSetting(value)}`);
+  return parts.length ? `${command} ${parts.join(" ")}` : command;
+}
 
-seg, turns = collections.defaultdict(collections.Counter), 0
-for line in open(path):
-    try:
-        entry = json.loads(line)
-    except ValueError:
-        continue
-    if not at_or_after_claim(entry):
-        continue
-    message = entry.get("message") or {}
-    usage = message.get("usage")
-    if not usage:
-        continue
-    turns += 1
-    counter = seg[message.get("model") or "unknown"]
-    counter["input"] += usage.get("input_tokens", 0)
-    counter["output"] += usage.get("output_tokens", 0)
-    counter["cache_read"] += usage.get("cache_read_input_tokens", 0)
-    counter["cache_write"] += usage.get("cache_creation_input_tokens", 0)
+/**
+ * Everything the four transcript readers share: settings, line reading, the
+ * claim window filter and the output shape task_deliver takes.
+ */
+const PRELUDE = `const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const NL = String.fromCharCode(10);
+const BACKSLASH = String.fromCharCode(92);
 
-print(json.dumps({
-    "segments": [dict(model=model, **dict(counter)) for model, counter in seg.items()],
-    "turns": turns,
-    "transcript": path,
-}, indent=2))
-PY`;
+// Settings arrive as percent-encoded key=value arguments because PowerShell
+// has no VAR=value command prefix; the environment is still read, so a caller
+// that exports TRANSCRIPT_PATH or OVERCLICK_CLAIMED_AT keeps working.
+const given = {};
+for (const item of process.argv.slice(1)) {
+  const at = item.indexOf('=');
+  if (at > 0) {
+    let value = item.slice(at + 1);
+    try { value = decodeURIComponent(value); } catch (error) { }
+    given[item.slice(0, at).trim().toLowerCase()] = value;
+  }
+}
+function setting(key, variable) {
+  return given[key] || process.env[variable] || '';
+}
+function readLines(file) {
+  return fs.readFileSync(file, 'utf8').split(NL);
+}
+function parse(line) {
+  try { return JSON.parse(line); } catch (error) { return null; }
+}
+function exists(candidate) {
+  try { fs.statSync(candidate); return true; } catch (error) { return false; }
+}
+function newest(candidates) {
+  let best = '';
+  let stamp = -1;
+  for (const candidate of candidates) {
+    let at = -1;
+    try { at = fs.statSync(candidate).mtimeMs; } catch (error) { continue; }
+    if (at > stamp) { stamp = at; best = candidate; }
+  }
+  return best;
+}
+// Only entries at or after the claim count: work the session did before this
+// card was claimed belongs to no part of it. An entry with no timestamp is
+// left out rather than guessed in.
+function claimWindow(extraField) {
+  const claimedAt = setting('claimed_at', 'OVERCLICK_CLAIMED_AT');
+  const claim = claimedAt === '' ? NaN : Date.parse(claimedAt);
+  return function (entry) {
+    if (claimedAt === '' || Number.isNaN(claim)) return true;
+    let value = entry.timestamp;
+    if (value === undefined) value = entry.created_at;
+    if (value === undefined) value = entry.createdAt;
+    if (value === undefined && extraField) value = entry[extraField];
+    if (value === undefined || value === null) return false;
+    // Grok stamps epoch seconds and Kimi epoch milliseconds; the rest write
+    // ISO text.
+    const at = typeof value === 'number'
+      ? (value > 100000000000 ? value : value * 1000)
+      : Date.parse(String(value));
+    if (Number.isNaN(at)) return false;
+    return at >= claim;
+  };
+}
+function emit(payload) {
+  process.stdout.write(JSON.stringify(payload, null, 2) + NL);
+}
+function unavailable(reason) {
+  emit({
+    segments: [],
+    turns: 0,
+    estimated: true,
+    reason: reason + ' Estimate usage and send estimated: true.',
+  });
+  process.exit(0);
+}
+function bump(seg, model, counts) {
+  const key = model || 'unknown';
+  if (seg[key] === undefined) {
+    seg[key] = { input: 0, output: 0, cache_read: 0, cache_write: 0 };
+  }
+  const row = seg[key];
+  row.input += counts.input || 0;
+  row.output += counts.output || 0;
+  row.cache_read += counts.cache_read || 0;
+  row.cache_write += counts.cache_write || 0;
+}
+function segments(seg) {
+  return Object.keys(seg).map(model => Object.assign({ model: model }, seg[model]));
+}`;
 
-const CODEX_COMMAND = `python3 - <<'PY'
-import collections, datetime, glob, json, os, re
+/** Wraps a script into the one command that runs on bash, zsh and PowerShell. */
+function nodeCommand(script: string): string {
+  return `node -e "${script}"`;
+}
 
-# TRANSCRIPT_PATH pins one transcript, which is what the card's recompute
-# button sets. Without it, Codex writes one rollout jsonl per session under
-# ~/.codex/sessions/<date>/. CODEX_SESSION_ID is bound from task_claim, so a
-# busy repo never attributes the newest *other* pane's rollout to this card.
-path = os.environ.get("TRANSCRIPT_PATH")
-session = os.environ.get("CODEX_SESSION_ID") or os.environ.get("CODEX_THREAD_ID")
-fallback_model = os.environ.get("CODEX_HARNESS_MODEL")
-claimed_at = os.environ.get("OVERCLICK_CLAIMED_AT")
+const CLAUDE_COMMAND = nodeCommand(`${PRELUDE}
 
-def model_slug(value):
-    return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") if value else ""
+// TRANSCRIPT_PATH pins one transcript, which is what the card's recompute
+// button sets. Without it, Claude Code writes one jsonl per session under
+// ~/.claude/projects/<cwd slug>.
+let file = setting('transcript', 'TRANSCRIPT_PATH');
+const session = setting('session', 'CLAUDE_CODE_SESSION_ID');
+let folder = '';
+if (file === '') {
+  // Claude Code names that folder after the working directory with every path
+  // separator turned into a dash. On Windows the cwd carries a drive colon and
+  // backslashes, so C:[backslash]Users[backslash]me is stored as C--Users-me:
+  // replacing only the forward slash matched no folder at all, and the newest
+  // transcript of some other session was the best case.
+  const slug = process.cwd()
+    .split('')
+    .map(ch => (ch === '/' || ch === ':' || ch === BACKSLASH) ? '-' : ch)
+    .join('');
+  folder = path.join(os.homedir(), '.claude', 'projects', slug);
+  if (session === '') {
+    let here = [];
+    try {
+      here = fs.readdirSync(folder)
+        .filter(name => name.endsWith('.jsonl'))
+        .map(name => path.join(folder, name));
+    } catch (error) { here = []; }
+    file = newest(here);
+  } else {
+    file = path.join(folder, session + '.jsonl');
+  }
+}
+if (file === '') {
+  unavailable('No Claude Code transcript was found under ' + folder + '.');
+}
+if (exists(file) === false) {
+  unavailable('The Claude Code transcript ' + file + ' is missing or unreadable.');
+}
 
-def unavailable(reason):
-    print(json.dumps({
-        "segments": [],
-        "turns": 0,
-        "estimated": True,
-        "reason": reason + " Estimate usage and send estimated: true.",
-    }, indent=2))
+const keep = claimWindow();
+const seg = {};
+let turns = 0;
+for (const line of readLines(file)) {
+  const entry = parse(line);
+  if (entry === null || keep(entry) === false) continue;
+  const message = entry.message || {};
+  const usage = message.usage;
+  if (usage === undefined || usage === null) continue;
+  turns += 1;
+  bump(seg, message.model, {
+    input: usage.input_tokens,
+    output: usage.output_tokens,
+    cache_read: usage.cache_read_input_tokens,
+    cache_write: usage.cache_creation_input_tokens,
+  });
+}
 
-def at_or_after_claim(entry):
-    if not claimed_at:
-        return True
-    value = entry.get("timestamp") or entry.get("created_at") or entry.get("createdAt")
-    if value is None:
-        return False
-    try:
-        at = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        claim = datetime.datetime.fromisoformat(claimed_at.replace("Z", "+00:00"))
-        return at >= claim
-    except ValueError:
-        return False
+if (turns === 0) {
+  unavailable('The Claude Code transcript ' + file + ' has no usage entries in the claim window.');
+}
+emit({ segments: segments(seg), turns: turns, transcript: file, estimated: false });`);
 
-def belongs_to_session(candidate):
-    if session in os.path.basename(candidate):
-        return True
-    try:
-        with open(candidate) as handle:
-            first = json.loads(handle.readline())
-    except (OSError, ValueError):
-        return False
-    payload = first.get("payload") or {}
-    return payload.get("id") == session or payload.get("session_id") == session
+const CODEX_COMMAND = nodeCommand(`${PRELUDE}
 
-if not path:
-    paths = glob.glob(os.path.expanduser("~/.codex/sessions/**/rollout-*.jsonl"), recursive=True)
-    if not session:
-        unavailable("No transcript path or Codex session id was available from task_claim.")
-        raise SystemExit
-    matches = [candidate for candidate in paths if belongs_to_session(candidate)]
-    if not matches:
-        unavailable("No readable Codex rollout matched the session id from task_claim.")
-        raise SystemExit
-    path = max(matches, key=os.path.getmtime)
+// TRANSCRIPT_PATH pins one transcript, which is what the card's recompute
+// button sets. Without it, Codex writes one rollout jsonl per session under
+// ~/.codex/sessions/<date>/. The session id is bound from task_claim, so a
+// busy repo never attributes the newest *other* pane's rollout to this card.
+let file = setting('transcript', 'TRANSCRIPT_PATH');
+const session = setting('codex_session', 'CODEX_SESSION_ID')
+  || process.env.CODEX_THREAD_ID
+  || '';
+const fallbackModel = setting('codex_model', 'CODEX_HARNESS_MODEL');
+const claimedAt = setting('claimed_at', 'OVERCLICK_CLAIMED_AT');
 
-if not os.path.isfile(path) or not os.access(path, os.R_OK):
-    unavailable("The selected Codex rollout is missing or unreadable.")
-    raise SystemExit
+function modelSlug(value) {
+  if (value === '' || value === undefined || value === null) return '';
+  let out = String(value).toLowerCase().replace(new RegExp('[^a-z0-9]+', 'g'), '-');
+  while (out.startsWith('-')) out = out.slice(1);
+  while (out.endsWith('-')) out = out.slice(0, -1);
+  return out;
+}
+function rollouts(dir) {
+  let found = [];
+  let entries = [];
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (error) { return found; }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) found = found.concat(rollouts(full));
+    else if (entry.name.startsWith('rollout-') && entry.name.endsWith('.jsonl')) found.push(full);
+  }
+  return found;
+}
+function belongsToSession(candidate) {
+  if (path.basename(candidate).includes(session)) return true;
+  let first = null;
+  try { first = parse(readLines(candidate)[0] || ''); } catch (error) { return false; }
+  if (first === null) return false;
+  const payload = first.payload || {};
+  return payload.id === session || payload.session_id === session;
+}
 
-seg = collections.defaultdict(collections.Counter)
-model, turns = model_slug(fallback_model), 0
-with open(path) as handle:
-    for line in handle:
-        try:
-            entry = json.loads(line)
-        except ValueError:
-            continue
-        if not at_or_after_claim(entry):
-            continue
-        payload = entry.get("payload") or {}
-        if entry.get("type") == "turn_context" and payload.get("model"):
-            model = model_slug(payload["model"])
-        if payload.get("type") != "token_count":
-            continue
-        # last_token_usage is this model call's delta; total_token_usage is cumulative.
-        usage = (payload.get("info") or {}).get("last_token_usage") or {}
-        if not usage:
-            continue
-        if not model:
-            unavailable("The rollout has token counters but neither it nor the card harness names a model.")
-            raise SystemExit
-        turns += 1
-        counter = seg[model]
-        cached = usage.get("cached_input_tokens", 0)
-        counter["input"] += usage.get("input_tokens", 0) - cached
-        counter["cache_read"] += cached
-        counter["cache_write"] += usage.get("cache_write_input_tokens", 0)
-        counter["output"] += usage.get("output_tokens", 0)
+if (file === '') {
+  if (session === '') {
+    unavailable('No transcript path or Codex session id was available from task_claim.');
+  }
+  const matches = rollouts(path.join(os.homedir(), '.codex', 'sessions'))
+    .filter(belongsToSession);
+  if (matches.length === 0) {
+    unavailable('No readable Codex rollout matched the session id from task_claim.');
+  }
+  file = newest(matches);
+}
+if (exists(file) === false) {
+  unavailable('The selected Codex rollout is missing or unreadable.');
+}
 
-if not turns:
-    unavailable("The Codex rollout contains no readable last_token_usage counters.")
-    raise SystemExit
+const keep = claimWindow();
+const seg = {};
+let model = modelSlug(fallbackModel);
+let turns = 0;
+for (const line of readLines(file)) {
+  const entry = parse(line);
+  if (entry === null || keep(entry) === false) continue;
+  const payload = entry.payload || {};
+  if (entry.type === 'turn_context' && payload.model) model = modelSlug(payload.model);
+  if (payload.type !== 'token_count') continue;
+  // last_token_usage is this model call's delta; total_token_usage is cumulative.
+  const usage = (payload.info || {}).last_token_usage;
+  if (usage === undefined || usage === null) continue;
+  if (model === '') {
+    unavailable('The rollout has token counters but neither it nor the card harness names a model.');
+  }
+  turns += 1;
+  const cached = usage.cached_input_tokens || 0;
+  bump(seg, model, {
+    input: (usage.input_tokens || 0) - cached,
+    cache_read: cached,
+    cache_write: usage.cache_write_input_tokens,
+    output: usage.output_tokens,
+  });
+}
 
-print(json.dumps({
-    "segments": [dict(model=model, **dict(counter)) for model, counter in seg.items()],
-    "turns": turns,
-    "transcript": path,
-    "estimated": False,
-}, indent=2))
-PY`;
+if (turns === 0) {
+  unavailable(claimedAt === ''
+    ? 'The Codex rollout contains no readable last_token_usage counters.'
+    : 'The Codex rollout contains no readable last_token_usage counters after ' + claimedAt + '.');
+}
+emit({ segments: segments(seg), turns: turns, transcript: file, estimated: false });`);
 
-const GROK_COMMAND = `python3 - <<'PY'
-import collections, datetime, glob, json, os, urllib.parse
+const GROK_COMMAND = nodeCommand(`${PRELUDE}
 
-# TRANSCRIPT_PATH pins one transcript, which is what the card's recompute
-# button sets. Without it, Grok writes one updates.jsonl per session under
-# ~/.grok/sessions/<cwd percent-encoded>/<session uuid>/.
-path = os.environ.get("TRANSCRIPT_PATH")
-claimed_at = os.environ.get("OVERCLICK_CLAIMED_AT")
-if not path:
-    root = os.path.expanduser("~/.grok/sessions")
-    folder = os.path.join(root, urllib.parse.quote(os.getcwd(), safe=""))
-    session = os.environ.get("GROK_SESSION_ID")
-    if session:
-        path = os.path.join(folder, session, "updates.jsonl")
-    else:
-        here = glob.glob(folder + "/*/updates.jsonl")
-        path = max(here or glob.glob(root + "/*/*/updates.jsonl"), key=os.path.getmtime)
+// TRANSCRIPT_PATH pins one transcript, which is what the card's recompute
+// button sets. Without it, Grok writes one updates.jsonl per session under
+// ~/.grok/sessions/<cwd percent-encoded>/<session uuid>/.
+let file = setting('transcript', 'TRANSCRIPT_PATH');
+const session = setting('grok_session', 'GROK_SESSION_ID');
 
-def at_or_after_claim(entry):
-    if not claimed_at:
-        return True
-    value = entry.get("timestamp") or entry.get("created_at") or entry.get("createdAt")
-    if value is None:
-        return False
-    try:
-        claim = datetime.datetime.fromisoformat(claimed_at.replace("Z", "+00:00"))
-        # Grok's own "timestamp" is epoch seconds, not ISO text like the
-        # other CLIs; only strings go through fromisoformat.
-        if isinstance(value, (int, float)):
-            at = datetime.datetime.fromtimestamp(value, tz=datetime.timezone.utc)
-        else:
-            at = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        return at >= claim
-    except (ValueError, OSError, OverflowError):
-        return False
+// Grok encodes the whole working directory, separators included, the way
+// Python's quote(safe='') does: everything outside the unreserved set becomes
+// a percent escape of its utf-8 bytes.
+function encodePath(value) {
+  const safe = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~';
+  let out = '';
+  for (const byte of Buffer.from(value, 'utf8')) {
+    const char = String.fromCharCode(byte);
+    out += (byte < 128 && safe.includes(char))
+      ? char
+      : '%' + byte.toString(16).toUpperCase().padStart(2, '0');
+  }
+  return out;
+}
+function children(dir) {
+  try { return fs.readdirSync(dir).map(name => path.join(dir, name)); } catch (error) { return []; }
+}
+function updateLogs(dir) {
+  return children(dir)
+    .map(child => path.join(child, 'updates.jsonl'))
+    .filter(exists);
+}
 
-seg, turns = collections.defaultdict(collections.Counter), 0
-for line in open(path):
-    try:
-        entry = json.loads(line)
-    except ValueError:
-        continue
-    if not at_or_after_claim(entry):
-        continue
-    update = (entry.get("params") or {}).get("update") or {}
-    if update.get("sessionUpdate") != "turn_completed":
-        continue
-    usage = update.get("usage") or {}
-    # A turn that ended on an error carries no usage. Counting it would put a
-    # row of zeros where the honest answer is that nothing was spent.
-    if not usage:
-        continue
-    turns += usage.get("numTurns") or usage.get("modelCalls", 0)
-    # modelUsage splits the turn per model, which is what a session that
-    # switched model needs; a turn without it is all one model.
-    for model, block in (usage.get("modelUsage") or {"unknown": usage}).items():
-        counter = seg[model]
-        cached = block.get("cachedReadTokens", 0)
-        # inputTokens already contains the cached read, so the plain input is
-        # what is left after taking it out.
-        counter["input"] += block.get("inputTokens", 0) - cached
-        counter["cache_read"] += cached
-        counter["cache_write"] += block.get("cacheCreationTokens", 0)
-        counter["output"] += block.get("outputTokens", 0)
+let folder = '';
+if (file === '') {
+  const root = path.join(os.homedir(), '.grok', 'sessions');
+  folder = path.join(root, encodePath(process.cwd()));
+  if (session === '') {
+    const here = updateLogs(folder);
+    const anywhere = children(root).map(updateLogs).reduce((all, some) => all.concat(some), []);
+    file = newest(here.length > 0 ? here : anywhere);
+  } else {
+    file = path.join(folder, session, 'updates.jsonl');
+  }
+}
+if (file === '') {
+  unavailable('No Grok updates.jsonl was found under ' + folder + '.');
+}
+if (exists(file) === false) {
+  unavailable('The Grok transcript ' + file + ' is missing or unreadable.');
+}
 
-print(json.dumps({
-    "segments": [dict(model=model, **dict(counter)) for model, counter in seg.items()],
-    "turns": turns,
-    "transcript": path,
-}, indent=2))
-PY`;
+const keep = claimWindow();
+const seg = {};
+let turns = 0;
+for (const line of readLines(file)) {
+  const entry = parse(line);
+  if (entry === null || keep(entry) === false) continue;
+  const update = (entry.params || {}).update || {};
+  if (update.sessionUpdate !== 'turn_completed') continue;
+  const usage = update.usage;
+  // A turn that ended on an error carries no usage. Counting it would put a
+  // row of zeros where the honest answer is that nothing was spent.
+  if (usage === undefined || usage === null) continue;
+  turns += usage.numTurns || usage.modelCalls || 0;
+  // modelUsage splits the turn per model, which is what a session that
+  // switched model needs; a turn without it is all one model.
+  const perModel = usage.modelUsage || { unknown: usage };
+  for (const model of Object.keys(perModel)) {
+    const block = perModel[model] || {};
+    const cached = block.cachedReadTokens || 0;
+    // inputTokens already contains the cached read, so the plain input is
+    // what is left after taking it out.
+    bump(seg, model, {
+      input: (block.inputTokens || 0) - cached,
+      cache_read: cached,
+      cache_write: block.cacheCreationTokens,
+      output: block.outputTokens,
+    });
+  }
+}
 
-const KIMI_COMMAND = `python3 - <<'PY'
-import collections, datetime, glob, json, os
+emit({ segments: segments(seg), turns: turns, transcript: file, estimated: false });`);
 
-# TRANSCRIPT_PATH pins one session directory, which is what the card's
-# recompute button sets. Without it, the index Kimi keeps in its home maps
-# every session to the directory it ran in, including sessions stored outside
-# that home, so it beats globbing for them.
-home = os.environ.get("KIMI_HOME") or os.path.expanduser("~/.kimi-code")
-path = os.environ.get("TRANSCRIPT_PATH")
-claimed_at = os.environ.get("OVERCLICK_CLAIMED_AT")
-if not path:
-    here, session = os.path.realpath(os.getcwd()), os.environ.get("KIMI_SESSION_ID")
-    rows = []
-    for line in open(os.path.join(home, "session_index.jsonl")):
-        try:
-            row = json.loads(line)
-        except ValueError:
-            continue
-        if not os.path.isdir(row.get("sessionDir", "")):
-            continue
-        if session and row.get("sessionId") != session:
-            continue
-        if not session and os.path.realpath(row.get("workDir", "")) != here:
-            continue
-        rows.append(row["sessionDir"])
-    path = max(rows, key=os.path.getmtime)
+const KIMI_COMMAND = nodeCommand(`${PRELUDE}
 
-# One wire log per agent: main plus every subagent it spawned, so the tokens a
-# subagent spent land on the card that spawned it instead of nowhere.
-logs = sorted(glob.glob(os.path.join(path, "agents", "*", "wire.jsonl")))
-def at_or_after_claim(entry):
-    if not claimed_at:
-        return True
-    # Kimi's wire.jsonl stamps every record with "time", not "timestamp" or
-    # any of the other CLIs' created_at/createdAt spellings.
-    value = (
-        entry.get("timestamp")
-        or entry.get("created_at")
-        or entry.get("createdAt")
-        or entry.get("time")
-    )
-    if value is None:
-        return False
-    try:
-        claim = datetime.datetime.fromisoformat(claimed_at.replace("Z", "+00:00"))
-        # "time" is epoch milliseconds, not ISO text like the other fields.
-        if isinstance(value, (int, float)):
-            at = datetime.datetime.fromtimestamp(value / 1000, tz=datetime.timezone.utc)
-        else:
-            at = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        return at >= claim
-    except (ValueError, OSError, OverflowError):
-        return False
+// TRANSCRIPT_PATH pins one session directory, which is what the card's
+// recompute button sets. Without it, the index Kimi keeps in its home maps
+// every session to the directory it ran in, including sessions stored outside
+// that home, so it beats globbing for them.
+const home = setting('kimi_home', 'KIMI_HOME') || path.join(os.homedir(), '.kimi-code');
+let dir = setting('transcript', 'TRANSCRIPT_PATH');
+const session = setting('kimi_session', 'KIMI_SESSION_ID');
 
-seg, turns = collections.defaultdict(collections.Counter), 0
-for log in logs:
-    for line in open(log):
-        try:
-            entry = json.loads(line)
-        except ValueError:
-            continue
-        if not at_or_after_claim(entry):
-            continue
-        # Kimi writes one record per model call with usageScope "turn", and a
-        # cumulative "session" record at the end. Summing both counts the
-        # session twice.
-        if entry.get("type") != "usage.record" or entry.get("usageScope") != "turn":
-            continue
-        usage = entry.get("usage") or {}
-        turns += 1
-        counter = seg[entry.get("model") or "unknown"]
-        counter["input"] += usage.get("inputOther", 0)
-        counter["cache_read"] += usage.get("inputCacheRead", 0)
-        counter["cache_write"] += usage.get("inputCacheCreation", 0)
-        counter["output"] += usage.get("output", 0)
+function realpath(value) {
+  try { return fs.realpathSync(value); } catch (error) { return ''; }
+}
+function isDirectory(candidate) {
+  try { return fs.statSync(candidate).isDirectory(); } catch (error) { return false; }
+}
 
-print(json.dumps({
-    "segments": [dict(model=model, **dict(counter)) for model, counter in seg.items()],
-    "turns": turns,
-    "transcript": path,
-}, indent=2))
-PY`;
+if (dir === '') {
+  const here = realpath(process.cwd());
+  const rows = [];
+  let lines = [];
+  try { lines = readLines(path.join(home, 'session_index.jsonl')); } catch (error) { lines = []; }
+  for (const line of lines) {
+    const row = parse(line);
+    if (row === null) continue;
+    const sessionDir = row.sessionDir || '';
+    if (isDirectory(sessionDir) === false) continue;
+    if (session !== '' && row.sessionId !== session) continue;
+    if (session === '' && realpath(row.workDir || '') !== here) continue;
+    rows.push(sessionDir);
+  }
+  dir = newest(rows);
+}
+if (dir === '') {
+  unavailable('No Kimi session in ' + home + ' matched this repo or the session id.');
+}
+
+// One wire log per agent: main plus every subagent it spawned, so the tokens a
+// subagent spent land on the card that spawned it instead of nowhere.
+let agents = [];
+try { agents = fs.readdirSync(path.join(dir, 'agents')).sort(); } catch (error) { agents = []; }
+const logs = agents
+  .map(agent => path.join(dir, 'agents', agent, 'wire.jsonl'))
+  .filter(exists);
+if (logs.length === 0) {
+  unavailable('The Kimi session ' + dir + ' has no readable agent wire log.');
+}
+
+// Kimi's wire.jsonl stamps every record with a time field, not the timestamp or
+// created_at the other CLIs write.
+const keep = claimWindow('time');
+const seg = {};
+let turns = 0;
+for (const log of logs) {
+  for (const line of readLines(log)) {
+    const entry = parse(line);
+    if (entry === null || keep(entry) === false) continue;
+    // Kimi writes one record per model call with usageScope of turn, and a
+    // cumulative session record at the end. Summing both counts the
+    // session twice.
+    if (entry.type !== 'usage.record' || entry.usageScope !== 'turn') continue;
+    const usage = entry.usage || {};
+    turns += 1;
+    bump(seg, entry.model, {
+      input: usage.inputOther,
+      cache_read: usage.inputCacheRead,
+      cache_write: usage.inputCacheCreation,
+      output: usage.output,
+    });
+  }
+}
+
+emit({ segments: segments(seg), turns: turns, transcript: dir, estimated: false });`);
 
 const SEED: UsageRecipe[] = [
   {
@@ -358,7 +505,7 @@ const SEED: UsageRecipe[] = [
     label: "Claude Code",
     yields: "tokens_per_model",
     instructions:
-      "Run this from the repo you worked in. It reads your own session transcript from the claim boundary and prints tokens grouped by model, ready to paste into task_deliver as usage.segments. Numbers from the transcript are measured, not guessed, so deliver them without estimated. It also prints the transcript path: send it as transcript.path and the card links back to this run.",
+      "Run this from the repo you worked in. It is one node command, no heredoc and no python3, so the same line runs on macOS, Linux and Windows PowerShell. It reads your own session transcript from the claim boundary and prints tokens grouped by model, ready to paste into task_deliver as usage.segments. Numbers from the transcript are measured, not guessed, so deliver them without estimated. It also prints the transcript path: send it as transcript.path and the card links back to this run. If it comes back with estimated: true, the reason says exactly what was missing.",
     command: CLAUDE_COMMAND,
   },
   {
@@ -366,7 +513,7 @@ const SEED: UsageRecipe[] = [
     label: "Codex",
     yields: "tokens_per_model",
     instructions:
-      "At task_claim, declare the exact model from this session's --model flag (for example gpt-5.6-sol), never the generic family label gpt-5. Run this from the repo you worked in. The board binds claimed_at, the session id and harness model declared at task_claim: the command reads that exact Codex rollout only from the claim boundary, attributes each model call to turn_context.payload.model, normalizes the model slug for pricing, and falls back to the harness model only when the rollout omits it. A readable rollout returns estimated: false. Only a missing or unreadable rollout returns estimated: true with a reason. Send the printed transcript path as transcript.path so the card links back to this run.",
+      "At task_claim, declare the exact model from this session's --model flag (for example gpt-5.6-sol), never the generic family label gpt-5. Run this from the repo you worked in: it is one node command, no heredoc and no python3, so it runs on macOS, Linux and Windows PowerShell alike. The board binds claimed_at, the session id and harness model declared at task_claim: the command reads that exact Codex rollout only from the claim boundary, attributes each model call to turn_context.payload.model, normalizes the model slug for pricing, and falls back to the harness model only when the rollout omits it. A readable rollout returns estimated: false. Only a missing or unreadable rollout returns estimated: true with a reason. Send the printed transcript path as transcript.path so the card links back to this run.",
     command: CODEX_COMMAND,
   },
   {
@@ -382,7 +529,7 @@ const SEED: UsageRecipe[] = [
     label: "Grok",
     yields: "tokens_per_model",
     instructions:
-      "Run this from the repo you worked in. Grok closes every turn with a turn_completed line carrying usage.modelUsage, tokens already split per model, and this totals only entries from the claim boundary into usage.segments. inputTokens there includes the cached read, so the command subtracts it and reports input and cache_read apart, the way the board counts them. A turn that ended on an error carries no usage and is skipped, so an aborted session reports nothing instead of a row of zeros. It also prints the transcript path: send it as transcript.path and the card links back to this run.",
+      "Run this from the repo you worked in: one node command, no heredoc and no python3, so macOS, Linux and Windows PowerShell all run it. Grok closes every turn with a turn_completed line carrying usage.modelUsage, tokens already split per model, and this totals only entries from the claim boundary into usage.segments. inputTokens there includes the cached read, so the command subtracts it and reports input and cache_read apart, the way the board counts them. A turn that ended on an error carries no usage and is skipped, so an aborted session reports nothing instead of a row of zeros. It also prints the transcript path: send it as transcript.path and the card links back to this run.",
     command: GROK_COMMAND,
   },
   {
@@ -390,7 +537,7 @@ const SEED: UsageRecipe[] = [
     label: "Kimi",
     yields: "tokens_per_model",
     instructions:
-      "Run this from the repo you worked in. Kimi writes one usage.record per model call into the wire log of every agent in the session, main and subagents, and this totals only entries from the claim boundary per model for usage.segments. It reads only the records scoped to a turn: the cumulative session record at the end would count the whole run twice. The session is found through the index Kimi keeps in its home, which maps each session to the directory it ran in. It also prints the session path: send it as transcript.path and the card links back to this run.",
+      "Run this from the repo you worked in: one node command, no heredoc and no python3, so macOS, Linux and Windows PowerShell all run it. Kimi writes one usage.record per model call into the wire log of every agent in the session, main and subagents, and this totals only entries from the claim boundary per model for usage.segments. It reads only the records scoped to a turn: the cumulative session record at the end would count the whole run twice. The session is found through the index Kimi keeps in its home, which maps each session to the directory it ran in. It also prints the session path: send it as transcript.path and the card links back to this run.",
     command: KIMI_COMMAND,
   },
   {

@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import {
+  bindRecipeSettings,
   factoryUsageRecipes,
   findUsageRecipe,
   usageRecipe,
@@ -64,8 +65,14 @@ function shellValue(value: string): string {
 
 /**
  * Binds a recipe to this attempt's claim window. Every transcript-reading
- * shipped recipe understands OVERCLICK_CLAIMED_AT; Codex additionally gets
- * the exact session and harness model that select and label its rollout.
+ * shipped recipe understands claimed_at; Codex additionally gets the exact
+ * session and harness model that select and label its rollout.
+ *
+ * A shipped recipe takes them as `key=value` arguments, percent-encoded, which
+ * survive bash, zsh and PowerShell alike: the old `VAR=value command` prefix
+ * is POSIX shell syntax, and on Windows it became a stray argument that bound
+ * nothing. A recipe the workspace rewrote keeps the environment prefix — it
+ * was written against that form, and the board does not rewrite it.
  */
 export function bindUsageRecipe(
   recipe: UsageRecipeRow | null,
@@ -81,12 +88,19 @@ export function bindUsageRecipe(
     ? new Date(executor.claimedAt).toISOString()
     : null;
 
+  const isCodex = recipe.cli === "codex";
+  const settings = {
+    claimed_at: claimedAt,
+    codex_session: isCodex ? executor.sessionId : null,
+    codex_model: isCodex ? executor.model : null,
+  };
+
   const environment = [
     claimedAt ? `OVERCLICK_CLAIMED_AT=${shellValue(claimedAt)}` : null,
-    recipe.cli === "codex" && executor.sessionId
+    isCodex && executor.sessionId
       ? `CODEX_SESSION_ID=${shellValue(executor.sessionId)}`
       : null,
-    recipe.cli === "codex" && executor.model
+    isCodex && executor.model
       ? `CODEX_HARNESS_MODEL=${shellValue(executor.model)}`
       : null,
   ].filter((value): value is string => Boolean(value));
@@ -96,12 +110,16 @@ export function bindUsageRecipe(
       "work already present in this session belongs to no part of this card."
     : "";
 
+  if (!recipe.command) return { ...recipe, instructions: `${recipe.instructions}${windowInstruction}` };
+
   return {
     ...recipe,
     instructions: `${recipe.instructions}${windowInstruction}`,
     command:
-      recipe.command && environment.length
-        ? `${environment.join(" ")} ${recipe.command}`
-        : recipe.command,
+      recipe.source === "custom"
+        ? environment.length
+          ? `${environment.join(" ")} ${recipe.command}`
+          : recipe.command
+        : bindRecipeSettings(recipe.command, settings),
   };
 }

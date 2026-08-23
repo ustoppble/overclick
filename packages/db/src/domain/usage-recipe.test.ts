@@ -1,7 +1,12 @@
 import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync, mkdtempSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  bindRecipeSettings,
+  encodeRecipeSetting,
   factoryUsageRecipes,
   findUsageRecipe,
   recipeCoverage,
@@ -33,6 +38,131 @@ describe("usage collection recipes", () => {
     expect(claude?.command).toContain("OVERCLICK_CLAIMED_AT");
   });
 
+  // A Windows machine breaks two POSIX assumptions at once: PowerShell has no
+  // heredoc, and the python3 on PATH is the Microsoft Store alias stub, which
+  // runs, prints nothing and exits 0. Both used to be in every command.
+  it("ships every command as one node invocation, with no heredoc and no python3", () => {
+    for (const recipe of recipes.filter((r) => r.command)) {
+      expect(recipe.command.startsWith("node -e \"")).toBe(true);
+      expect(recipe.command).not.toContain("python3");
+      expect(recipe.command).not.toContain("<<");
+    }
+  });
+
+  it("keeps every script free of the characters bash and PowerShell read differently", () => {
+    for (const recipe of recipes.filter((r) => r.command)) {
+      const script = recipe.command.slice(String("node -e \"").length, -1);
+      // A double quote would close the argument, a dollar or a backtick would
+      // interpolate in one shell, a backslash would be eaten by the other, and
+      // `!word` fires history expansion in an interactive bash.
+      expect(script).not.toContain('"');
+      expect(script).not.toContain("$");
+      expect(script).not.toContain("`");
+      expect(script).not.toContain("\\");
+      expect(script).not.toMatch(/![A-Za-z_(]/);
+    }
+  });
+
+  it("turns a Windows working directory into the folder Claude Code writes", () => {
+    // The slug used to replace the forward slash only, so on Windows it
+    // matched no folder at all — or, worse, some other session's transcript.
+    const claude = findUsageRecipe(recipes, "claude-code");
+    const source = claude!.command.match(
+      /process\.cwd\(\)[\s\S]*?\.join\(''\)/,
+    );
+    expect(source).not.toBeNull();
+    const slug = new Function(
+      "cwd",
+      `const BACKSLASH = String.fromCharCode(92);
+       const process = { cwd: () => cwd };
+       return ${source![0]};`,
+    ) as (cwd: string) => string;
+
+    expect(slug("C:\\Users\\me\\repo")).toBe("C--Users-me-repo");
+    expect(slug("/Users/me/repo")).toBe("-Users-me-repo");
+  });
+
+  it("measures an anonymized Claude Code transcript from the claim boundary", () => {
+    const claude = findUsageRecipe(recipes, "claude-code");
+    const transcript = fileURLToPath(
+      new URL("./fixtures/claude-transcript.jsonl", import.meta.url),
+    );
+
+    const all = JSON.parse(
+      execFileSync("bash", ["-c", claude!.command], {
+        env: { ...process.env, TRANSCRIPT_PATH: transcript },
+        encoding: "utf8",
+      }),
+    );
+    expect(all).toMatchObject({
+      turns: 4,
+      transcript,
+      estimated: false,
+      segments: expect.arrayContaining([
+        { model: "claude-opus-5", input: 140, output: 55, cache_read: 360, cache_write: 10 },
+        { model: "claude-haiku-4-5", input: 20, output: 7, cache_read: 40, cache_write: 1 },
+      ]),
+    });
+
+    // The same command, settings bound the cross-shell way task_claim binds
+    // them: arguments, not a POSIX environment prefix.
+    const windowed = JSON.parse(
+      execFileSync("bash", [
+        "-c",
+        bindRecipeSettings(claude!.command, {
+          transcript,
+          claimed_at: "2026-08-18T10:00:00.000Z",
+        }),
+      ], { encoding: "utf8" }),
+    );
+    expect(windowed).toMatchObject({
+      turns: 3,
+      segments: expect.arrayContaining([
+        { model: "claude-opus-5", input: 130, output: 50, cache_read: 260, cache_write: 8 },
+        { model: "claude-haiku-4-5", input: 20, output: 7, cache_read: 40, cache_write: 1 },
+      ]),
+    });
+  });
+
+  it("finds the newest transcript under the slugged project folder on its own", () => {
+    const claude = findUsageRecipe(recipes, "claude-code");
+    const home = mkdtempSync(join(tmpdir(), "ocl-home-"));
+    const repo = mkdtempSync(join(tmpdir(), "ocl-repo-"));
+    const slug = realpathSync(repo).split("/").join("-");
+    const folder = join(home, ".claude", "projects", slug);
+    mkdirSync(folder, { recursive: true });
+    const fixture = fileURLToPath(
+      new URL("./fixtures/claude-transcript.jsonl", import.meta.url),
+    );
+    copyFileSync(fixture, join(folder, "session-abc.jsonl"));
+
+    const output = execFileSync("bash", ["-c", claude!.command], {
+      cwd: realpathSync(repo),
+      env: { ...process.env, HOME: home, TRANSCRIPT_PATH: "", CLAUDE_CODE_SESSION_ID: "" },
+      encoding: "utf8",
+    });
+
+    expect(JSON.parse(output)).toMatchObject({
+      turns: 4,
+      transcript: join(folder, "session-abc.jsonl"),
+    });
+  });
+
+  it("says what was missing instead of printing nothing at all", () => {
+    const claude = findUsageRecipe(recipes, "claude-code");
+    const output = execFileSync("bash", [
+      "-c",
+      bindRecipeSettings(claude!.command, {
+        transcript: "/definitely/missing/claude-transcript.jsonl",
+      }),
+    ], { encoding: "utf8" });
+    const parsed = JSON.parse(output);
+
+    expect(parsed.estimated).toBe(true);
+    expect(parsed.reason).toContain("missing or unreadable");
+    expect(parsed.segments).toEqual([]);
+  });
+
   it("gives Codex a command that attributes each turn to its model", () => {
     const codex = findUsageRecipe(recipes, "codex");
     expect(codex?.yields).toBe("tokens_per_model");
@@ -41,7 +171,7 @@ describe("usage collection recipes", () => {
     expect(codex?.command).toContain("turn_context");
     expect(codex?.command).toContain("CODEX_SESSION_ID");
     expect(codex?.command).toContain("CODEX_HARNESS_MODEL");
-    expect(codex?.command).not.toContain('model, turns = collections.defaultdict(collections.Counter), "unknown"');
+    expect(codex?.command).not.toContain("collections.defaultdict");
   });
 
   it("measures an anonymized Codex 0.148 rollout and normalizes its model", () => {
@@ -197,12 +327,12 @@ describe("usage collection recipes", () => {
     expect(kimi?.command).toContain("usage.record");
     expect(kimi?.command).toContain("session_index.jsonl");
     // The cumulative record at the end would count the run twice.
-    expect(kimi?.command).toContain('usageScope") != "turn"');
+    expect(kimi?.command).toContain("entry.usageScope !== 'turn'");
     expect(kimi?.command).toContain("segments");
     expect(kimi?.command).toContain("OVERCLICK_CLAIMED_AT");
     // wire.jsonl stamps records with "time", not "timestamp"; the field has
     // to be in the list the claim-window filter reads.
-    expect(kimi?.command).toContain('entry.get("time")');
+    expect(kimi?.command).toContain("claimWindow('time')");
   });
 
   it("measures a real wire.jsonl session, merging every agent and skipping the cumulative session record", () => {
@@ -295,6 +425,39 @@ describe("usage collection recipes", () => {
     expect(findUsageRecipe(recipes, "some-new-cli")?.cli).toBe(GENERIC_RECIPE_CLI);
     expect(findUsageRecipe(recipes, null)?.cli).toBe(GENERIC_RECIPE_CLI);
     expect(findUsageRecipe(recipes, "")?.cli).toBe(GENERIC_RECIPE_CLI);
+  });
+
+  describe("binding settings to a command", () => {
+    it("appends key=value arguments instead of a POSIX environment prefix", () => {
+      expect(
+        bindRecipeSettings("node -e x", { claimed_at: "2026-08-18T10:00:00.000Z" }),
+      ).toBe("node -e x claimed_at=2026-08-18T10:00:00.000Z");
+    });
+
+    it("percent-encodes anything a shell would read as syntax", () => {
+      // A space, a quote or a backslash inside an unquoted argument is where
+      // the old single-quoted form and PowerShell disagreed.
+      expect(encodeRecipeSetting("/My Repo/s.jsonl")).toBe("/My%20Repo/s.jsonl");
+      expect(encodeRecipeSetting("session-with-'quote")).toBe("session-with-%27quote");
+      expect(encodeRecipeSetting("C:\\Users\\me")).toBe("C:%5CUsers%5Cme");
+      expect(encodeRecipeSetting("gpt-5.6-sol")).toBe("gpt-5.6-sol");
+    });
+
+    it("drops settings with no value and leaves the command alone", () => {
+      expect(bindRecipeSettings("node -e x", { claimed_at: null })).toBe("node -e x");
+    });
+
+    it("round-trips an encoded setting back into the script", () => {
+      const claude = findUsageRecipe(recipes, "claude-code");
+      const transcript = fileURLToPath(
+        new URL("./fixtures/claude-transcript.jsonl", import.meta.url),
+      );
+      const output = execFileSync("bash", [
+        "-c",
+        bindRecipeSettings(claude!.command, { transcript }),
+      ], { encoding: "utf8" });
+      expect(JSON.parse(output).transcript).toBe(transcript);
+    });
   });
 
   it("matches the CLI case-insensitively", () => {
