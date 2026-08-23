@@ -278,9 +278,12 @@ two claims. So the configuration tools sit behind a per-token **manage** flag, o
 default.
 
 Tick "This token can change the workspace configuration" when generating the token in
-Settings › MCP tokens. Tokens that have it show a `manage` badge in the list. Everything
-else about the token is unchanged: same URL, same header, same tools for claiming and
-delivering.
+Settings › MCP tokens, or tick the `manage` box on the token's row in that same list to
+grant it afterwards. Granting it later is the normal path: a token created by **pairing**,
+which is how the plugin installs, always starts without the flag. Everything else about the
+token is unchanged: same URL, same header, same tools for claiming and delivering.
+
+Untick the box to take the capability back. Revoked tokens cannot be granted anything.
 
 The configuration tools behind it are `harness_set` and `executors_update`. The flag also
 lets an owner release or heartbeat another token's stuck claim; the claiming token can
@@ -303,7 +306,7 @@ error and the details stay in the server logs.
 | `INVALID_TRANSITION` | the call does not fit the card status; for example, delivering an open card returns "Card is open, call task_claim before task_deliver." |
 | `ALREADY_CLAIMED` | another executor holds the card; retry with `force: true` to take over |
 | `INVALID_ARGUMENT` | the input failed validation; the message names the field |
-| `PERMISSION_DENIED` | the token is valid but has no manage flag, so it cannot change the workspace configuration; nothing was written |
+| `PERMISSION_DENIED` | the token is valid but has no manage flag, so it cannot change the workspace configuration; nothing was written. The message names the token and the exact box to tick in Settings › MCP tokens |
 | `INTERNAL` | unexpected server error, nothing leaked; check ids and retry |
 
 ## Telemetry

@@ -4,6 +4,8 @@
  * components call dict(lang). The product voice holds in every language:
  * direct, no enthusiasm, no em-dash.
  */
+import { MANAGE_BADGE_EN, MANAGE_LABEL_EN } from "./manage-capability";
+
 export type Lang = "en" | "pt-BR";
 
 export const LANGUAGES: { value: Lang; label: string }[] = [
@@ -452,10 +454,14 @@ const en = {
     freshToken: "Token created. It is shown only once.",
     copyCommand: "Copy command",
     tokenPlaceholder: "token name (e.g. Codex CI)",
-    manageBadge: "manage",
-    manageLabel: "This token can change the workspace configuration",
+    // Shared with the MCP refusal (lib/manage-capability.ts): the error names
+    // the exact control, so the copy has one source (OCL-136).
+    manageBadge: MANAGE_BADGE_EN,
+    manageLabel: MANAGE_LABEL_EN,
     manageNote:
-      "off by default · only tick it for a token you trust to rewrite the harness policy and the executors over MCP · a worker token gets a permission error instead",
+      "off by default · a token created by pairing starts without it · tick it on a token's row to grant it later · only for a token you trust to rewrite the harness policy and the executors over MCP · a worker token gets a permission error instead",
+    manageGranted: "Token can now change the workspace configuration.",
+    manageRevoked: "Token can no longer change the workspace configuration.",
     generateTokenBtn: "+ Generate token",
     generatePairBtn: "+ Pairing code",
     freshPair: "Pairing code created. Read it to your agent; it works once and expires in 10 minutes.",
@@ -1009,7 +1015,9 @@ const ptBR: Dict = {
     manageBadge: "gerência",
     manageLabel: "Este token pode mudar a configuração do workspace",
     manageNote:
-      "desligado por padrão · marque só para um token em que você confia para reescrever a política de harness e os executores via MCP · um token de worker recebe um erro de permissão",
+      "desligado por padrão · um token criado por pareamento nasce sem ele · marque na linha do token para conceder depois · só para um token em que você confia para reescrever a política de harness e os executores via MCP · um token de worker recebe um erro de permissão",
+    manageGranted: "O token já pode mudar a configuração do workspace.",
+    manageRevoked: "O token não pode mais mudar a configuração do workspace.",
     generateTokenBtn: "+ Gerar token",
     generatePairBtn: "+ Código de pareamento",
     freshPair: "Código de pareamento criado. Leia para o seu agente; vale uma vez e expira em 10 minutos.",

@@ -7,6 +7,7 @@ import {
 } from "@agent-board/mcp-core";
 import { and, eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
+import { dict } from "../lib/i18n";
 import { closeTestWorld, createTestWorld, type TestWorld } from "./test-db";
 import { invokeToolForTests as invokeTool } from "./test-tools";
 
@@ -229,7 +230,14 @@ describe("harness_set writes the policy over MCP", () => {
     expect(set.ok).toBe(false);
     if (set.ok) return;
     expect(set.error.code).toBe("PERMISSION_DENIED");
-    expect(set.error.message).toContain("Settings");
+    // The refusal has to name a control that exists. It used to ask for
+    // "can manage the workspace", a phrase the board never showed anywhere,
+    // so the user had nothing to tick (OCL-136). Pinning it to the dictionary
+    // means renaming the checkbox renames the error too, or this fails.
+    const settings = dict("en").settings;
+    expect(set.error.message).toContain("Settings › MCP tokens");
+    expect(set.error.message).toContain(settings.manageBadge);
+    expect(set.error.message).toContain(settings.manageLabel);
 
     const after = await world.db
       .select()

@@ -52,6 +52,42 @@ export async function createTokenAction(
   }
 }
 
+/**
+ * Grants or takes back the manage capability on a token that already exists.
+ *
+ * Without this the flag could only be decided at creation time, on the manual
+ * "generate token" form — and a token created by pairing, which is how the
+ * plugin installs, always landed with it off and no way up. The MCP refusal
+ * then asked for a permission the UI had no control for (OCL-136, issue #71).
+ * Revoked tokens are left alone: reviving one by capability is not a thing.
+ */
+export async function setTokenManageAction(
+  tokenId: string,
+  canManage: boolean,
+): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Session expired. Sign in again." };
+
+  const ws = await db().query.workspace.findFirst();
+  if (!ws) return { ok: false, error: "Workspace not found." };
+
+  const [row] = await db()
+    .update(mcpToken)
+    .set({ canManage })
+    .where(
+      and(
+        eq(mcpToken.id, tokenId),
+        eq(mcpToken.workspaceId, ws.id),
+        eq(mcpToken.revoked, false),
+      ),
+    )
+    .returning({ id: mcpToken.id });
+  if (!row) return { ok: false, error: "Token not found, or it was revoked." };
+
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
 export async function revokeTokenAction(tokenId: string): Promise<ActionResult> {
   const session = await getSession();
   if (!session) return { ok: false, error: "Session expired. Sign in again." };
