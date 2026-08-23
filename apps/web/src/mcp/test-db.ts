@@ -33,6 +33,8 @@ export type TestWorld = {
   /** Token with the manage flag on: the only one allowed to write the config. */
   manageSecret: string;
   manageTokenId: string;
+  /** Already revoked: nothing may be granted to it, capability included. */
+  revokedTokenId: string;
 };
 
 /**
@@ -170,6 +172,7 @@ export async function createTestWorld(): Promise<TestWorld> {
     secondTokenId: tok2.id,
     manageSecret,
     manageTokenId: manager.id,
+    revokedTokenId: revoked.id,
   };
 }
 

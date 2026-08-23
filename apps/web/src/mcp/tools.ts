@@ -89,6 +89,7 @@ import {
   usageHonestyNote,
   type InsightsDb,
 } from "../lib/insights";
+import { manageDenialMessage } from "../lib/manage-capability";
 import { loadModelPrices, type PricesDb } from "../lib/prices";
 import {
   bindUsageRecipe,
@@ -4105,7 +4106,17 @@ async function harnessRecommend(
   input: { type: CardapioTaskType },
 ) {
   const rec = await recommendFor(db, ctx.workspaceId, input.type);
-  if (!rec.ok) return rec;
+  if (!rec.ok) {
+    // Issue #71 item 2: pre-create.mjs saw an empty recommendation three
+    // times on 0.2.5 and could not say whether the call errored, answered
+    // 200 with nothing, or never arrived. The plugin fails closed either
+    // way; this line is the server half of the answer, so the next report
+    // comes with the reason attached instead of a shrug.
+    console.warn(
+      `[harness_recommend] refused type=${input.type} workspace=${ctx.workspaceId} code=${rec.error.code}: ${rec.error.message}`,
+    );
+    return rec;
+  }
   return rec.value;
 }
 
@@ -4578,10 +4589,7 @@ function requireManage(
   tool: string,
 ): Result<never> | null {
   if (ctx.canManage) return null;
-  return err(
-    "PERMISSION_DENIED",
-    `This token cannot change the workspace configuration, so ${tool} is refused. Ask the owner to tick "can manage the workspace" for it in Settings › MCP tokens, or use a token that already has it.`,
-  );
+  return err("PERMISSION_DENIED", manageDenialMessage(tool, ctx.tokenLabel));
 }
 
 function policyEntryFromRow(

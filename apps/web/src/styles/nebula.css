@@ -2325,12 +2325,24 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .tok .meta { flex: 1; min-width: 0; }
 .nb .tok .label { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+/* Was a read-only badge; it is a checkbox now, because the capability has to
+   be grantable where the MCP error says it is (OCL-136). Unticked it reads as
+   an empty slot rather than an accent pill, so a token that holds manage is
+   still the one that stands out in the list. */
 .nb .tok-cap {
-  display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: var(--oc-radius-pill);
-  border: 1px solid rgb(var(--oc-accent-rgb) / .3); background: rgb(var(--oc-accent-rgb) / .08);
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  padding: 2px 8px; border-radius: var(--oc-radius-pill);
+  border: 1px solid var(--nebula-glass-border); background: none;
   font-family: var(--nebula-font-label); font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--nebula-mist-light); font-weight: 400; vertical-align: middle;
+  color: var(--nebula-text-tertiary); font-weight: 400; cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
 }
+.nb .tok-cap:has(input:checked) {
+  border-color: rgb(var(--oc-accent-rgb) / .3); background: rgb(var(--oc-accent-rgb) / .08);
+  color: var(--nebula-mist-light);
+}
+.nb .tok-cap:has(input:disabled) { cursor: default; opacity: .5; }
+.nb .tok-cap input { accent-color: rgb(var(--oc-accent-rgb)); margin: 0; cursor: inherit; }
 /* the legacy global `.sub` ends with a 28px paragraph margin, which inside a
    card is 28px of nothing under every token: a row three times the height of
    the two lines it holds */

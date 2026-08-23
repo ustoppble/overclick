@@ -13,6 +13,7 @@ import {
   createPairingCodeAction,
   createTokenAction,
   revokeTokenAction,
+  setTokenManageAction,
 } from "../../actions/tokens";
 import { saveUpdateModeAction } from "../../actions/updates";
 import { NebulaAtmosphere } from "../../components/nebula-atmosphere";
@@ -434,6 +435,16 @@ export function SettingsClient({
       const r = await revokeTokenAction(id);
       if (!r.ok) setErr(r.error);
       else router.refresh();
+    });
+  // The capability is decided on the row, not only at creation: a token that
+  // arrived through pairing is born without it, and until this existed there
+  // was no control anywhere that could turn it on (OCL-136).
+  const setManage = (id: string, canManage: boolean) =>
+    start(async () => {
+      setErr(null); setMsg(null);
+      const r = await setTokenManageAction(id, canManage);
+      if (!r.ok) setErr(r.error);
+      else { setMsg(canManage ? t.settings.manageGranted : t.settings.manageRevoked); router.refresh(); }
     });
   const copyFresh = async () => {
     if (!fresh) return;
@@ -920,17 +931,25 @@ export function SettingsClient({
               tokens.map((tok) => (
                 <div key={tok.id} className={`tok${tok.revoked ? " revoked" : ""}`}>
                   <div className="meta">
-                    <div className="label">
-                      {tok.label}
-                      {tok.canManage ? (
-                        <span className="tok-cap">{t.settings.manageBadge}</span>
-                      ) : null}
-                    </div>
+                    <div className="label">{tok.label}</div>
                     <div className="sub">
                       {t.settings.created} {fmtDate(tok.createdAt, dateLocale)} ·{" "}
                       {tok.revoked ? t.settings.revoked : fmtLastUse(tok.lastUsedAt, t)}
                     </div>
                   </div>
+                  {/* The box the MCP refusal points at. It is a control and not
+                      a badge because reading "this token needs manage" and
+                      finding nothing to tick is the whole bug (OCL-136). */}
+                  <label className="tok-cap" title={t.settings.manageLabel}>
+                    <input
+                      type="checkbox"
+                      checked={tok.canManage}
+                      disabled={pending || tok.revoked}
+                      aria-label={`${t.settings.manageLabel} (${tok.label})`}
+                      onChange={(e) => setManage(tok.id, e.target.checked)}
+                    />
+                    <span>{t.settings.manageBadge}</span>
+                  </label>
                   <span className="val">{tok.masked}</span>
                   <button className="btn-rev" disabled={pending || tok.revoked} onClick={() => revoke(tok.id)}>
                     {tok.revoked ? t.settings.revoked : t.settings.revoke}
