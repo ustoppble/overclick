@@ -96,9 +96,24 @@ fi
 # a JSON runtime to merge agent configs safely; the sed arm is only there so a
 # machine that has neither still gets a readable failure from the caller rather
 # than a silently empty token.
+# `command -v` answers "is there a file by that name", which is a different
+# question. Windows ships `python3.exe` by default as a Microsoft Store App
+# Execution Alias: it satisfies `command -v`, runs, prints "Python was not
+# found" and exits 0 with empty stdout. Committing to that runtime made the
+# token come back empty on every Windows install, and the sed fallback below --
+# written for exactly this machine -- was never reached, because the stub had
+# already won the branch. So probe capability, not presence.
+runtime_works() {
+  case $1 in
+    python3) python3 -c pass >/dev/null 2>&1 ;;
+    node) node -e "" >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
+
 read_json_string() {
   local field=$1 payload=$2 value
-  if command -v python3 >/dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1 && runtime_works python3; then
     OC_JSON_PAYLOAD=$payload OC_JSON_FIELD=$field python3 <<'PY'
 import json, os, sys
 
@@ -113,7 +128,7 @@ sys.stdout.write(value)
 PY
     return $?
   fi
-  if command -v node >/dev/null 2>&1; then
+  if command -v node >/dev/null 2>&1 && runtime_works node; then
     OC_JSON_PAYLOAD=$payload OC_JSON_FIELD=$field node <<'JS'
 let data;
 try { data = JSON.parse(process.env.OC_JSON_PAYLOAD); } catch { process.exit(1); }
@@ -138,10 +153,42 @@ exchange_pairing_code() {
     printf '%s\n' "curl is required to exchange an OverClick pairing code." >&2
     return 1
   fi
-  response=$(curl -fsS -X POST "$instance_base/api/pair" \
-    -H 'Content-Type: application/json' \
-    -d "{\"code\":\"$code\"}" 2>/dev/null) || return 1
-  read_json_string token "$response"
+  # Not `-f`: it collapses "the code was refused", "the instance is broken"
+  # and "the network is down" into one exit status, and the caller then blamed
+  # all three on an expired code -- sending users to burn a fresh code against
+  # a 500 that no code could satisfy. Read the status and say which happened;
+  # the server's own JSON error is more specific than anything invented here.
+  local body status
+  body=$(mktemp) || return 1
+  status=$(curl -sS -o "$body" -w '%{http_code}' -X POST "$instance_base/api/pair"     -H 'Content-Type: application/json'     -d "{\"code\":\"$code\"}" 2>/dev/null) || status=000
+  response=$(cat "$body" 2>/dev/null)
+  rm -f "$body"
+
+  case $status in
+    2*) ;;
+    000)
+      printf '%s
+' "Could not reach $instance_base to exchange the pairing code. Check the URL, the network, and that the instance is up." >&2
+      return 1 ;;
+    5*)
+      printf '%s
+' "The instance answered HTTP $status while exchanging the pairing code. The code was NOT spent: this is a fault on the board, not a stale code. Check the server logs." >&2
+      [ -n "$response" ] && printf '%s
+' "  response: $response" >&2
+      return 1 ;;
+    *)
+      local detail
+      detail=$(read_json_string error "$response" 2>/dev/null) || detail=""
+      printf '%s
+' "${detail:-The board refused the pairing code (HTTP $status).}" >&2
+      return 1 ;;
+  esac
+
+  if ! read_json_string token "$response"; then
+    printf '%s
+' "The board accepted the pairing code, but the token could not be read out of its reply. The code is now spent -- generate a fresh one. Install python3 or node so the installer can parse JSON." >&2
+    return 1
+  fi
 }
 
 if [[ -n "${OVERCLICK_TOKEN:-}" ]]; then
@@ -152,8 +199,10 @@ elif [[ -n "${OVERCLICK_PAIRING_CODE:-}" ]]; then
     printf '%s\n' "An OverClick pairing code is exactly six digits." >&2
     exit 1
   fi
+  # No blanket message here: exchange_pairing_code already said which failure
+  # mode happened, and overwriting it with "the code expired" is precisely what
+  # pointed the diagnosis at the one part that was working correctly.
   if ! token=$(exchange_pairing_code "$pairing_code"); then
-    printf '%s\n' "Could not exchange the pairing code. It is single use and expires in ten minutes; generate a fresh command on the board and run it again." >&2
     exit 1
   fi
   printf '%s\n' "Paired with the OverClick instance. The token was not displayed."
@@ -289,7 +338,7 @@ write_codex_mcp() {
 merge_json_config() {
   local mode=$1 file=$2 source_hooks=${3:-}
   mkdir -p "$(dirname -- "$file")"
-  if command -v python3 >/dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1 && runtime_works python3; then
     OC_JSON_MODE=$mode OC_JSON_FILE=$file OC_MCP_URL=$mcp_url OC_MCP_TOKEN=$token \
       OC_HOOK_SOURCE=$source_hooks OC_PLUGIN_TARGET=$plugin_target python3 <<'PY'
 import json, os, pathlib, tempfile
@@ -348,7 +397,7 @@ PY
     return
   fi
 
-  if command -v node >/dev/null 2>&1; then
+  if command -v node >/dev/null 2>&1 && runtime_works node; then
     OC_JSON_MODE=$mode OC_JSON_FILE=$file OC_MCP_URL=$mcp_url OC_MCP_TOKEN=$token \
       OC_HOOK_SOURCE=$source_hooks OC_PLUGIN_TARGET=$plugin_target node <<'JS'
 const fs = require("node:fs");
@@ -462,7 +511,7 @@ quiet_try() {
 verify_claude_plugin() {
   local listing
   listing=$(claude plugin list --json 2>/dev/null) || return 1
-  if command -v python3 >/dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1 && runtime_works python3; then
     printf '%s' "$listing" | python3 -c '
 import json, sys
 try:
@@ -477,7 +526,7 @@ sys.exit(1)
 '
     return $?
   fi
-  if command -v node >/dev/null 2>&1; then
+  if command -v node >/dev/null 2>&1 && runtime_works node; then
     printf '%s' "$listing" | node -e '
 let data = "";
 process.stdin.on("data", chunk => { data += chunk; });
@@ -499,7 +548,7 @@ process.stdin.on("end", () => {
 verify_codex_plugin() {
   local listing
   listing=$(codex plugin list --json 2>/dev/null) || return 1
-  if command -v python3 >/dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1 && runtime_works python3; then
     printf '%s' "$listing" | python3 -c '
 import json, sys
 try:
@@ -678,7 +727,7 @@ KIMIPY
 
 if has_cli kimi; then
   merge_json_config mcp-kimi "$install_home/.kimi-code/mcp.json"
-  if command -v python3 >/dev/null 2>&1 && kimi_register_plugin; then
+  if command -v python3 >/dev/null 2>&1 && runtime_works python3 && kimi_register_plugin; then
     printf '%s\n' "Kimi plugin configured."
   else
     printf '%s\n' "Kimi plugin needs manual confirmation: run /plugins install $plugin_target inside Kimi Code." >&2
