@@ -35,6 +35,74 @@ if [[ -n "${OVERCLICK_INSTALL_HOME:-}" ]]; then
   export GEMINI_HOME="$install_home/.gemini"
 fi
 
+# MinGit on Windows ships a bash but no coreutils, so `chmod` is simply absent
+# there: under `set -e` every mode-bit call below aborted the install - and did
+# it AFTER the credentials had already been written, so the run exited non-zero
+# with the configuration rewritten (OCL-133). Mode bits are hardening, not the
+# installation: on Windows these files land under the user profile, where the
+# NTFS ACL already keeps them to that account. Where chmod exists - every POSIX
+# platform - it still runs exactly as before, and only its absence, or its
+# failure, stops being fatal.
+secure_perms() {
+  local mode=$1
+  shift
+  command -v chmod >/dev/null 2>&1 || return 0
+  chmod "$mode" "$@" 2>/dev/null && return 0
+  printf '%s\n' "Could not set mode $mode on $*; the file was written and its permissions were left to the filesystem." >&2
+  return 0
+}
+
+# >>> native_path (extracted by scripts/test-plugin-package.sh)
+# A path the installer writes into a CLI's own configuration is read back by
+# that CLI, which on Windows is a native program. A MinGit shell hands us the
+# MSYS form (`/c/Users/...`) and Claude Code resolves that literally, so the
+# `@/c/Users/.../OVERCLICK.md` line written into CLAUDE.md pointed at nothing:
+# the plugin looked installed while its instructions silently stopped loading
+# every session (OCL-133). Convert to the native form before writing.
+# `cygpath -m` rather than `-w`: the same drive-letter path with forward
+# slashes, which needs no escaping inside JSON or markdown. MinGit ships no
+# cygpath at all, so the drive prefix is also rewritten by hand - but only on a
+# Windows shell, because `/c/x` on Linux is an ordinary directory that must be
+# left exactly as it is.
+native_path() {
+  local path=$1 converted drive
+  case "$(uname -s 2>/dev/null || printf 'unknown')" in
+    MINGW*|MSYS*|CYGWIN*|Windows_NT) ;;
+    *) printf '%s' "$path"; return 0 ;;
+  esac
+  if command -v cygpath >/dev/null 2>&1; then
+    converted=$(cygpath -m -- "$path" 2>/dev/null) || converted=""
+    if [[ -n "$converted" ]]; then
+      printf '%s' "$converted"
+      return 0
+    fi
+  fi
+  if [[ "$path" =~ ^/([A-Za-z])(/.*)?$ ]]; then
+    drive=$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:lower:]' '[:upper:]')
+    printf '%s:%s' "$drive" "${BASH_REMATCH[2]:-/}"
+    return 0
+  fi
+  printf '%s' "$path"
+}
+# <<< native_path
+
+# `cp -R` onto an existing directory only ever adds. A file the previous release
+# shipped and this one dropped therefore survives every upgrade, so an updated
+# install stopped being a faithful copy of the release - OCL-133 found the 0.2.4
+# shell hooks still sitting beside the 0.2.5 `.mjs` ones. Replace the tree
+# instead of merging into it.
+replace_tree() {
+  local source=$1 target=$2
+  # `cp` onto itself after the `rm -rf` would be an empty install; a caller
+  # pointed at the directory it is copying from just has nothing to do.
+  if [[ -d "$target" && "$source" -ef "$target" ]]; then
+    return 0
+  fi
+  rm -rf -- "$target"
+  mkdir -p "$target"
+  cp -R "$source/." "$target/"
+}
+
 read_private_setting() {
   local key=$1 line
   [[ -f "$private_config" ]] || return 1
@@ -141,6 +209,26 @@ JS
   value=$(printf '%s' "$payload" | sed -n 's/.*"'"$field"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
   [[ -n "$value" ]] || return 1
   printf '%s' "$value"
+}
+
+read_json_file_string() {
+  local field=$1 file=$2 payload
+  [[ -f "$file" ]] || return 1
+  payload=$(cat "$file") || return 1
+  read_json_string "$field" "$payload"
+}
+
+# The version a plugin directory declares. Every manifest in the package ships
+# the same version (scripts/test-plugin-package.sh guards that), so whichever
+# one a given CLI's layout happens to carry answers for all of them.
+plugin_dir_version() {
+  local dir=$1 manifest
+  for manifest in .claude-plugin/plugin.json plugin.json .codex-plugin/plugin.json; do
+    if read_json_file_string version "$dir/$manifest" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # Trades a one-time pairing code for the real bearer token. The code is what
@@ -270,8 +358,16 @@ if [[ ! -f "$source_root/plugin/.codex-plugin/plugin.json" || ! -f "$source_root
   exit 1
 fi
 
-mkdir -p "$plugin_target"
-cp -R "$source_root/plugin/." "$plugin_target/"
+replace_tree "$source_root/plugin" "$plugin_target"
+plugin_target_native=$(native_path "$plugin_target")
+
+# The whole point of this installer is that the user ends up running the version
+# it just fetched. Nothing below can assert that without knowing which version
+# that is, so a package that will not say is a stop, not a warning (OCL-133).
+if ! package_version=$(plugin_dir_version "$source_root/plugin"); then
+  printf '%s\n' "The retrieved package declares no version, so the installer cannot confirm which version each CLI ends up running." >&2
+  exit 1
+fi
 
 enforce_stop=$(read_private_setting enforce_stop 2>/dev/null || printf '0')
 enforce_harness=$(read_private_setting enforce_harness 2>/dev/null || printf '0')
@@ -283,7 +379,7 @@ enforce_stop=$enforce_stop
 enforce_harness=$enforce_harness
 enforce_claim=$enforce_claim
 EOF
-chmod 600 "$private_config"
+secure_perms 600 "$private_config"
 
 toml_quote() {
   local value=$1
@@ -332,7 +428,7 @@ write_codex_mcp() {
     printf '%s\n' '# overclick:end'
   } >>"$temporary"
   mv "$temporary" "$file"
-  chmod 600 "$file"
+  secure_perms 600 "$file"
 }
 
 merge_json_config() {
@@ -340,7 +436,7 @@ merge_json_config() {
   mkdir -p "$(dirname -- "$file")"
   if command -v python3 >/dev/null 2>&1 && runtime_works python3; then
     OC_JSON_MODE=$mode OC_JSON_FILE=$file OC_MCP_URL=$mcp_url OC_MCP_TOKEN=$token \
-      OC_HOOK_SOURCE=$source_hooks OC_PLUGIN_TARGET=$plugin_target python3 <<'PY'
+      OC_HOOK_SOURCE=$source_hooks OC_PLUGIN_TARGET=$plugin_target_native python3 <<'PY'
 import json, os, pathlib, tempfile
 
 path = pathlib.Path(os.environ["OC_JSON_FILE"])
@@ -399,7 +495,7 @@ PY
 
   if command -v node >/dev/null 2>&1 && runtime_works node; then
     OC_JSON_MODE=$mode OC_JSON_FILE=$file OC_MCP_URL=$mcp_url OC_MCP_TOKEN=$token \
-      OC_HOOK_SOURCE=$source_hooks OC_PLUGIN_TARGET=$plugin_target node <<'JS'
+      OC_HOOK_SOURCE=$source_hooks OC_PLUGIN_TARGET=$plugin_target_native node <<'JS'
 const fs = require("node:fs");
 const path = require("node:path");
 const file = process.env.OC_JSON_FILE;
@@ -456,10 +552,10 @@ JS
 # exception below: its plugin manifest is the only channel it reads.
 
 native_marketplace="$overclick_root/native-marketplace"
-mkdir -p "$native_marketplace/.claude-plugin" "$native_marketplace/.grok-plugin" "$native_marketplace/plugin"
+mkdir -p "$native_marketplace/.claude-plugin" "$native_marketplace/.grok-plugin"
 cp "$source_root/.claude-plugin/marketplace.json" "$native_marketplace/.claude-plugin/marketplace.json"
 cp "$source_root/.grok-plugin/marketplace.json" "$native_marketplace/.grok-plugin/marketplace.json"
-cp -R "$plugin_target/." "$native_marketplace/plugin/"
+replace_tree "$plugin_target" "$native_marketplace/plugin"
 
 if [[ -n "${OVERCLICK_CLIS:-}" ]]; then
   detected_clis=",${OVERCLICK_CLIS// /},"
@@ -566,21 +662,50 @@ sys.exit(1)
   return 1
 }
 
+# "Successfully installed" is a statement about a command, not about what is on
+# disk. Each CLI caches the package, so a marketplace bumped to a new version
+# while the cached copy stays behind reports success and goes on running the old
+# code - which is how 0.2.5 was "installed" on a machine that kept running
+# 0.2.4, under a final line reading "complete" (OCL-133). Compare the version
+# that MATERIALIZED against the one being installed, and refuse to call that
+# anything but a failure.
+assert_materialized_version() {
+  local label=$1 dir=$2 found
+  if ! found=$(plugin_dir_version "$dir"); then
+    printf '%s\n' "$label materialized at $dir but declares no version, so the installer cannot confirm it is $package_version. Do not trust the earlier \"configured\" messages." >&2
+    return 1
+  fi
+  if [[ "$found" != "$package_version" ]]; then
+    printf '%s\n' "$label is still on $found after installing $package_version: the CLI kept a stale cached copy. Do not trust the earlier \"configured\" messages; run that CLI's own plugin update, or delete the cache at $dir, and install again." >&2
+    return 1
+  fi
+  printf '%s\n' "$label verified: $package_version enabled and materialized at $dir."
+  return 0
+}
+
 validation_failed=0
 
 if has_cli claude; then
-  if claude plugin marketplace add "$native_marketplace" --scope user >/dev/null 2>&1 || \
+  if claude plugin marketplace add "$(native_path "$native_marketplace")" --scope user >/dev/null 2>&1 || \
     claude plugin marketplace update overclick >/dev/null 2>&1; then
     printf '%s\n' "Claude marketplace configured."
   else
     printf '%s\n' "Claude marketplace needs manual confirmation in its native plugin manager." >&2
   fi
+  # `add` on an already-registered marketplace is a no-op that leaves the
+  # previously cached manifest in place, and `install` on an already-installed
+  # plugin is another. Both succeed, so the `||` chains above never reached the
+  # update arms and every re-run left the old version installed: landing 0.2.5
+  # took the two commands below, by hand (OCL-133). Run them unconditionally -
+  # they are the update path, not the fallback.
+  claude plugin marketplace update overclick >/dev/null 2>&1 || true
   if claude plugin install overclick@overclick --scope user >/dev/null 2>&1 || \
     claude plugin update overclick@overclick --scope user >/dev/null 2>&1; then
     printf '%s\n' "Claude plugin configured."
   else
     printf '%s\n' "Claude plugin needs manual confirmation in its native plugin manager." >&2
   fi
+  claude plugin update overclick@overclick --scope user >/dev/null 2>&1 || true
   if foreign_mcp_registration claude mcp get overclick; then
     printf '%s\n' "Claude already has an MCP server named overclick pointing at a different instance; it was left untouched. Remove it with 'claude mcp remove overclick' and re-run this installer to move to this board." >&2
   else
@@ -593,12 +718,12 @@ if has_cli claude; then
     quiet_try "Claude MCP" claude mcp add --transport http --scope user \
       overclick "$mcp_url" --header "Authorization: Bearer $token"
   fi
-  claude_block=$(printf '%s\n' '<!-- overclick:start -->' "@$plugin_target/OVERCLICK.md" '<!-- overclick:end -->')
+  claude_block=$(printf '%s\n' '<!-- overclick:start -->' "@$plugin_target_native/OVERCLICK.md" '<!-- overclick:end -->')
   replace_marked_block "$install_home/.claude/CLAUDE.md" "$claude_block"
 
   claude_install_path=$(verify_claude_plugin) || claude_install_path=""
   if [[ -n "$claude_install_path" && -f "$claude_install_path/OVERCLICK.md" ]]; then
-    printf '%s\n' "Claude plugin verified: enabled and materialized at $claude_install_path."
+    assert_materialized_version "Claude plugin" "$claude_install_path" || validation_failed=1
   else
     printf '%s\n' "Claude plugin did not materialize: 'claude plugin list --json' shows no enabled overclick entry with OVERCLICK.md on disk. Do not trust the earlier \"configured\" messages; retry or install manually." >&2
     validation_failed=1
@@ -613,8 +738,8 @@ if has_cli codex; then
   # copying it next to the manifest makes `codex plugin add` fail with
   # "plugin source path is not a directory".
   codex_plugin="$codex_marketplace/plugins/overclick"
-  mkdir -p "$codex_plugin" "$codex_marketplace/.agents/plugins"
-  cp -R "$plugin_target/." "$codex_plugin/"
+  mkdir -p "$codex_marketplace/.agents/plugins"
+  replace_tree "$plugin_target" "$codex_plugin"
   cat >"$codex_marketplace/.agents/plugins/marketplace.json" <<'JSON'
 {
   "name": "overclick",
@@ -633,13 +758,19 @@ JSON
   # so every plugin call below would fail on a machine where codex is installed
   # but has never been run.
   mkdir -p "$install_home/.codex"
-  quiet_try "Codex marketplace" codex plugin marketplace add "$codex_marketplace"
+  quiet_try "Codex marketplace" codex plugin marketplace add "$(native_path "$codex_marketplace")"
   quiet_try "Codex plugin" codex plugin add overclick@overclick
+  # Same stale-cache trap as Claude: `add` on something already added is a
+  # no-op. Codex may or may not carry these subcommands depending on its
+  # version, so they are attempted rather than required - the version assertion
+  # below is what actually decides whether the install landed (OCL-133).
+  codex plugin marketplace update overclick >/dev/null 2>&1 || true
+  codex plugin update overclick@overclick >/dev/null 2>&1 || true
   write_codex_mcp
 
   codex_install_path=$(verify_codex_plugin) || codex_install_path=""
   if [[ -n "$codex_install_path" && -f "$codex_install_path/OVERCLICK.md" ]]; then
-    printf '%s\n' "Codex plugin verified: enabled and materialized at $codex_install_path."
+    assert_materialized_version "Codex plugin" "$codex_install_path" || validation_failed=1
   else
     printf '%s\n' "Codex plugin did not materialize: 'codex plugin list --json' shows no enabled overclick entry with OVERCLICK.md on disk. Do not trust the earlier \"configured\" messages; retry or install manually." >&2
     validation_failed=1
@@ -650,18 +781,23 @@ JSON
 fi
 
 if has_cli grok; then
-  if grok plugin marketplace add "$native_marketplace" >/dev/null 2>&1 || \
+  if grok plugin marketplace add "$(native_path "$native_marketplace")" >/dev/null 2>&1 || \
     grok plugin marketplace update overclick >/dev/null 2>&1; then
     printf '%s\n' "Grok marketplace configured."
   else
     printf '%s\n' "Grok marketplace needs manual confirmation in its native plugin manager." >&2
   fi
-  if grok plugin install "$plugin_target" --trust >/dev/null 2>&1 || \
+  # As with Claude: the update is the re-run path, not the fallback for a
+  # failed add (OCL-133). Grok has no `plugin list --json`, so there is no
+  # materialization check to back it up here - running it is what there is.
+  grok plugin marketplace update overclick >/dev/null 2>&1 || true
+  if grok plugin install "$plugin_target_native" --trust >/dev/null 2>&1 || \
     grok plugin update overclick >/dev/null 2>&1; then
     printf '%s\n' "Grok plugin configured."
   else
     printf '%s\n' "Grok plugin needs manual confirmation in its native plugin manager." >&2
   fi
+  grok plugin update overclick >/dev/null 2>&1 || true
   if foreign_mcp_registration grok mcp get overclick; then
     printf '%s\n' "Grok already has an MCP server named overclick pointing at a different instance; it was left untouched. Remove it with 'grok mcp remove overclick' and re-run this installer to move to this board." >&2
   else
@@ -686,8 +822,8 @@ kimi_register_plugin() {
   rm -rf "$managed" || return 1
   cp -R "$plugin_target" "$managed" || return 1
 
-  OC_KIMI_INSTALLED="$kimi_home/plugins/installed.json" OC_KIMI_ROOT="$managed" \
-    OC_PLUGIN_TARGET="$plugin_target" python3 <<'KIMIPY'
+  OC_KIMI_INSTALLED="$kimi_home/plugins/installed.json" OC_KIMI_ROOT="$(native_path "$managed")" \
+    OC_PLUGIN_TARGET="$plugin_target_native" python3 <<'KIMIPY'
 import json, os, pathlib, tempfile
 from datetime import datetime, timezone
 
@@ -746,26 +882,24 @@ if has_cli agy; then
   # generic template.
   agy_stage="$overclick_root/antigravity/overclick"
   agy_installed="$install_home/.gemini/config/plugins/overclick"
-  rm -rf -- "$agy_stage"
-  mkdir -p "$agy_stage"
-  cp -R "$plugin_target/." "$agy_stage/"
+  replace_tree "$plugin_target" "$agy_stage"
   merge_json_config mcp-antigravity "$agy_stage/mcp_config.json"
-  chmod 600 "$agy_stage/mcp_config.json"
+  secure_perms 600 "$agy_stage/mcp_config.json"
   agy_rule_block=$(printf '%s\n' '<!-- overclick:start -->' \
-    "Read and follow $agy_installed/OVERCLICK.md for all OverClick board work." \
+    "Read and follow $(native_path "$agy_installed")/OVERCLICK.md for all OverClick board work." \
     '<!-- overclick:end -->')
   replace_marked_block "$agy_stage/rules/AGENTS.md" "$agy_rule_block"
-  quiet_try "Antigravity plugin" "$agy_bin" plugin install "$agy_stage"
+  quiet_try "Antigravity plugin" "$agy_bin" plugin install "$(native_path "$agy_stage")"
   "$agy_bin" plugin enable overclick >/dev/null 2>&1 || true
   # The manager copies the staged directory, so the credentials land in a second
   # place and need the same mode-600 the staged copy already has.
   if [[ -f "$agy_installed/mcp_config.json" ]]; then
-    chmod 600 "$agy_installed/mcp_config.json"
+    secure_perms 600 "$agy_installed/mcp_config.json"
   fi
 
   if "$agy_bin" plugin list 2>/dev/null | grep -q '"overclick"' && \
     [[ -f "$agy_installed/OVERCLICK.md" ]]; then
-    printf '%s\n' "Antigravity plugin verified: imported and materialized at $agy_installed."
+    assert_materialized_version "Antigravity plugin" "$agy_installed" || validation_failed=1
   else
     printf '%s\n' "Antigravity plugin did not materialize: 'agy plugin list' shows no overclick entry with OVERCLICK.md on disk. Retry or install manually." >&2
     validation_failed=1
@@ -774,7 +908,7 @@ fi
 
 if [[ "${OVERCLICK_AGENTS_FALLBACK:-0}" = "1" ]] || \
   { ! has_cli claude && ! has_cli codex && ! has_cli grok && ! has_cli kimi && ! has_cli agy; }; then
-  agents_block=$(printf '%s\n' '<!-- overclick:start -->' "Read and follow $plugin_target/OVERCLICK.md for all OverClick board work." '<!-- overclick:end -->')
+  agents_block=$(printf '%s\n' '<!-- overclick:start -->' "Read and follow $plugin_target_native/OVERCLICK.md for all OverClick board work." '<!-- overclick:end -->')
   replace_marked_block "$project_dir/AGENTS.md" "$agents_block"
   printf '%s\n' "No plugin-capable CLI was detected; the AGENTS.md fallback was installed."
 fi

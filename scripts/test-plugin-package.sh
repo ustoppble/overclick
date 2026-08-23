@@ -92,9 +92,20 @@ file_mode() {
   stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
 }
 
-mkdir -p "$TEST_ROOT/bin" "$TEST_ROOT/home/.codex" "$TEST_ROOT/project" "$TEST_ROOT/claude-cache" "$TEST_ROOT/codex-cache"
-touch "$TEST_ROOT/claude-cache/OVERCLICK.md"
-touch "$TEST_ROOT/codex-cache/OVERCLICK.md"
+mkdir -p "$TEST_ROOT/bin" "$TEST_ROOT/home/.codex" "$TEST_ROOT/project"
+# OCL-133. What a CLI reports as installed is a cache directory it materialized
+# at some point, so the cache is where the installed VERSION can be read - and
+# a cache left behind at the previous version is exactly the failure the
+# installer now has to catch instead of printing "complete". Each fixture cache
+# therefore carries a manifest, and its version is the variable under test.
+stage_cache() {
+  mkdir -p "$1/.claude-plugin"
+  touch "$1/OVERCLICK.md"
+  printf '{"name":"overclick","version":"%s","source":"./plugin"}\n' "$2" \
+    >"$1/.claude-plugin/plugin.json"
+}
+stage_cache "$TEST_ROOT/claude-cache" "$PKG_VERSION"
+stage_cache "$TEST_ROOT/codex-cache" "$PKG_VERSION"
 # OCL-104 gave install.sh a `codex plugin list --json` materialization check to
 # match the Claude one, but this stub only ever answered for claude, so codex
 # verification saw empty output, install.sh exited 1, and this whole suite
@@ -334,16 +345,55 @@ if PATH="$TEST_ROOT/bin:$PATH" \
 fi
 grep -Fq 'did not materialize' "$TEST_ROOT/unverified.err"
 
+# OCL-133. The other half of that lie: the plugin DID materialize, the
+# marketplace was bumped, and the CLI kept serving the cached previous version -
+# and the installer signed it off as verified/complete. The version that
+# materialized is the only thing that settles it.
+grep -Fq "Claude plugin verified: $PKG_VERSION" "$TEST_ROOT/install.out"
+grep -Fq "Codex plugin verified: $PKG_VERSION" "$TEST_ROOT/install.out"
+grep -Fq "Antigravity plugin verified: $PKG_VERSION" "$TEST_ROOT/install.out"
+# Every re-run has to push the CLI's own update through, or an install over an
+# older version leaves the old one installed: `marketplace add` and `plugin
+# install` both succeed as no-ops, so the `||` fallback never fired.
+grep -Fq 'claude:plugin:marketplace' "$TEST_ROOT/native.log"
+test "$(grep -c '^claude:plugin:update$' "$TEST_ROOT/native.log")" -ge 1
+
+mkdir -p "$TEST_ROOT/claude-cache-stale"
+stage_cache "$TEST_ROOT/claude-cache-stale" 0.0.1
+if PATH="$TEST_ROOT/bin:$PATH" \
+  OC_TEST_NATIVE_LOG="$TEST_ROOT/native-stale.log" \
+  OC_TEST_CLAUDE_CACHE="$TEST_ROOT/claude-cache-stale" \
+  OC_TEST_CODEX_CACHE="$TEST_ROOT/codex-cache" \
+  OVERCLICK_INSTALL_HOME="$TEST_ROOT/home-stale" \
+  OVERCLICK_PROJECT_DIR="$TEST_ROOT/project" \
+  OVERCLICK_INSTANCE_URL="$FIXTURE_URL" \
+  OVERCLICK_TOKEN="fixture" \
+  OVERCLICK_CLIS="claude" \
+    "$REPO_ROOT/install.sh" >"$TEST_ROOT/stale.out" 2>"$TEST_ROOT/stale.err"; then
+  echo "installer reported success while the CLI stayed on the previous version" >&2
+  exit 1
+fi
+grep -Fq "is still on 0.0.1 after installing $PKG_VERSION" "$TEST_ROOT/stale.err"
+if grep -Fq 'installation complete' "$TEST_ROOT/stale.out"; then
+  echo "installer printed complete on a stale version" >&2
+  exit 1
+fi
+
 # `curl | bash` never gives install.sh a local checkout to reuse (OCL-103: the
 # github source was never the bug). Exercise that path directly: a bare install.sh copy, no plugin/ next
 # to it, sourcing a local git remote instead of network github.
 mkdir -p "$TEST_ROOT/plugin-remote/plugin/.codex-plugin" \
+  "$TEST_ROOT/plugin-remote/plugin/.claude-plugin" \
   "$TEST_ROOT/plugin-remote/.claude-plugin" "$TEST_ROOT/plugin-remote/.grok-plugin"
 git init -q "$TEST_ROOT/plugin-remote"
 git -C "$TEST_ROOT/plugin-remote" config user.name fixture
 git -C "$TEST_ROOT/plugin-remote" config user.email fixture@invalid
 printf 'package v1\n' >"$TEST_ROOT/plugin-remote/plugin/OVERCLICK.md"
 printf '{}' >"$TEST_ROOT/plugin-remote/plugin/.codex-plugin/plugin.json"
+# The installer refuses a package that will not say which version it is, since
+# nothing downstream could then assert that the version materialized (OCL-133).
+printf '{"name":"overclick","version":"9.9.9"}' \
+  >"$TEST_ROOT/plugin-remote/plugin/.claude-plugin/plugin.json"
 printf '{}' >"$TEST_ROOT/plugin-remote/.claude-plugin/marketplace.json"
 printf '{}' >"$TEST_ROOT/plugin-remote/.grok-plugin/marketplace.json"
 git -C "$TEST_ROOT/plugin-remote" add -A
@@ -352,7 +402,7 @@ git -C "$TEST_ROOT/plugin-remote" commit -q -m v1
 mkdir -p "$TEST_ROOT/isolated-installer" "$TEST_ROOT/clone-cache"
 cp "$REPO_ROOT/install.sh" "$TEST_ROOT/isolated-installer/install.sh"
 chmod +x "$TEST_ROOT/isolated-installer/install.sh"
-touch "$TEST_ROOT/clone-cache/OVERCLICK.md"
+stage_cache "$TEST_ROOT/clone-cache" 9.9.9
 
 run_clone_installer() {
   PATH="$TEST_ROOT/bin:$PATH" \
@@ -736,5 +786,104 @@ OVERCLICK_TOKEN="fixture" \
 OVERCLICK_CLIS="claude" \
   "$REPO_ROOT/install.sh" >"$TEST_ROOT/refresh.out" 2>"$TEST_ROOT/refresh.err"
 grep -Fq "mcp-url:$FIXTURE_URL/mcp" "$TEST_ROOT/refresh-native.log"
+
+# OCL-133 (1). MinGit on Windows is a bash with no coreutils behind it, so
+# `chmod` is not there at all. Under `set -e` that aborted the run at the first
+# mode-bit call - after the credentials had already been written, so the user
+# got a non-zero exit AND a rewritten config. What has to hold is the whole
+# install surviving, not one guarded line, so this is a full run on a PATH where
+# chmod does not exist.
+mkdir -p "$TEST_ROOT/nochmod"
+for utility in bash env sh git grep sed awk tr cat cp rm rmdir mkdir mv ln touch \
+  mktemp dirname basename head tail uname node python3 find sort wc; do
+  target=$(command -v "$utility" 2>/dev/null) && ln -sf "$target" "$TEST_ROOT/nochmod/$utility"
+done
+if PATH="$TEST_ROOT/nochmod" command -v chmod >/dev/null 2>&1; then
+  echo "the no-chmod fixture still resolves chmod" >&2
+  exit 1
+fi
+if ! PATH="$TEST_ROOT/bin:$TEST_ROOT/nochmod" \
+  OC_TEST_NATIVE_LOG="$TEST_ROOT/nochmod-native.log" \
+  OC_TEST_CLAUDE_CACHE="$TEST_ROOT/claude-cache" \
+  OC_TEST_CODEX_CACHE="$TEST_ROOT/codex-cache" \
+  OVERCLICK_INSTALL_HOME="$TEST_ROOT/home-nochmod" \
+  OVERCLICK_PROJECT_DIR="$TEST_ROOT/project" \
+  OVERCLICK_INSTANCE_URL="$FIXTURE_URL" \
+  OVERCLICK_TOKEN="fixture" \
+  OVERCLICK_CLIS="claude,codex,grok,kimi,agy" \
+    "$REPO_ROOT/install.sh" >"$TEST_ROOT/nochmod.out" 2>"$TEST_ROOT/nochmod.err"; then
+  echo "installer aborted on a PATH without chmod" >&2
+  sed -n '1,20p' "$TEST_ROOT/nochmod.err" >&2
+  exit 1
+fi
+if grep -Eq 'chmod.*(not found|No such file)' "$TEST_ROOT/nochmod.err"; then
+  echo "installer still shells out to an absent chmod" >&2
+  exit 1
+fi
+test "$(grep -c '^token=' "$TEST_ROOT/home-nochmod/.config/overclick/config")" -eq 1
+grep -Fq 'installation complete' "$TEST_ROOT/nochmod.out"
+# Skipping the mode bits is a Windows concession, not a relaxation: where chmod
+# exists it still runs, and the earlier POSIX runs above assert mode 600 on the
+# private config and on the Antigravity credentials.
+test "$(file_mode "$TEST_ROOT/home/.config/overclick/config")" -eq 600
+
+# OCL-133 (2). A MinGit shell hands the installer the MSYS form of a path
+# (`/c/Users/...`), and Claude Code on Windows resolves that literally: the
+# `@/c/Users/.../OVERCLICK.md` line it wrote into CLAUDE.md pointed at nothing,
+# so the plugin looked installed while its instructions stopped loading. The
+# converter is extracted and driven directly, because the rewrite only happens
+# under a Windows uname - which is also what keeps `/c/anything` on Linux alone.
+awk '/^# >>> native_path/{f=1} f{print} /^# <<< native_path/{f=0}' \
+  "$REPO_ROOT/install.sh" >"$TEST_ROOT/native_path.sh"
+grep -q '^native_path()' "$TEST_ROOT/native_path.sh"
+mkdir -p "$TEST_ROOT/winbin" "$TEST_ROOT/winbin-cygpath" "$TEST_ROOT/empty-bin"
+cat >"$TEST_ROOT/winbin/uname" <<'SH'
+#!/bin/sh
+printf 'MINGW64_NT-10.0-26100\n'
+SH
+chmod +x "$TEST_ROOT/winbin/uname"
+cp "$TEST_ROOT/winbin/uname" "$TEST_ROOT/winbin-cygpath/uname"
+cat >"$TEST_ROOT/winbin-cygpath/cygpath" <<'SH'
+#!/bin/sh
+printf 'D:/from-cygpath'
+SH
+chmod +x "$TEST_ROOT/winbin-cygpath/cygpath"
+
+native_path_of() {
+  PATH="$1:$PATH" bash -c '. "$1"; native_path "$2"' bash "$TEST_ROOT/native_path.sh" "$2"
+}
+test "$(native_path_of "$TEST_ROOT/winbin" '/c/Users/LASCHUK/.config/overclick/plugin')" \
+  = 'C:/Users/LASCHUK/.config/overclick/plugin'
+test "$(native_path_of "$TEST_ROOT/winbin" '/d/tools')" = 'D:/tools'
+# cygpath, when the shell has it, answers for mount points this script cannot know.
+test "$(native_path_of "$TEST_ROOT/winbin-cygpath" '/c/Users/LASCHUK')" = 'D:/from-cygpath'
+# On a POSIX host `/c/...` is an ordinary directory and nothing may touch it.
+test "$(native_path_of "$TEST_ROOT/empty-bin" '/c/Users/LASCHUK')" = '/c/Users/LASCHUK'
+test "$(native_path_of "$TEST_ROOT/empty-bin" "$TEST_ROOT/home")" = "$TEST_ROOT/home"
+
+# OCL-133 (4). `cp -R` onto an existing directory only ever adds, so a file the
+# previous release shipped and this one dropped survived every upgrade: the
+# 0.2.4 shell hooks were still sitting beside the 0.2.5 `.mjs` ones in both the
+# installed copy and the marketplace one. An installed tree has to be a faithful
+# copy of the release, so anything the release does not have must not survive.
+stale_copies="$TEST_ROOT/home/.config/overclick/plugin
+$TEST_ROOT/home/.config/overclick/native-marketplace/plugin
+$TEST_ROOT/home/.config/overclick/codex-marketplace/plugins/overclick
+$TEST_ROOT/home/.config/overclick/antigravity/overclick"
+printf '%s\n' "$stale_copies" | while IFS= read -r copy; do
+  printf 'stale\n' >"$copy/hooks/session-start.sh"
+done
+run_installer
+printf '%s\n' "$stale_copies" | while IFS= read -r copy; do
+  if [ -e "$copy/hooks/session-start.sh" ]; then
+    echo "$copy kept a file the release does not ship" >&2
+    exit 1
+  fi
+  test -f "$copy/hooks/session-start.mjs" || { echo "$copy lost the release payload" >&2; exit 1; }
+done
+# `while` runs in a subshell, so its exit status is what says the loop passed.
+test "$(printf '%s\n' "$stale_copies" | while IFS= read -r copy; do
+  [ -e "$copy/hooks/session-start.sh" ] && echo bad
+done)" = ""
 
 echo "plugin package checks passed"
