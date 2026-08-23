@@ -47,7 +47,7 @@
     },
     {
       "event": "PreToolUse",
-      "matcher": "Edit|Write|Bash",
+      "matcher": "*",
       "command": "node \"./hooks/claim-guard.mjs\"",
       "timeout": 15
     }

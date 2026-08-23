@@ -66,6 +66,15 @@ jq -e '.hooks | keys | sort == ["PostToolUse", "PreToolUse", "SessionStart", "St
   "$REPO_ROOT/plugin/hooks/hooks.json" >/dev/null
 jq -e '(.hooks.PostToolUse | length == 2) and (.hooks.PreToolUse | length == 2)' \
   "$REPO_ROOT/plugin/hooks/hooks.json" >/dev/null
+# OCL-134. A name list (Edit|Write|Bash) cannot fail closed: the hole it left on
+# Windows was PowerShell, and the next hole is whatever the next harness calls
+# its shell. The claim guard is matched on every tool and decides inside.
+jq -e '.hooks.PreToolUse | map(select(.hooks[].command | contains("claim-guard.mjs")))
+  | length == 1 and all(.matcher == "*")' "$REPO_ROOT/plugin/hooks/hooks.json" >/dev/null
+for manifest in "$REPO_ROOT/plugin/kimi.plugin.json" "$REPO_ROOT/.kimi-plugin/plugin.json"; do
+  jq -e '.hooks | map(select(.event == "PreToolUse" and (.command | contains("claim-guard.mjs"))))
+    | length == 1 and all(.matcher == "*")' "$manifest" >/dev/null
+done
 # OCL-132. Claude Code on Windows without Git Bash runs hook commands through
 # PowerShell, which cannot even parse `"${CLAUDE_PLUGIN_ROOT}"/hooks/x.sh` (the
 # bare slash after the closing quote reads as a division operator) and has no
@@ -669,6 +678,91 @@ printf '%s' "$blocked_bash" | grep -Fq 'claima um card no board antes: task_clai
 commit_bash_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"Bash",tool_input:{command:"git commit -m fixture >/dev/null 2>&1"}}')
 blocked_commit=$(printf '%s' "$commit_bash_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs")
 printf '%s' "$blocked_commit" | grep -Fq 'claima um card no board antes: task_claim {id}'
+
+# OCL-134. The guard used to key on the tool NAME (Edit|Write|Bash) and let
+# everything else through, so on Windows — where the shell tool is called
+# `PowerShell` — mkdir, git commit and [System.IO.File]::WriteAllText all ran
+# with no claim at all. The decision is now fail-closed: a command runs
+# unclaimed only when it is PROVABLY read-only, whatever the tool is called.
+guard_shell() {
+  jq -nc --arg cwd "$TEST_ROOT/project" --arg tool "$1" --arg command "$2" \
+    '{cwd:$cwd,session_id:"session-fixture",tool_name:$tool,tool_input:{command:$command}}' |
+    PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs"
+}
+guard_blocks() {
+  if ! guard_shell "$1" "$2" | grep -Fq 'claima um card no board antes: task_claim {id}'; then
+    echo "claim guard failed OPEN for $1: $2" >&2
+    exit 1
+  fi
+}
+guard_passes() {
+  if [ -n "$(guard_shell "$1" "$2")" ]; then
+    echo "claim guard blocked a read-only command for $1: $2" >&2
+    exit 1
+  fi
+}
+
+# The Windows report itself (issue #72): the PowerShell tool mutating unclaimed.
+guard_blocks PowerShell 'New-Item -ItemType Directory -Path fixture-dir'
+guard_blocks PowerShell 'git commit -m fixture'
+guard_blocks PowerShell 'Set-Content -Path changed.txt -Value fixture'
+guard_blocks PowerShell 'Remove-Item -Recurse -Force fixture-dir'
+guard_blocks PowerShell 'Get-Content a.txt | Out-File b.txt'
+# The case a write-shaped regex can never catch, and the reason the default had
+# to be inverted: a .NET static call does not look like a write at all.
+guard_blocks PowerShell '[System.IO.File]::WriteAllText("changed.txt", "fixture")'
+guard_blocks pwsh 'Move-Item a.txt b.txt'
+# A shell tool nobody has named yet, mutating: blocked because it is not proven
+# read-only, not because its name was on a list.
+guard_blocks mcp__acme__run_shell 'rm -rf fixture-dir'
+guard_blocks Terminal 'mkdir fixture-dir'
+# A shell tool whose command the guard cannot read is not proven read-only.
+shellless_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"PowerShell",tool_input:{}}')
+printf '%s' "$shellless_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs" |
+  grep -Fq 'claima um card no board antes: task_claim {id}'
+# Investigation still passes, in every dialect — a guard that blocks reads is a
+# guard the operator turns off.
+guard_passes PowerShell 'Get-ChildItem -Recurse'
+guard_passes PowerShell 'Test-Path changed.txt'
+guard_passes PowerShell 'Select-String -Pattern fixture -Path changed.txt'
+guard_passes mcp__acme__run_shell 'ls -la'
+guard_passes Bash 'cat changed.txt'
+guard_passes Bash 'git log --oneline -n 5'
+guard_passes Bash "grep -n 'a|b' changed.txt"
+# POSIX enforcement does not get relaxed on the way (no regression).
+guard_blocks Bash 'rm -rf fixture-dir'
+guard_blocks Bash 'echo fixture | tee changed.txt'
+guard_blocks Bash 'sed -i.bak s/a/b/ changed.txt'
+guard_blocks Bash 'npm install left-pad'
+# The matcher is now "*", so the guard sees every tool call: the read tools and
+# the board tools it does not gate must stay silent, or the session dies.
+for quiet_tool in Read Grep Glob TodoWrite WebFetch mcp__overclick__task_list mcp__acme__list_widgets; do
+  quiet_input=$(jq -nc --arg cwd "$TEST_ROOT/project" --arg tool "$quiet_tool" '{cwd:$cwd,session_id:"session-fixture",tool_name:$tool,tool_input:{file_path:"changed.txt"}}')
+  if [ -n "$(printf '%s' "$quiet_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs")" ]; then
+    echo "claim guard blocked the non-mutating tool $quiet_tool" >&2
+    exit 1
+  fi
+done
+# A tool nobody knows carrying a file body is a write, whatever it is called.
+unknown_write_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"mcp__acme__put_file",tool_input:{path:"changed.txt",content:"fixture"}}')
+printf '%s' "$unknown_write_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs" |
+  grep -Fq 'claima um card no board antes: task_claim {id}'
+
+# The Antigravity adapter routed pre-tool on the same name list (Bash|Edit|Write)
+# and allowed everything else, so a shell forwarded through call_mcp_tool never
+# reached the guard at all. It now routes every tool through claim-guard.mjs.
+agy_guard() {
+  (cd "$agy_plugin" && printf '%s' "$1" |
+    OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" sh ./hooks/antigravity.sh pre-tool)
+}
+agy_guard '{"toolCall":{"name":"run_command","args":{"CommandLine":"rm -rf fixture-dir"}}}' |
+  grep -Fq '"decision":"deny"'
+agy_guard '{"toolCall":{"name":"write_to_file","args":{"TargetFile":"changed.txt"}}}' |
+  grep -Fq '"decision":"deny"'
+agy_guard '{"toolCall":{"name":"call_mcp_tool","args":{"ToolName":"acme__run_shell","Arguments":{"command":"New-Item -ItemType Directory -Path fixture-dir"}}}}' |
+  grep -Fq '"decision":"deny"'
+agy_guard '{"toolCall":{"name":"run_command","args":{"CommandLine":"git status --short"}}}' |
+  grep -Fq '"decision":"allow"'
 
 failed_claim_input=$(jq -nc --arg cwd "$TEST_ROOT/project" '{cwd:$cwd,session_id:"session-fixture",tool_name:"task_claim",tool_input:{task_id:"T-1"},tool_response:{isError:true,content:[{type:"text",text:"claim failed"}]}}')
 printf '%s' "$failed_claim_input" | PATH="$HOOK_PATH" OVERCLICK_CONFIG_FILE="$HOOK_CONFIG" node "$REPO_ROOT/plugin/hooks/claim-guard.mjs"

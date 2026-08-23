@@ -135,12 +135,48 @@ enforce_claim=1
 The stop guard blocks exit while this token owns an executing card. The
 pre-create guard blocks a card whose harness does not match the board's live
 recommendation. The claim guard lets reads and investigation pass, but requires
-an active claim before `Edit`, `Write`, or a mutating `Bash` command. A successful
+an active claim before any mutation. A successful
 `task_claim` writes the card ID and claim time to `.overclick/claim.json` for a
 fast local check; `task_deliver` and `task_release` remove it. When that marker is
 missing, a pending mutation checks the board before it blocks with
 `claima um card no board antes: task_claim {id}`. Neither opt-in changes the card
 contract or grants permission to deploy.
+
+### What the claim guard actually covers
+
+Until 0.2.6 the guard was matched on the tool names `Edit|Write|Bash` and
+decided from that name. On Windows the shell tool is called `PowerShell`, so it
+matched nothing: `mkdir`, `git commit` and `[System.IO.File]::WriteAllText`
+all ran with the guard turned on and no claim behind them (issue #72). Since
+0.2.7 the guard is matched on **every** tool and fails closed:
+
+- **Editor tools** (`Edit`, `Write`, `NotebookEdit`, and equivalents) require a
+  claim, decided on the tool name — exact, nothing to interpret.
+- **Any tool carrying a shell command** — `Bash`, `PowerShell`, `pwsh`, a shell
+  exposed by an MCP server, a name that does not exist yet — requires a claim
+  unless the command is *provably read-only*: every segment starts with a verb
+  on the read allowlist (`ls`, `cat`, `grep`, `git status|log|diff|show`,
+  `Get-*`, `Test-Path`, `Select-String`, `dir`, `type`, …), with no redirection
+  to a file, no command substitution, and no .NET call. Anything else — an
+  unknown verb, an unknown dialect, a command the guard cannot even read — is
+  treated as a mutation. This is why `[System.IO.File]::WriteAllText`, which no
+  write-shaped regex would recognise, is blocked: it is not on the read
+  allowlist.
+- **Any tool carrying a file body** (a `content`/`path` pair, a patch, a diff)
+  requires a claim, whatever it is called.
+- **Board tools** (`task_*`, `mission_*`, `project_*`, …) always pass: claiming
+  a card is how the guard is meant to be satisfied.
+
+The known limit: a tool with no shell command and no file body — an arbitrary
+MCP call that mutates something through its own API — is not gated. Gating it
+would mean blocking every MCP read in the session, including the board itself.
+The guard covers the working tree, not every side effect a tool can have.
+
+The cost of matching every tool is one short-lived `node` process per tool call
+while `enforce_claim=1`. With the flag off — how the plugin ships — the guard
+exits on the config read without inspecting anything. That trade was taken
+deliberately: a matcher that lists shell names by hand cannot fail closed,
+because the hole it left was a shell name nobody had listed.
 
 Codex does not have a supported client-side equivalent for the claim guard, so
 the installer does not add this rule to Codex. Its coverage remains server-side:
