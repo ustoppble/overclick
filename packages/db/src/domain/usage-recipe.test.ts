@@ -67,19 +67,19 @@ describe("usage collection recipes", () => {
     // The slug used to replace the forward slash only, so on Windows it
     // matched no folder at all — or, worse, some other session's transcript.
     const claude = findUsageRecipe(recipes, "claude-code");
-    const source = claude!.command.match(
-      /process\.cwd\(\)[\s\S]*?\.join\(''\)/,
-    );
+    const source = claude!.command.match(/process\.cwd\(\)\.replace\([^;]+\)/);
     expect(source).not.toBeNull();
     const slug = new Function(
       "cwd",
-      `const BACKSLASH = String.fromCharCode(92);
-       const process = { cwd: () => cwd };
+      `const process = { cwd: () => cwd };
        return ${source![0]};`,
     ) as (cwd: string) => string;
 
     expect(slug("C:\\Users\\me\\repo")).toBe("C--Users-me-repo");
     expect(slug("/Users/me/repo")).toBe("-Users-me-repo");
+    // The dot in a worktree path is a separator to Claude Code too, which the
+    // POSIX path got wrong all along.
+    expect(slug("/Users/me/repo/.worktrees/win")).toBe("-Users-me-repo--worktrees-win");
   });
 
   it("measures an anonymized Claude Code transcript from the claim boundary", () => {
@@ -128,7 +128,7 @@ describe("usage collection recipes", () => {
     const claude = findUsageRecipe(recipes, "claude-code");
     const home = mkdtempSync(join(tmpdir(), "ocl-home-"));
     const repo = mkdtempSync(join(tmpdir(), "ocl-repo-"));
-    const slug = realpathSync(repo).split("/").join("-");
+    const slug = realpathSync(repo).replace(/[^a-zA-Z0-9]/g, "-");
     const folder = join(home, ".claude", "projects", slug);
     mkdirSync(folder, { recursive: true });
     const fixture = fileURLToPath(
@@ -138,7 +138,13 @@ describe("usage collection recipes", () => {
 
     const output = execFileSync("bash", ["-c", claude!.command], {
       cwd: realpathSync(repo),
-      env: { ...process.env, HOME: home, TRANSCRIPT_PATH: "", CLAUDE_CODE_SESSION_ID: "" },
+      env: {
+        ...process.env,
+        HOME: home,
+        TRANSCRIPT_PATH: "",
+        CLAUDE_CODE_SESSION_ID: "",
+        CLAUDE_CONFIG_DIR: "",
+      },
       encoding: "utf8",
     });
 
@@ -146,6 +152,37 @@ describe("usage collection recipes", () => {
       turns: 4,
       transcript: join(folder, "session-abc.jsonl"),
     });
+  });
+
+  it("reads the config directory Claude Code was pointed at", () => {
+    // Overclock gives each account its own CLAUDE_CONFIG_DIR; a recipe hard
+    // wired to ~/.claude measures a tree with none of this run in it.
+    const claude = findUsageRecipe(recipes, "claude-code");
+    const config = mkdtempSync(join(tmpdir(), "ocl-config-"));
+    const repo = mkdtempSync(join(tmpdir(), "ocl-repo-"));
+    const folder = join(
+      config,
+      "projects",
+      realpathSync(repo).replace(/[^a-zA-Z0-9]/g, "-"),
+    );
+    mkdirSync(folder, { recursive: true });
+    copyFileSync(
+      fileURLToPath(new URL("./fixtures/claude-transcript.jsonl", import.meta.url)),
+      join(folder, "session-xyz.jsonl"),
+    );
+
+    const output = execFileSync("bash", ["-c", claude!.command], {
+      cwd: realpathSync(repo),
+      env: {
+        ...process.env,
+        CLAUDE_CONFIG_DIR: config,
+        TRANSCRIPT_PATH: "",
+        CLAUDE_CODE_SESSION_ID: "",
+      },
+      encoding: "utf8",
+    });
+
+    expect(JSON.parse(output).transcript).toBe(join(folder, "session-xyz.jsonl"));
   });
 
   it("says what was missing instead of printing nothing at all", () => {

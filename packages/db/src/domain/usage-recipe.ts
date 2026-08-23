@@ -104,7 +104,6 @@ const PRELUDE = `const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const NL = String.fromCharCode(10);
-const BACKSLASH = String.fromCharCode(92);
 
 // Settings arrive as percent-encoded key=value arguments because PowerShell
 // has no VAR=value command prefix; the environment is still read, so a caller
@@ -203,16 +202,20 @@ let file = setting('transcript', 'TRANSCRIPT_PATH');
 const session = setting('session', 'CLAUDE_CODE_SESSION_ID');
 let folder = '';
 if (file === '') {
-  // Claude Code names that folder after the working directory with every path
-  // separator turned into a dash. On Windows the cwd carries a drive colon and
-  // backslashes, so C:[backslash]Users[backslash]me is stored as C--Users-me:
-  // replacing only the forward slash matched no folder at all, and the newest
-  // transcript of some other session was the best case.
-  const slug = process.cwd()
-    .split('')
-    .map(ch => (ch === '/' || ch === ':' || ch === BACKSLASH) ? '-' : ch)
-    .join('');
-  folder = path.join(os.homedir(), '.claude', 'projects', slug);
+  // Claude Code names that folder after the working directory with every
+  // character that is not a letter or a digit turned into a dash. Replacing
+  // only the forward slash matched no folder at all whenever the path carried
+  // a dot (/repo/.worktrees/x) and matched nothing on Windows, where the cwd
+  // carries a drive colon and backslashes: C:[backslash]Users[backslash]me is
+  // stored as C--Users-me. A miss then fell through to the newest transcript
+  // of some other session, which put someone else's tokens on the card.
+  const slug = process.cwd().replace(new RegExp('[^a-zA-Z0-9]', 'g'), '-');
+  // CLAUDE_CONFIG_DIR moves the whole config tree, which is how Overclock
+  // gives each account its own; without it the recipe reads a ~/.claude that
+  // holds no session of this run.
+  const configDir = setting('claude_config_dir', 'CLAUDE_CONFIG_DIR')
+    || path.join(os.homedir(), '.claude');
+  folder = path.join(configDir, 'projects', slug);
   if (session === '') {
     let here = [];
     try {
