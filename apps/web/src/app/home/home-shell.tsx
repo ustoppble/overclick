@@ -385,6 +385,7 @@ export function HomeShell({
             </div>
             <MissionFilter
               options={missionOptions}
+              missions={missions}
               looseCount={looseCount}
               totalCount={scopeCount}
               value={filter.missionId}

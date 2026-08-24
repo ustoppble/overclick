@@ -11,6 +11,8 @@ import {
 } from "../../lib/board-filter";
 import type { Dict } from "../../lib/i18n";
 import { Icon } from "../../components/icon";
+import type { BoardMissionOption } from "./board";
+import { MissionProgressBar } from "./mission-progress-bar";
 
 /**
  * The mission filter of the board. A native select could not do the three
@@ -24,6 +26,7 @@ import { Icon } from "../../components/icon";
  */
 export function MissionFilter({
   options,
+  missions,
   looseCount,
   totalCount,
   value,
@@ -32,6 +35,12 @@ export function MissionFilter({
   t,
 }: {
   options: MissionCount[];
+  /**
+   * Every mission of the workspace, with its own card-status breakdown
+   * (OCL-138). The bar reads the mission's real progress, not the count
+   * scoped by the board's current filters that `options` carries.
+   */
+  missions: BoardMissionOption[];
   /** Cards here that are in no mission, the bucket at the end of the list. */
   looseCount: number;
   /** Every card in scope, the count of "All missions". */
@@ -113,7 +122,12 @@ export function MissionFilter({
     });
   }
 
-  function row(id: string | null, text: string, count: number) {
+  function row(
+    id: string | null,
+    text: string,
+    count: number,
+    counts?: BoardMissionOption["counts"],
+  ) {
     const active = (id ?? null) === value;
     return (
       <button
@@ -121,13 +135,16 @@ export function MissionFilter({
         type="button"
         role="option"
         aria-selected={active}
-        className={`mf-opt${active ? " on" : ""}`}
+        className={`mf-opt${active ? " on" : ""}${counts ? " mf-opt-stacked" : ""}`}
         onClick={() => pick(id)}
       >
-        <span className="mf-opt-title" title={text}>
-          {text}
+        <span className="mf-opt-main">
+          <span className="mf-opt-title" title={text}>
+            {text}
+          </span>
+          <span className="mf-opt-count">{count}</span>
         </span>
-        <span className="mf-opt-count">{count}</span>
+        {counts ? <MissionProgressBar counts={counts} t={t} size="sm" /> : null}
       </button>
     );
   }
@@ -252,7 +269,12 @@ export function MissionFilter({
               >
                 {row(null, t.board.allMissions, totalCount)}
                 {shown.map((option) =>
-                  row(option.id, option.title, option.count),
+                  row(
+                    option.id,
+                    option.title,
+                    option.count,
+                    missions.find((miss) => miss.id === option.id)?.counts,
+                  ),
                 )}
                 {looseCount > 0 || value === NO_MISSION
                   ? row(NO_MISSION, t.board.noMission, looseCount)

@@ -38,6 +38,10 @@
   /* the deep red the usage warning sits on, not a tint of --oc-danger */
   --oc-danger-deep-rgb: 120 45 45;
   --oc-info-rgb: 169 199 232;
+  /* OCL-138: mission progress's "aberto" segment. U4 reserves --oc-danger for
+     errors/destructive actions, so a to-do state gets its own warm, clearly
+     distinct hue instead of reusing it. */
+  --oc-todo-rgb: 212 145 122;
   --oc-warn-rgb: 255 217 160;
   --oc-warn-2-rgb: 245 196 148;
   --oc-warn-3-rgb: 240 180 120;
@@ -105,6 +109,8 @@
   --oc-warn: #ffd9a0;
   --oc-warn-pip: #e5c07b;
   --oc-warn-deep: #b8863b;
+  /* OCL-138: a to-do state, not an error — kept off --oc-danger on purpose. */
+  --oc-todo: #d4917a;
 
   /* ---------- the type badges ----------
      Roles, so the theme decides whether a type is a colour or a word.

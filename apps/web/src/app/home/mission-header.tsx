@@ -9,6 +9,7 @@ import {
 import { Markdown } from "../../components/markdown";
 import type { Dict } from "../../lib/i18n";
 import type { BoardMissionOption } from "./board";
+import { MissionProgressBar } from "./mission-progress-bar";
 
 function statusLabel(status: BoardMissionOption["status"], t: Dict): string {
   if (status === "pausada") return t.board.missionStatusPaused;
@@ -54,6 +55,9 @@ export function MissionOverview({
             {label}
           </span>
         ))}
+      </div>
+      <div className="mission-progress-row">
+        <MissionProgressBar counts={mission.counts} t={t} size="lg" />
       </div>
       <details className="mission-context">
         <summary>{t.board.missionContext}</summary>
