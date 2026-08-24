@@ -91,6 +91,9 @@
   --oc-danger-rgb: 127 29 29;
   --oc-danger-deep-rgb: 127 29 29;
   --oc-info-rgb: 6 182 212;
+  /* OCL-138: warm orange, distinct from --oc-danger's deep red and from
+     --oc-accent's brand red */
+  --oc-todo-rgb: 249 115 22;
   --oc-warn-rgb: 250 204 21;
   --oc-warn-2-rgb: 234 179 8;
   --oc-warn-3-rgb: 234 179 8;
@@ -150,6 +153,7 @@
   --oc-ok: #22c55e;
   --oc-danger: rgb(var(--oc-danger-rgb));
   --oc-info: #06b6d4;
+  --oc-todo: rgb(var(--oc-todo-rgb));
   --oc-warn: #facc15;
   --oc-warn-pip: #eab308;
   --oc-warn-deep: #eab308;

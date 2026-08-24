@@ -32,6 +32,9 @@
   --oc-danger-deep-rgb: 84 40 40;
   /* running is a status, so it speaks with the status colour, not a blue */
   --oc-info-rgb: var(--oc-ok-rgb);
+  /* OCL-138: no decorative colour in this theme (not even for "aberto"),
+     same treatment as warn below */
+  --oc-todo-rgb: var(--oc-white-rgb);
   /* amber was a decorative accent on counters and chips: it goes gray */
   --oc-warn-rgb: var(--oc-white-rgb);
   --oc-warn-2-rgb: var(--oc-white-rgb);
@@ -97,6 +100,7 @@
   --oc-ok: rgb(var(--oc-ok-rgb));
   --oc-danger: rgb(var(--oc-danger-rgb));
   --oc-info: var(--oc-ok);
+  --oc-todo: var(--oc-text-2);
   --oc-warn: var(--oc-text-2);
   --oc-warn-pip: var(--oc-text-2);
   --oc-warn-deep: var(--oc-border-strong);

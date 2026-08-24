@@ -177,6 +177,20 @@ const en = {
     missionDeleting: "Deleting…",
     missionDeleteConfirm: "Delete this empty mission? This cannot be undone.",
     /**
+     * The 4-colour progress bar's legend (OCL-138): open/in
+     * progress/done/validated, in that order, discarded excluded. Kept as
+     * one function so the bar and its accessible name always read the same
+     * numbers.
+     */
+    missionProgressSummary: (counts: {
+      aberto: number;
+      em_execucao: number;
+      feito: number;
+      validado: number;
+    }) =>
+      `${counts.aberto} open · ${counts.em_execucao} in progress · ${counts.feito} done · ${counts.validado} validated`,
+    missionProgressPercent: (pct: number) => `${pct}% complete`,
+    /**
      * The button on the hard right of the bar: navigation and the account
      * live behind it (OCL-20).
      */
@@ -755,6 +769,14 @@ const ptBR: Dict = {
     missionDelete: "Apagar missão",
     missionDeleting: "Apagando…",
     missionDeleteConfirm: "Apagar esta missão vazia? Não será possível desfazer.",
+    missionProgressSummary: (counts: {
+      aberto: number;
+      em_execucao: number;
+      feito: number;
+      validado: number;
+    }) =>
+      `${counts.aberto} abertos · ${counts.em_execucao} fazendo · ${counts.feito} prontos · ${counts.validado} validado`,
+    missionProgressPercent: (pct: number) => `${pct}% concluído`,
     accountMenu: "Conta e navegação",
     theme: "Tema",
     themeName: { nebula: "Nebula", xai: "xAI", overclock: "Overclock" },
