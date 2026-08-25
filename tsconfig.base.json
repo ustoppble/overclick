@@ -11,6 +11,11 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noUncheckedIndexedAccess": true,
-    "noEmit": true
+    "noEmit": true,
+    // mcp-core publica tipos so em dist/, gerado por `pnpm build`. Sem este path um
+    // clone limpo falha o typecheck com TS2307 antes de qualquer build.
+    "paths": {
+      "@agent-board/mcp-core": ["./packages/mcp-core/src/index.ts"]
+    }
   }
 }
