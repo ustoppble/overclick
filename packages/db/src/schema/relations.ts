@@ -5,6 +5,7 @@ import { mcpToken } from "./mcp-token";
 import { mission } from "./mission";
 import { missionAttempt } from "./mission-attempt";
 import { missionAttemptReport } from "./mission-attempt-report";
+import { organization } from "./organization";
 import { project } from "./project";
 import { projectContextAudit } from "./project-context-audit";
 import { taskComment } from "./task-comment";
@@ -16,6 +17,7 @@ import { modelPrice } from "./model-price";
 import { usageRecipe } from "./usage-recipe";
 
 export const workspaceRelations = relations(workspace, ({ many }) => ({
+  organizations: many(organization),
   missions: many(mission),
   projects: many(project),
   mcpTokens: many(mcpToken),
@@ -23,6 +25,18 @@ export const workspaceRelations = relations(workspace, ({ many }) => ({
   modelPrices: many(modelPrice),
   usageRecipes: many(usageRecipe),
 }));
+
+export const organizationRelations = relations(
+  organization,
+  ({ one, many }) => ({
+    workspace: one(workspace, {
+      fields: [organization.workspaceId],
+      references: [workspace.id],
+    }),
+    projects: many(project),
+    missions: many(mission),
+  }),
+);
 
 export const modelPriceRelations = relations(modelPrice, ({ one }) => ({
   workspace: one(workspace, {
@@ -50,6 +64,10 @@ export const missionRelations = relations(mission, ({ one, many }) => ({
     fields: [mission.workspaceId],
     references: [workspace.id],
   }),
+  organization: one(organization, {
+    fields: [mission.organizationId],
+    references: [organization.id],
+  }),
   tasks: many(task),
   attempts: many(missionAttempt),
 }));
@@ -68,6 +86,10 @@ export const projectRelations = relations(project, ({ one, many }) => ({
   workspace: one(workspace, {
     fields: [project.workspaceId],
     references: [workspace.id],
+  }),
+  organization: one(organization, {
+    fields: [project.organizationId],
+    references: [organization.id],
   }),
   tasks: many(task),
   missionAttempts: many(missionAttempt),

@@ -1,5 +1,6 @@
 import { pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { missionStatusEnum } from "./enums";
+import { organization } from "./organization";
 import { workspace } from "./workspace";
 
 export const mission = pgTable("mission", {
@@ -7,6 +8,10 @@ export const mission = pgTable("mission", {
   workspaceId: uuid("workspace_id")
     .notNull()
     .references(() => workspace.id, { onDelete: "cascade" }),
+  /** The business this mission runs for. Restrict, like project. */
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "restrict" }),
   title: text("title").notNull(),
   objective: text("objective").notNull().default(""),
   context: text("context").notNull().default(""),

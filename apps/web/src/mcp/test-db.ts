@@ -7,6 +7,7 @@ import {
   factoryCardapioPolicy,
   mcpToken,
   mission,
+  organization,
   project,
   workspace,
   type ExecutorConfig,
@@ -23,6 +24,7 @@ export type TestWorld = {
   db: McpDatabase;
   client: PGlite;
   workspaceId: string;
+  organizationId: string;
   projectId: string;
   missionId: string;
   tokenId: string;
@@ -85,10 +87,17 @@ export async function createTestWorld(): Promise<TestWorld> {
     })),
   );
 
+  const [org] = await db
+    .insert(organization)
+    .values({ workspaceId: ws.id, name: "General" })
+    .returning({ id: organization.id });
+  if (!org) throw new Error("failed to insert organization");
+
   const [proj] = await db
     .insert(project)
     .values({
       workspaceId: ws.id,
+      organizationId: org.id,
       name: "OverClick",
       idPrefix: "OC",
       nextNumber: 1,
@@ -100,6 +109,7 @@ export async function createTestWorld(): Promise<TestWorld> {
     .insert(mission)
     .values({
       workspaceId: ws.id,
+      organizationId: org.id,
       title: "Norte do board",
       objective: "Fechar o loop MCP do MVP.",
       status: "ativa",
@@ -163,6 +173,7 @@ export async function createTestWorld(): Promise<TestWorld> {
     db,
     client,
     workspaceId: ws.id,
+    organizationId: org.id,
     projectId: proj.id,
     missionId: miss.id,
     tokenId: tok.id,

@@ -8,6 +8,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { ProjectContextSource } from "../types";
+import { organization } from "./organization";
 import { workspace } from "./workspace";
 
 export const project = pgTable(
@@ -17,6 +18,13 @@ export const project = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
+    /**
+     * The business this project belongs to. Restrict, not cascade: deleting a
+     * business must never silently destroy the repos under it.
+     */
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
     name: text("name").notNull(),
     repoUrl: text("repo_url"),
     /** Markdown handed to every agent that works on this project. */

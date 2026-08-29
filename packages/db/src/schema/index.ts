@@ -10,6 +10,7 @@ export {
 } from "./enums";
 export { workspace } from "./workspace";
 export { user } from "./user";
+export { organization } from "./organization";
 export { mission } from "./mission";
 export { missionAttempt } from "./mission-attempt";
 export { missionAttemptReport } from "./mission-attempt-report";
@@ -31,6 +32,7 @@ export {
   handoffRelations,
   mcpTokenRelations,
   missionRelations,
+  organizationRelations,
   projectRelations,
   projectContextAuditRelations,
   taskCommentRelations,

@@ -3,12 +3,24 @@ import { eq } from "drizzle-orm";
 import { createDb } from "./client";
 import { requireDatabaseUrl } from "./env";
 import { factoryCardapioPolicy } from "./domain/cardapio";
-import { cardapioEntry, project, task, workspace } from "./schema";
-import { EXAMPLE_CARD, EXAMPLE_PROJECT, EXAMPLE_WORKSPACE } from "./seed-data";
+import {
+  cardapioEntry,
+  organization,
+  project,
+  task,
+  workspace,
+} from "./schema";
+import {
+  EXAMPLE_CARD,
+  EXAMPLE_ORGANIZATION,
+  EXAMPLE_PROJECT,
+  EXAMPLE_WORKSPACE,
+} from "./seed-data";
 
 export async function seed(url = requireDatabaseUrl()): Promise<{
   skipped: boolean;
   workspaceId?: string;
+  organizationId?: string;
   projectId?: string;
   taskId?: string;
 }> {
@@ -41,10 +53,18 @@ export async function seed(url = requireDatabaseUrl()): Promise<{
       })),
     );
 
+    const [org] = await db
+      .insert(organization)
+      .values({ workspaceId: ws.id, name: EXAMPLE_ORGANIZATION.name })
+      .returning({ id: organization.id });
+
+    if (!org) throw new Error("failed to insert organization");
+
     const [proj] = await db
       .insert(project)
       .values({
         workspaceId: ws.id,
+        organizationId: org.id,
         name: EXAMPLE_PROJECT.name,
         repoUrl: EXAMPLE_PROJECT.repoUrl,
         idPrefix: EXAMPLE_PROJECT.idPrefix,
@@ -76,6 +96,7 @@ export async function seed(url = requireDatabaseUrl()): Promise<{
     return {
       skipped: false,
       workspaceId: ws.id,
+      organizationId: org.id,
       projectId: proj.id,
       taskId: card.id,
     };
