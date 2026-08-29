@@ -566,6 +566,25 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   color: var(--nebula-text-tertiary); font-size: 9px; letter-spacing: 0.02em;
 }
 .nb .pf-opt-count { flex: none; opacity: 0.65; font-variant-numeric: tabular-nums; }
+/* The option row: the toggle takes the space, `only` and the counts sit at
+   the end. `only` stays out of the way until the row is hovered or its button
+   focused, so a list of 26 projects does not read as 26 buttons. */
+.nb .pf-opt-row {
+  display: flex; align-items: center; gap: 8px;
+  padding-right: 8px; border-radius: var(--oc-radius-control);
+}
+.nb .pf-opt-row:hover { background: var(--oc-surface-hover); }
+.nb .pf-opt-row .pf-opt { flex: 1; min-width: 0; }
+.nb .pf-opt-row .pf-opt:hover { background: transparent; }
+.nb .pf-only {
+  flex: none; padding: 2px 6px; border: 0; border-radius: var(--oc-radius-control-sm);
+  background: var(--oc-surface-on); color: var(--nebula-text-secondary);
+  font-family: var(--nebula-font-label); font-size: 11px; letter-spacing: 0.04em;
+  cursor: pointer; opacity: 0; visibility: hidden;
+}
+.nb .pf-opt-row:hover .pf-only,
+.nb .pf-only:focus-visible { opacity: 1; visibility: visible; }
+.nb .pf-only:hover { color: var(--nebula-text-primary); }
 
 /* ---------- mission filter ----------
    The chip reads as the select it replaced; the panel it opens is what a

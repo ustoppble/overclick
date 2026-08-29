@@ -21,12 +21,15 @@ export function OrganizationFilter({
   /** Empty is the All organizations shortcut. */
   value,
   onToggle,
+  onOnly,
   onAll,
   t,
 }: {
   options: Array<OrganizationCount & { hasContext?: boolean }>;
   value: string[];
   onToggle: (organizationId: string) => void;
+  /** Narrow to this business alone, the intent the box no longer carries. */
+  onOnly: (organizationId: string) => void;
   onAll: () => void;
   t: Dict;
 }) {
@@ -104,20 +107,32 @@ export function OrganizationFilter({
               // clicked to get there.
               const picked = all || value.includes(option.id);
               return (
-                <button
-                  key={option.id}
-                  type="button"
-                  role="option"
-                  aria-selected={picked}
-                  className={`pf-opt${picked ? " on" : ""}`}
-                  onClick={() => onToggle(option.id)}
-                >
-                  <span className="pf-box">
-                    {picked ? <Icon name="check" label={null} size={11} /> : null}
-                  </span>
-                  <span className="pf-opt-name" title={option.name}>
-                    {option.name}
-                  </span>
+                <div className="pf-opt-row" role="presentation" key={option.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={picked}
+                    className={`pf-opt${picked ? " on" : ""}`}
+                    onClick={() => onToggle(option.id)}
+                  >
+                    <span className="pf-box">
+                      {picked ? <Icon name="check" label={null} size={11} /> : null}
+                    </span>
+                    <span className="pf-opt-name" title={option.name}>
+                      {option.name}
+                    </span>
+                  </button>
+                  {/* The box unticks; narrowing to one business is asked for
+                      here, in so many words. */}
+                  <button
+                    type="button"
+                    className="pf-only"
+                    title={t.board.filterOnlyHint(option.name)}
+                    aria-label={t.board.filterOnlyHint(option.name)}
+                    onClick={() => onOnly(option.id)}
+                  >
+                    {t.board.filterOnly}
+                  </button>
                   {option.hasContext ? (
                     <span
                       className="pf-opt-count"
@@ -128,7 +143,7 @@ export function OrganizationFilter({
                     </span>
                   ) : null}
                   <span className="pf-opt-count">{option.count}</span>
-                </button>
+                </div>
               );
             })}
           </div>

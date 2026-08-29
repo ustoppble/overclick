@@ -194,17 +194,24 @@ export function resolveProjectSelection(
 }
 
 /**
- * Checking and unchecking a project, with the two edges the shortcut creates:
- * the first click out of All narrows to the project clicked, and a selection
- * that ends up empty or covering everything is All again. An empty board
- * because nothing is selected would be a state with no way to read it.
+ * Checking and unchecking a project. Under All every box is ticked, so a click
+ * there unticks the one clicked and leaves the rest: the box does what a
+ * ticked box promises. Narrowing to a single project is the `only` button on
+ * the row, which asks for it in so many words instead of hiding it inside a
+ * click that looks like unchecking. A selection that ends up empty or covering
+ * everything is All again, because an empty board is a state with no way to
+ * read it.
  */
 export function toggleProject(
   current: string[],
   projectId: string,
   projects: { id: string }[],
 ): string[] {
-  if (current.length === 0) return [projectId];
+  if (current.length === 0) {
+    const rest = projects.filter((item) => item.id !== projectId);
+    // Unticking the only project there is would empty the board, so All holds.
+    return rest.length === 0 ? [] : rest.map((item) => item.id);
+  }
   const next = current.includes(projectId)
     ? current.filter((id) => id !== projectId)
     : [...current, projectId];
@@ -214,17 +221,19 @@ export function toggleProject(
 }
 
 /**
- * Checking and unchecking an organization, with the same two edges the All
- * shortcut creates on the project filter: the first click out of All narrows
- * to what was clicked, and a selection that ends up empty or covering
- * everything is All again.
+ * Checking and unchecking an organization: the project filter's rule, applied
+ * to the control above it. A click under All unticks the one clicked, and
+ * `only` is how a caller asks to narrow to a single business.
  */
 export function toggleOrganization(
   current: string[],
   organizationId: string,
   organizations: { id: string }[],
 ): string[] {
-  if (current.length === 0) return [organizationId];
+  if (current.length === 0) {
+    const rest = organizations.filter((item) => item.id !== organizationId);
+    return rest.length === 0 ? [] : rest.map((item) => item.id);
+  }
   const next = current.includes(organizationId)
     ? current.filter((id) => id !== organizationId)
     : [...current, organizationId];
@@ -232,6 +241,17 @@ export function toggleOrganization(
   return organizations
     .filter((item) => next.includes(item.id))
     .map((item) => item.id);
+}
+
+/**
+ * Narrowing to one item, which is what the `only` button on an option row
+ * asks for. Kept beside the toggles because it is the other half of the same
+ * decision: the click unticks, this one isolates, and neither has to guess
+ * which the reader meant.
+ */
+export function selectOnly(id: string, items: { id: string }[]): string[] {
+  // One item is the whole list, and the whole list is All.
+  return items.length <= 1 ? [] : [id];
 }
 
 /**

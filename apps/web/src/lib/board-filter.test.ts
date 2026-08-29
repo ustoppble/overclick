@@ -22,6 +22,7 @@ import {
   searchBoardCards,
   searchMissions,
   shouldSearchMissions,
+  selectOnly,
   toggleOrganization,
   toggleProject,
   type BoardFilter,
@@ -266,13 +267,27 @@ describe("several projects at once", () => {
   });
 
   it("checks and unchecks, with All projects at both edges", () => {
-    // Out of the shortcut, the first click narrows to what was clicked.
-    expect(toggleProject(ALL, "p2", projects)).toEqual(["p2"]);
+    // Under All every box is ticked, so a click unticks the one clicked and
+    // leaves the rest: the box does what a ticked box promises.
+    expect(toggleProject(ALL, "p2", projects)).toEqual(["p1", "p3"]);
+    // Ticking it back covers everything again, which is All.
+    expect(toggleProject(["p1", "p3"], "p2", projects)).toEqual(ALL);
     expect(toggleProject(["p2"], "p1", projects)).toEqual(["p1", "p2"]);
     // Unchecking the last one is All projects again, never an empty board.
     expect(toggleProject(["p2"], "p2", projects)).toEqual(ALL);
     // So is checking every one of them.
     expect(toggleProject(["p1", "p2"], "p3", projects)).toEqual(ALL);
+  });
+
+  it("keeps All when the only project there is would be unticked", () => {
+    const one = [{ id: "p1" }];
+    expect(toggleProject(ALL, "p1", one)).toEqual(ALL);
+  });
+
+  it("narrows to one project only when the row asks for it", () => {
+    expect(selectOnly("p2", projects)).toEqual(["p2"]);
+    // One project is the whole board, and the whole board is All.
+    expect(selectOnly("p1", [{ id: "p1" }])).toEqual([]);
   });
 
   it("hands the selection to another page and reads it back", () => {
@@ -579,9 +594,11 @@ describe("the release filter only offers releases", () => {
   });
 
   it("toggles organizations with the same All edges the project filter has", () => {
-    expect(toggleOrganization([], "o1", organizations)).toEqual(["o1"]);
+    // Same rule as the project filter: a click under All unticks that one.
+    expect(toggleOrganization([], "o1", organizations)).toEqual(["o2"]);
     expect(toggleOrganization(["o1"], "o1", organizations)).toEqual([]);
     expect(toggleOrganization(["o1"], "o2", organizations)).toEqual([]);
+    expect(selectOnly("o1", organizations)).toEqual(["o1"]);
   });
 
   it("carries the organization selection to another page and back", () => {

@@ -105,6 +105,13 @@ const en = {
     organizationsPicked: (n: number) => `${n} organizations`,
     allProjects: "All projects",
     /**
+     * The row button that narrows to one item. A click on the box unticks,
+     * which leaves isolating a single one with nowhere to go unless it is
+     * asked for by name.
+     */
+    filterOnly: "only",
+    filterOnlyHint: (name: string) => `Show only ${name}`,
+    /**
      * The project filter takes any combination, so the chip stops naming what
      * it holds once naming it would cost the topbar a second line.
      */
@@ -745,6 +752,8 @@ const ptBR: Dict = {
     organizationContextAvailable: "Contexto da organização disponível",
     organizationsPicked: (n: number) => `${n} organizações`,
     allProjects: "Todos os projetos",
+    filterOnly: "só este",
+    filterOnlyHint: (name: string) => `Mostrar só ${name}`,
     projectFilter: "Filtrar por projeto",
     projectContextAvailable: "Contexto do projeto disponível",
     projectsPicked: (n: number) => `${n} projetos`,

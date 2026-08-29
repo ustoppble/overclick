@@ -16,12 +16,15 @@ export function ProjectFilter({
   /** Empty is the All projects shortcut. */
   value,
   onToggle,
+  onOnly,
   onAll,
   t,
 }: {
   options: Array<ProjectCount & { hasContext?: boolean; contextStatus?: string | null }>;
   value: string[];
   onToggle: (projectId: string) => void;
+  /** Narrow to this project alone, the intent the box no longer carries. */
+  onOnly: (projectId: string) => void;
   onAll: () => void;
   t: Dict;
 }) {
@@ -94,23 +97,36 @@ export function ProjectFilter({
               // clicked to get there.
               const picked = all || value.includes(option.id);
               return (
-                <button
-                  key={option.id}
-                  type="button"
-                  role="option"
-                  aria-selected={picked}
-                  className={`pf-opt${picked ? " on" : ""}`}
-                  onClick={() => onToggle(option.id)}
-                >
-                  <span className="pf-box">
-                    {picked ? <Icon name="check" label={null} size={11} /> : null}
-                  </span>
-                  <span className="pf-opt-name" title={option.contextStatus ?? option.name}>
-                    {option.name}
-                    {option.contextStatus ? (
-                      <small className="pf-context-status">{option.contextStatus}</small>
-                    ) : null}
-                  </span>
+                <div className="pf-opt-row" role="presentation" key={option.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={picked}
+                    className={`pf-opt${picked ? " on" : ""}`}
+                    onClick={() => onToggle(option.id)}
+                  >
+                    <span className="pf-box">
+                      {picked ? <Icon name="check" label={null} size={11} /> : null}
+                    </span>
+                    <span className="pf-opt-name" title={option.contextStatus ?? option.name}>
+                      {option.name}
+                      {option.contextStatus ? (
+                        <small className="pf-context-status">{option.contextStatus}</small>
+                      ) : null}
+                    </span>
+                  </button>
+                  {/* Narrowing to one is its own click. The box above unticks,
+                      which is what a ticked box promises; isolating a single
+                      project is a different intent and says so. */}
+                  <button
+                    type="button"
+                    className="pf-only"
+                    title={t.board.filterOnlyHint(option.name)}
+                    aria-label={t.board.filterOnlyHint(option.name)}
+                    onClick={() => onOnly(option.id)}
+                  >
+                    {t.board.filterOnly}
+                  </button>
                   {option.hasContext ? (
                     <span
                       className="pf-opt-count"
@@ -121,7 +137,7 @@ export function ProjectFilter({
                     </span>
                   ) : null}
                   <span className="pf-opt-count">{option.count}</span>
-                </button>
+                </div>
               );
             })}
           </div>

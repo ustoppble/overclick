@@ -19,6 +19,7 @@ import {
   releaseFilterOptions,
   searchBoardCards,
   toggleOrganization,
+  selectOnly,
   toggleProject,
   type BoardFilter,
 } from "../../lib/board-filter";
@@ -428,6 +429,13 @@ export function HomeShell({
                       projectIds: [],
                     })
                   }
+                  onOnly={(organizationId) =>
+                    apply({
+                      ...filter,
+                      organizationIds: selectOnly(organizationId, organizations),
+                      projectIds: [],
+                    })
+                  }
                   onAll={() =>
                     apply({ ...filter, organizationIds: [], projectIds: [] })
                   }
@@ -442,6 +450,9 @@ export function HomeShell({
                     ...filter,
                     projectIds: toggleProject(filter.projectIds, projectId, projects),
                   })
+                }
+                onOnly={(projectId) =>
+                  apply({ ...filter, projectIds: selectOnly(projectId, projects) })
                 }
                 onAll={() => apply({ ...filter, projectIds: [] })}
                 t={t}
