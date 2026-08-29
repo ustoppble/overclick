@@ -1,7 +1,12 @@
 "use server";
 
-import { isValidPrefix, project } from "@agent-board/db";
-import { eq } from "drizzle-orm";
+import {
+  DEFAULT_ORGANIZATION_NAME,
+  isValidPrefix,
+  organization,
+  project,
+} from "@agent-board/db";
+import { and, asc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getSession } from "../lib/cookies";
 import { db } from "../lib/db";
@@ -11,7 +16,52 @@ export type ProjectInput = {
   name: string;
   repoUrl: string;
   prefix: string;
+  /** The business this first project belongs to. Blank takes the default. */
+  organizationName?: string;
 };
+
+/**
+ * The business the first project is filed under. Named, it is created if the
+ * instance has never heard of it; skipped, the wizard falls back to the
+ * organization migration 0037 already left behind (or creates it), so a fresh
+ * instance still gets a working board without answering a question it has no
+ * opinion about yet.
+ */
+async function resolveOrganization(
+  workspaceId: string,
+  name: string,
+): Promise<string | null> {
+  const wanted = name.trim() || DEFAULT_ORGANIZATION_NAME;
+  const [found] = await db()
+    .select({ id: organization.id })
+    .from(organization)
+    .where(
+      and(
+        eq(organization.workspaceId, workspaceId),
+        eq(organization.name, wanted),
+      ),
+    )
+    .limit(1);
+  if (found) return found.id;
+
+  try {
+    const [created] = await db()
+      .insert(organization)
+      .values({ workspaceId, name: wanted })
+      .returning({ id: organization.id });
+    if (created) return created.id;
+  } catch {
+    // A concurrent wizard won the unique index; the row it wrote is the one.
+  }
+
+  const [existing] = await db()
+    .select({ id: organization.id })
+    .from(organization)
+    .where(eq(organization.workspaceId, workspaceId))
+    .orderBy(asc(organization.createdAt))
+    .limit(1);
+  return existing?.id ?? null;
+}
 
 /** Wizard T1: creates or updates the workspace's first project. */
 export async function saveProjectAction(input: ProjectInput): Promise<ActionResult> {
@@ -30,6 +80,14 @@ export async function saveProjectAction(input: ProjectInput): Promise<ActionResu
   }
   const repoUrl = input.repoUrl.trim() || null;
 
+  const organizationId = await resolveOrganization(
+    ws.id,
+    input.organizationName ?? "",
+  );
+  if (!organizationId) {
+    return { ok: false, error: "Could not resolve the organization." };
+  }
+
   const existing = await db().query.project.findFirst({
     where: eq(project.workspaceId, ws.id),
   });
@@ -43,6 +101,7 @@ export async function saveProjectAction(input: ProjectInput): Promise<ActionResu
     } else {
       await db().insert(project).values({
         workspaceId: ws.id,
+        organizationId,
         name,
         repoUrl,
         idPrefix: prefix,

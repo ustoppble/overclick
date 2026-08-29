@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { mcpToken, project } from "@agent-board/db";
+import { mcpToken, organization, project } from "@agent-board/db";
 import { getSession } from "../../lib/cookies";
 import { db } from "../../lib/db";
 import { selectionFromConfig } from "../../lib/executors";
@@ -32,6 +32,14 @@ export default async function OnboardingPage({
   const proj = await db().query.project.findFirst({
     where: eq(project.workspaceId, ws.id),
   });
+  // Reopened for adjustments, the wizard shows the business the project is
+  // already filed under rather than an empty field that would read as none.
+  const org = proj
+    ? await db().query.organization.findFirst({
+        where: eq(organization.id, proj.organizationId),
+        columns: { name: true },
+      })
+    : null;
   const h = await headers();
   // A TLS instance sits behind a proxy that terminates it, so the scheme comes
   // from the forwarded header. Never hardcode http: the commands we print carry
@@ -53,6 +61,7 @@ export default async function OnboardingPage({
         project={
           proj
             ? {
+                organizationName: org?.name ?? "",
                 name: proj.name,
                 repoUrl: proj.repoUrl ?? "",
                 prefix: proj.idPrefix,

@@ -14,9 +14,11 @@ import {
   countLooseCards,
   filterBoardCards,
   missionFilterOptions,
+  organizationFilterOptions,
   projectFilterOptions,
   releaseFilterOptions,
   searchBoardCards,
+  toggleOrganization,
   toggleProject,
   type BoardFilter,
 } from "../../lib/board-filter";
@@ -29,6 +31,7 @@ import { BoardTotal } from "./board-total";
 import { FacetFilters } from "./facet-filters";
 import { MissionHeader } from "./mission-header";
 import { MissionFilter } from "./mission-filter";
+import { OrganizationFilter } from "./organization-filter";
 import { ProjectFilter } from "./project-filter";
 import { ReleaseHeader } from "./release-header";
 import { ThemePicker } from "./theme-picker";
@@ -36,8 +39,16 @@ import { ThemePicker } from "./theme-picker";
 export type BoardProjectOption = {
   id: string;
   name: string;
+  /** Which business it belongs to, so the project list follows that filter. */
+  organizationId: string;
   hasContext: boolean;
   contextStatus: string | null;
+};
+
+export type BoardOrganizationOption = {
+  id: string;
+  name: string;
+  hasContext: boolean;
 };
 export type { BoardMissionOption };
 
@@ -176,6 +187,12 @@ function AccountMenu({
               {running > 0 ? t.board.running(running) : t.board.noAgentRunning}
             </span>
           </a>
+          {/* Where the businesses are read one by one, next to the two other
+              places this menu navigates to. */}
+          <a className="am-opt" role="menuitem" href="/organizations">
+            <Icon name="roles" label={null} size={14} />
+            {t.board.organizations}
+          </a>
           <a className="am-opt" role="menuitem" href="/insights">
             <Icon name="insights" label={null} size={14} />
             Insights
@@ -201,6 +218,7 @@ function AccountMenu({
 
 export function HomeShell({
   lang,
+  organizations,
   projects,
   missions,
   releases,
@@ -209,6 +227,7 @@ export function HomeShell({
   initialTotals,
 }: {
   lang: string;
+  organizations: BoardOrganizationOption[];
   projects: BoardProjectOption[];
   missions: BoardMissionOption[];
   releases: { value: string }[];
@@ -237,6 +256,7 @@ export function HomeShell({
   // the options and their counts follow the selection, not the mission.
   const scope = useMemo(
     () => ({
+      organizationIds: filter.organizationIds,
       projectIds: filter.projectIds,
       missionId: null,
       types: filter.types,
@@ -245,7 +265,13 @@ export function HomeShell({
         ? { resolvedIn: filter.resolvedIn }
         : {}),
     }),
-    [filter.projectIds, filter.types, filter.priorities, filter.resolvedIn],
+    [
+      filter.organizationIds,
+      filter.projectIds,
+      filter.types,
+      filter.priorities,
+      filter.resolvedIn,
+    ],
   );
   const missionOptions = useMemo(
     () => missionFilterOptions(cards, missions, filter),
@@ -270,6 +296,15 @@ export function HomeShell({
       })),
     [cards, projects, filter],
   );
+  const organizationOptions = useMemo(
+    () =>
+      organizationFilterOptions(cards, organizations, filter).map((option) => ({
+        ...option,
+        hasContext:
+          organizations.find((org) => org.id === option.id)?.hasContext ?? false,
+      })),
+    [cards, organizations, filter],
+  );
   const releaseOptions = useMemo(
     () => releaseFilterOptions(cards, releases, filter),
     [cards, releases, filter],
@@ -287,6 +322,7 @@ export function HomeShell({
       : null;
   const defaultProject = projects[0]?.id;
   const hasActiveFilters =
+    filter.organizationIds.length > 0 ||
     filter.projectIds.length !== (defaultProject ? 1 : 0) ||
     (defaultProject ? filter.projectIds[0] !== defaultProject : false) ||
     filter.missionId !== null ||
@@ -332,6 +368,7 @@ export function HomeShell({
     setSearchQuery("");
     setDebouncedSearchQuery("");
     apply({
+      organizationIds: [],
       projectIds: defaultProject ? [defaultProject] : [],
       missionId: null,
       types: [],
@@ -370,6 +407,33 @@ export function HomeShell({
               holds it: same controls, same order, nothing dropped (AGB-65). */}
           <div className={`topbar-more${filtersOpen ? " open" : ""}`}>
             <div className="crumb">
+              {/* Only where there is a choice to make: one business is the
+                  whole board, and a control that can only be set to All is one
+                  more thing to read for nothing. */}
+              {organizations.length > 1 ? (
+                <OrganizationFilter
+                  options={organizationOptions}
+                  value={filter.organizationIds}
+                  onToggle={(organizationId) =>
+                    apply({
+                      ...filter,
+                      organizationIds: toggleOrganization(
+                        filter.organizationIds,
+                        organizationId,
+                        organizations,
+                      ),
+                      // The projects on screen belong to the business that just
+                      // left. Keeping them would leave an empty board under a
+                      // filter that reads as if it should show something.
+                      projectIds: [],
+                    })
+                  }
+                  onAll={() =>
+                    apply({ ...filter, organizationIds: [], projectIds: [] })
+                  }
+                  t={t}
+                />
+              ) : null}
               <ProjectFilter
                 options={projectOptions}
                 value={filter.projectIds}
@@ -385,6 +449,11 @@ export function HomeShell({
             </div>
             <MissionFilter
               options={missionOptions}
+              organizationId={
+                filter.organizationIds.length === 1
+                  ? filter.organizationIds[0]
+                  : null
+              }
               missions={missions}
               looseCount={looseCount}
               totalCount={scopeCount}

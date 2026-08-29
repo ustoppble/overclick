@@ -14,6 +14,11 @@ export const user = pgTable("user", {
   passwordHash: text("password_hash").notNull(),
   active: boolean("active").notNull().default(true),
   sessionVersion: integer("session_version").notNull().default(1),
+  /**
+   * `all` or organization uuids joined. Null = every organization, which is
+   * what an instance that never split into more than one business sees.
+   */
+  boardOrganizationId: text("board_organization_id"),
   /** `all` or a project uuid. Null = first project (single-project default). */
   boardProjectId: text("board_project_id"),
   /**

@@ -30,6 +30,7 @@ export function MissionFilter({
   looseCount,
   totalCount,
   value,
+  organizationId,
   onChange,
   onCreated,
   t,
@@ -46,6 +47,12 @@ export function MissionFilter({
   /** Every card in scope, the count of "All missions". */
   totalCount: number;
   value: string | null;
+  /**
+   * The business the board is filtered to, when it is exactly one. A mission
+   * created from here is filed there; with the filter on several businesses
+   * or on all of them, the server picks and the mission can be moved.
+   */
+  organizationId: string | null;
   onChange: (missionId: string | null) => void;
   onCreated: (missionId: string) => void;
   t: Dict;
@@ -109,7 +116,12 @@ export function MissionFilter({
   function createMission() {
     startCreate(async () => {
       setCreateError(null);
-      const result = await createMissionAction({ title, objective, context });
+      const result = await createMissionAction({
+        title,
+        objective,
+        context,
+        organizationId,
+      });
       if (!result.ok) {
         setCreateError(result.error);
         return;

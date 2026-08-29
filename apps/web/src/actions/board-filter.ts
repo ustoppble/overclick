@@ -1,11 +1,12 @@
 "use server";
 
 import { and, eq, inArray } from "drizzle-orm";
-import { mission, project, task, user } from "@agent-board/db";
+import { mission, organization, project, task, user } from "@agent-board/db";
 import { isReleaseVersion } from "@agent-board/mcp-core";
 import {
   NO_MISSION,
   encodeFacetSelection,
+  encodeOrganizationSelection,
   encodeProjectSelection,
   encodeReleaseSelection,
   isTaskPriority,
@@ -24,6 +25,17 @@ export async function setBoardFilterAction(
 ): Promise<ActionResult> {
   const session = await getSession();
   if (!session) return { ok: false, error: "Not signed in." };
+
+  const organizationIds = [...new Set(input.organizationIds)];
+  if (organizationIds.length > 0) {
+    const found = await db()
+      .select({ id: organization.id })
+      .from(organization)
+      .where(inArray(organization.id, organizationIds));
+    if (found.length !== organizationIds.length) {
+      return { ok: false, error: "Organization not found." };
+    }
+  }
 
   const projectIds = [...new Set(input.projectIds)];
   if (projectIds.length > 0) {
@@ -76,6 +88,8 @@ export async function setBoardFilterAction(
   await db()
     .update(user)
     .set({
+      // One column per dimension, same shape: "all", or the ids joined.
+      boardOrganizationId: encodeOrganizationSelection(organizationIds),
       // One column holds the whole selection: "all", or the ids joined.
       boardProjectId: encodeProjectSelection(projectIds),
       boardMissionId: input.missionId,

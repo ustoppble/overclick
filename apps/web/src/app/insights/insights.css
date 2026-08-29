@@ -527,3 +527,16 @@
   display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px;
 }
 .nb .ins-sort.on button .ins-sort-arrow { color: var(--nebula-mist-glow); }
+
+/* OCL-141: the projects and the active missions of one organization, read as
+   the list they are. It declares no type of its own — the panel around it
+   already set the voice — only the rhythm between the lines. */
+.nb .org-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  color: var(--nebula-text-secondary);
+}

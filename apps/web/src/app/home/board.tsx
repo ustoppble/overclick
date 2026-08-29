@@ -112,6 +112,8 @@ export type BoardCard = {
   comoConfirmo: ConfirmStep[];
   validationTicks: ValidationTickView[];
   howToVerify: string | null;
+  /** The business the card's project belongs to, which the board filters by. */
+  organizationId: string;
   projectId: string;
   projectName: string;
   missionId: string | null;

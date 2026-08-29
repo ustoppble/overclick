@@ -6,6 +6,7 @@ import {
   isClaimStale,
   mission,
   normalizeUsageSegments,
+  organization,
   project,
   readTranscriptRef,
   recomputeUsageCommand,
@@ -134,7 +135,7 @@ async function loadTasks(projectIds: string[]) {
     orderBy: asc(task.createdAt),
     with: {
       mission: { columns: { id: true, title: true } },
-      project: { columns: { name: true, repoUrl: true } },
+      project: { columns: { name: true, repoUrl: true, organizationId: true } },
       createdBy: { columns: { email: true } },
       reviewer: { columns: { email: true } },
       attempts: true,
@@ -555,6 +556,7 @@ function toBoardCard(
     transcript: toTranscriptView(latestAttempt, recipes),
     handoff: latestHandoff?.summary ?? null,
     howToVerify: latestHandoff?.howToVerify ?? null,
+    organizationId: t.project.organizationId,
     projectId: t.projectId,
     projectName: t.project?.name ?? t.projectId,
     missionId: t.missionId,
@@ -573,6 +575,7 @@ export default async function HomePage() {
     columns: {
       id: true,
       name: true,
+      organizationId: true,
       context: true,
       contextSource: true,
       contextUpdatedAt: true,
@@ -581,6 +584,7 @@ export default async function HomePage() {
     rows.map((row) => ({
       id: row.id,
       name: row.name,
+      organizationId: row.organizationId,
       hasContext: Boolean(row.context?.trim()),
       contextStatus: row.contextUpdatedAt
         ? formatProjectContextStatus(
@@ -592,6 +596,24 @@ export default async function HomePage() {
     })),
   );
   if (projects.length === 0) redirect("/setup");
+
+  // Named, not creation-ordered: the filter is read as a list of businesses.
+  const organizations = await db()
+    .select({
+      id: organization.id,
+      name: organization.name,
+      context: organization.context,
+    })
+    .from(organization)
+    .where(eq(organization.workspaceId, ws.id))
+    .orderBy(asc(organization.name))
+    .then((rows) =>
+      rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        hasContext: Boolean(row.context?.trim()),
+      })),
+    );
 
   const missionRows = await db().query.mission.findMany({
     where: eq(mission.workspaceId, ws.id),
@@ -668,6 +690,7 @@ export default async function HomePage() {
 
   const [me] = await db()
     .select({
+      boardOrganizationId: user.boardOrganizationId,
       boardProjectId: user.boardProjectId,
       boardMissionId: user.boardMissionId,
       boardTaskTypes: user.boardTaskTypes,
@@ -704,6 +727,7 @@ export default async function HomePage() {
   );
   const initialFilter = resolveBoardFilter(
     {
+      organizationId: me?.boardOrganizationId ?? null,
       projectId: me?.boardProjectId ?? null,
       missionId: me?.boardMissionId ?? null,
       types: me?.boardTaskTypes ?? null,
@@ -713,6 +737,7 @@ export default async function HomePage() {
     projects,
     missions,
     releases,
+    organizations,
   );
   // The topbar total, aggregated by the same code the Insights page runs so
   // the board and the page can only report the same numbers for one filter.
@@ -744,6 +769,7 @@ export default async function HomePage() {
 
       <HomeShell
         lang={ws.language}
+        organizations={organizations}
         projects={projects}
         missions={missions}
         releases={releases}
