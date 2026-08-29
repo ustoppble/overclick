@@ -330,10 +330,39 @@ export const WriteAckSchema = z.object({
   changed: z.record(z.unknown()),
 });
 
+/**
+ * What an organization holds. Enough to tell a live business from an empty
+ * shell without a second call, and exactly what organization_delete counts
+ * when it refuses.
+ */
+export const OrganizationCountsSchema = z.object({
+  projects: z.number().int().nonnegative(),
+  missions: z.number().int().nonnegative(),
+  /** Cards across the projects of this organization. */
+  cards: z.number().int().nonnegative(),
+});
+
+export const OrganizationSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  /** Summary-only signal: organization_list never sends the markdown itself. */
+  has_context: z.boolean(),
+  counts: OrganizationCountsSchema,
+  created_at: IsoDateTimeSchema,
+});
+
+/** The complete payload: organization_get and the write tools send the markdown. */
+export const OrganizationDetailSchema = OrganizationSchema.extend({
+  context: z.string().nullable(),
+});
+
 export const MissionSummarySchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   status: MissionStatusSchema,
+  /** The business this mission runs for. Never null: the column is not. */
+  organization_id: z.string().min(1),
+  organization_name: z.string().min(1),
   task_count: z.number().int().nonnegative().optional(),
 });
 
@@ -388,6 +417,9 @@ export const ProjectSchema = z.object({
   name: z.string().min(1),
   /** Card prefix: `AGB` gives `AGB-1`, `AGB-2`. Unique per workspace. */
   id_prefix: z.string().min(1),
+  /** The business this project belongs to. Never null: the column is not. */
+  organization_id: z.string().min(1),
+  organization_name: z.string().min(1),
   repo_url: z.string().nullable(),
   /** Summary-only signal: project_list never sends the markdown itself. */
   has_context: z.boolean(),
@@ -661,6 +693,9 @@ export type Evidence = z.infer<typeof EvidenceSchema>;
 export type Artifact = z.infer<typeof ArtifactSchema>;
 export type SubtaskCreate = z.infer<typeof SubtaskCreateSchema>;
 export type Mission = z.infer<typeof MissionSchema>;
+export type Organization = z.infer<typeof OrganizationSchema>;
+export type OrganizationDetail = z.infer<typeof OrganizationDetailSchema>;
+export type OrganizationCounts = z.infer<typeof OrganizationCountsSchema>;
 export type ReadView = z.infer<typeof ReadViewSchema>;
 export type ReadInclude = z.infer<typeof ReadIncludeSchema>;
 export type ReadOptions = z.infer<typeof ReadOptionsSchema>;

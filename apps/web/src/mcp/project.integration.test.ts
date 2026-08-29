@@ -13,7 +13,12 @@ import {
   TaskUpdateFullOutputSchema as TaskUpdateOutputSchema,
 } from "@agent-board/mcp-core";
 import { afterEach, describe, expect, it } from "vitest";
-import { closeTestWorld, createTestWorld, type TestWorld } from "./test-db";
+import {
+  closeTestWorld,
+  createTestWorld,
+  insertOrganization,
+  type TestWorld,
+} from "./test-db";
 import { invokeToolForTests as invokeTool } from "./test-tools";
 
 const origem = { session_id: "sess_fresh", cli: "claude-code" };
@@ -376,6 +381,7 @@ describe("projects over MCP", () => {
     if (!otherWs) throw new Error("failed to insert other workspace");
     await world.db.insert(project).values({
       workspaceId: otherWs.id,
+      organizationId: await insertOrganization(world.db, otherWs.id),
       name: "Other Board",
       idPrefix: "ZZ",
       nextNumber: 1,

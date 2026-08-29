@@ -7,6 +7,12 @@ import {
   MissionCreateInputSchema,
   MissionDeleteInputSchema,
   MissionUpdateInputSchema,
+  ORGANIZATION_CONTEXT_MAX_CHARS,
+  OrganizationCreateInputSchema,
+  OrganizationDeleteInputSchema,
+  OrganizationDetailSchema,
+  OrganizationListOutputSchema,
+  OrganizationUpdateInputSchema,
   PROJECT_CONTEXT_MAX_CHARS,
   ProjectCreateInputSchema,
   ProjectUpdateInputSchema,
@@ -47,8 +53,13 @@ describe("model-specific efforts", () => {
 });
 
 describe("MCP tool contracts", () => {
-  it("exports input and output schemas for all 29 tools", () => {
+  it("exports input and output schemas for all 34 tools", () => {
     expect(MCP_TOOL_NAMES).toEqual([
+      "organization_list",
+      "organization_get",
+      "organization_create",
+      "organization_update",
+      "organization_delete",
       "project_list",
       "project_get",
       "project_create",
@@ -386,6 +397,107 @@ describe("project_create", () => {
         context: "x".repeat(PROJECT_CONTEXT_MAX_CHARS + 1),
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("organization contracts", () => {
+  it("round-trips a listed organization with its counts", () => {
+    const parsed = OrganizationListOutputSchema.parse({
+      organizations: [
+        {
+          id: "5f1e3a1e-8f0c-4d0a-9b4e-1f2a3b4c5d6e",
+          name: "Overclock",
+          has_context: true,
+          counts: { projects: 3, missions: 2, cards: 41 },
+          created_at: "2026-08-28T00:00:00.000Z",
+        },
+      ],
+    });
+    expect(parsed.organizations[0]?.counts.cards).toBe(41);
+    // The list is a summary: the markdown itself only travels in the detail.
+    expect(parsed.organizations[0]).not.toHaveProperty("context");
+  });
+
+  it("round-trips the detail, with a null context when there is none", () => {
+    const parsed = OrganizationDetailSchema.parse({
+      id: "5f1e3a1e-8f0c-4d0a-9b4e-1f2a3b4c5d6e",
+      name: "Padre Miguel",
+      has_context: false,
+      counts: { projects: 0, missions: 0, cards: 0 },
+      created_at: "2026-08-28T00:00:00.000Z",
+      context: null,
+    });
+    expect(parsed.context).toBeNull();
+  });
+
+  it("trims the name, refuses an empty one and caps the context", () => {
+    expect(
+      OrganizationCreateInputSchema.parse({ name: "  Overclock  " }).name,
+    ).toBe("Overclock");
+    expect(OrganizationCreateInputSchema.safeParse({ name: "   " }).success).toBe(
+      false,
+    );
+    expect(
+      OrganizationCreateInputSchema.safeParse({
+        name: "Too much",
+        context: "x".repeat(ORGANIZATION_CONTEXT_MAX_CHARS + 1),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("refuses an update that changes nothing", () => {
+    expect(
+      OrganizationUpdateInputSchema.safeParse({ organization_id: "Overclock" })
+        .success,
+    ).toBe(false);
+    expect(
+      OrganizationUpdateInputSchema.parse({
+        organization_id: "Overclock",
+        context: null,
+      }).context,
+    ).toBeNull();
+  });
+
+  it("takes reassign_to and has no force: the column is not nullable", () => {
+    const parsed = OrganizationDeleteInputSchema.parse({
+      organization_id: "Padre Miguel",
+      reassign_to: "Overclock",
+    });
+    expect(parsed.reassign_to).toBe("Overclock");
+    expect(
+      OrganizationDeleteInputSchema.safeParse({
+        organization_id: "Padre Miguel",
+        force: true,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps organization optional on create, so a single-business install is untouched", () => {
+    expect(
+      ProjectCreateInputSchema.parse({ name: "Agent Board" }).organization,
+    ).toBeUndefined();
+    expect(
+      ProjectCreateInputSchema.parse({
+        name: "Agent Board",
+        organization: "Overclock",
+      }).organization,
+    ).toBe("Overclock");
+    expect(
+      MissionCreateInputSchema.parse({
+        title: "Norte",
+        organization: "Overclock",
+      }).organization,
+    ).toBe("Overclock");
+  });
+
+  it("accepts the organization filter on every read that lists cards", () => {
+    expect(TaskListInputSchema.parse({ organization: "Overclock" }).organization).toBe(
+      "Overclock",
+    );
+    expect(
+      TaskSearchInputSchema.parse({ q: "board", organization: "Overclock" })
+        .organization,
+    ).toBe("Overclock");
   });
 });
 
