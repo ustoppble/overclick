@@ -28,7 +28,12 @@ import {
 } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
-import { closeTestWorld, createTestWorld, type TestWorld } from "./test-db";
+import {
+  closeTestWorld,
+  createTestWorld,
+  insertOrganization,
+  type TestWorld,
+} from "./test-db";
 import { generateTokenSecret, hashToken } from "./token";
 import { invokeToolForTests as invokeTool } from "./test-tools";
 import { invokeTool as invokeMcpTool } from "./tools";
@@ -1382,6 +1387,7 @@ describe("MCP tool edge cases against a test db", () => {
       .insert(mission)
       .values({
         workspaceId: otherWs.id,
+        organizationId: await insertOrganization(world.db, otherWs.id),
         title: "Other mission",
         objective: "Out of scope.",
       })
@@ -2275,6 +2281,7 @@ describe("MCP tool edge cases against a test db", () => {
       .insert(mission)
       .values({
         workspaceId: world.workspaceId,
+        organizationId: world.organizationId,
         title: "Segunda missão",
         objective: "Separar a fila.",
         status: "ativa",
@@ -2799,6 +2806,7 @@ describe("task_id accepts uuid and short id", () => {
       .insert(project)
       .values({
         workspaceId: otherWs.id,
+        organizationId: await insertOrganization(world.db, otherWs.id),
         name: "Other",
         idPrefix: "ZZ",
         nextNumber: 1,
@@ -2996,6 +3004,7 @@ describe("a card joins or leaves a mission after creation", () => {
       .insert(mission)
       .values({
         workspaceId: otherWs.id,
+        organizationId: await insertOrganization(world.db, otherWs.id),
         title: "Missao alheia",
         objective: "Nao e deste board.",
         status: "ativa",

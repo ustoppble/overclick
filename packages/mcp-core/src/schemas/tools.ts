@@ -20,6 +20,8 @@ import {
   MissionSchema,
   MissionStatusSchema,
   MissionSummarySchema,
+  OrganizationDetailSchema,
+  OrganizationSchema,
   OrigemSchema,
   PrioritySchema,
   ReleaseVersionSchema,
@@ -50,6 +52,10 @@ const ProjectWriteAckSchema = WriteAckSchema.extend({
   id: z.string().min(1),
 });
 
+const OrganizationWriteAckSchema = WriteAckSchema.extend({
+  id: z.string().min(1),
+});
+
 const MissionWriteAckSchema = WriteAckSchema.extend({
   id: z.string().min(1),
   status: MissionStatusSchema,
@@ -76,8 +82,119 @@ const TaskDeliverAckSchema = TaskWriteAckSchema.extend({
   telemetry_incomplete_reason: z.string().optional(),
 });
 
+/**
+ * How a caller names a business. The name works next to the uuid because it is
+ * unique per workspace and it is the only handle a human ever types.
+ */
+const OrganizationRefSchema = z
+  .string()
+  .min(1)
+  .describe(
+    "Organization uuid or name (e.g. Overclock). Resolved in the token workspace; call organization_list to see both.",
+  );
+
+/**
+ * Optional on the wire on purpose: a workspace with a single organization
+ * resolves to it, so an install that never split by business keeps making the
+ * calls it already makes. With several, the call is refused with the list to
+ * pick from rather than filing a repo under a guess.
+ */
+const OrganizationChoiceSchema = OrganizationRefSchema.optional().describe(
+  "Organization uuid or name. Omitted, the server uses the only organization in the workspace, and refuses the call with the options when there is more than one.",
+);
+
+export const ORGANIZATION_CONTEXT_MAX_CHARS = 32_000;
+
+const OrganizationContextSchema = z
+  .string()
+  .max(
+    ORGANIZATION_CONTEXT_MAX_CHARS,
+    `Organization context cannot exceed ${ORGANIZATION_CONTEXT_MAX_CHARS} characters.`,
+  );
+
+export const OrganizationListInputSchema = z.object({}).strict();
+
+export const OrganizationListOutputSchema = z.object({
+  organizations: z.array(OrganizationSchema),
+});
+
+export const OrganizationGetInputSchema = z.object({
+  organization_id: OrganizationRefSchema,
+}).strict();
+
+export const OrganizationGetOutputSchema = z.object({
+  organization: OrganizationDetailSchema,
+});
+
+/**
+ * Canonical organization_create input.
+ * Workspace is resolved from the MCP bearer token — never sent in the body.
+ * `context` is the markdown every agent working anywhere in this business
+ * reads, above the project context.
+ */
+export const OrganizationCreateInputSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  context: OrganizationContextSchema.optional(),
+}).strict();
+
+export const OrganizationCreateOutputSchema = z.object({
+  organization: OrganizationDetailSchema,
+});
+
+/**
+ * Partial organization edits. Omitted fields stay untouched; `context` accepts
+ * null to clear it.
+ */
+export const OrganizationUpdateInputSchema = z
+  .object({
+    organization_id: OrganizationRefSchema,
+    name: z.string().trim().min(1).max(200).optional(),
+    context: OrganizationContextSchema.nullable().optional(),
+    /** Mutations are compact by default; ask for the complete organization. */
+    return: WriteReturnSchema.optional(),
+  }).strict()
+  .refine((value) => value.name !== undefined || value.context !== undefined, {
+    message: "provide name or context",
+  });
+
+export const OrganizationUpdateFullOutputSchema = z.object({
+  organization: OrganizationDetailSchema,
+});
+
+export const OrganizationUpdateOutputSchema = z.union([
+  OrganizationWriteAckSchema,
+  OrganizationUpdateFullOutputSchema,
+]);
+
+/**
+ * Canonical organization_delete input.
+ * There is no `force` twin of project_delete here: `project.organization_id`
+ * and `mission.organization_id` are not nullable and both keys restrict, so an
+ * organization holding rows has nowhere to drop them. Either it is already
+ * empty, or `reassign_to` names the organization that inherits everything.
+ */
+export const OrganizationDeleteInputSchema = z.object({
+  organization_id: OrganizationRefSchema,
+  reassign_to: OrganizationRefSchema.optional().describe(
+    "Organization that inherits the projects and missions of the deleted one. Omitted, an organization still holding either is refused with the counts that block it.",
+  ),
+}).strict();
+
+export const OrganizationDeleteOutputSchema = z.object({
+  deleted: z.literal(true),
+  organization_id: z.string().min(1),
+  name: z.string().min(1),
+  /** Who inherited the rows; null when the organization was already empty. */
+  reassigned_to: z
+    .object({ id: z.string().min(1), name: z.string().min(1) })
+    .nullable(),
+  projects_reassigned: z.number().int().min(0),
+  missions_reassigned: z.number().int().min(0),
+});
+
 export const MissionListInputSchema = z.object({
   status: MissionStatusSchema.optional(),
+  organization: OrganizationRefSchema.optional(),
 }).strict();
 
 export const MissionListOutputSchema = z.object({
@@ -156,6 +273,7 @@ export type ContextOp = z.infer<typeof ContextOpSchema>;
  */
 export const MissionCreateInputSchema = z.object({
   title: z.string().min(1).max(200),
+  organization: OrganizationChoiceSchema,
   objective: z.string().optional(),
   context: z.string().optional(),
   status: MissionStatusSchema.optional(),
@@ -175,6 +293,9 @@ export const MissionCreateOutputSchema = z.object({
 export const MissionUpdateInputSchema = z.object({
   mission_id: z.string().min(1),
   title: z.string().trim().min(1).max(200).optional(),
+  organization: OrganizationRefSchema.optional().describe(
+    "Moves the mission to this organization.",
+  ),
   objective: z.string().optional(),
   objective_ops: ContextOpsSchema.describe(
     "Granular markdown operations applied to the current mission objective.",
@@ -319,7 +440,9 @@ const ProjectRefSchema = z
     "Project uuid or its card prefix (e.g. AGB). Resolved in the token workspace; call project_list to see both.",
   );
 
-export const ProjectListInputSchema = z.object({}).strict();
+export const ProjectListInputSchema = z.object({
+  organization: OrganizationRefSchema.optional(),
+}).strict();
 
 export const ProjectListOutputSchema = z.object({
   projects: z.array(ProjectSchema),
@@ -362,6 +485,7 @@ export const ProjectGetOutputSchema = z.object({
  */
 export const ProjectCreateInputSchema = z.object({
   name: z.string().min(1).max(200),
+  organization: OrganizationChoiceSchema,
   repo_url: z.string().url().optional(),
   context: ProjectContextSchema.optional(),
   current_version: ProjectVersionSchema.optional(),
@@ -401,6 +525,9 @@ export const ProjectUpdateInputSchema = z
   .object({
     project_id: ProjectRefSchema,
     name: z.string().min(1).max(200).optional(),
+    organization: OrganizationRefSchema.optional().describe(
+      "Moves the project to this organization. Its cards follow it.",
+    ),
     repo_url: z.string().url().nullable().optional(),
     context: ProjectContextSchema.nullable().optional(),
     context_ops: ContextOpsSchema.describe(
@@ -425,6 +552,7 @@ export const ProjectUpdateInputSchema = z
   .refine(
     (value) =>
       value.name !== undefined ||
+      value.organization !== undefined ||
       value.repo_url !== undefined ||
       value.context !== undefined ||
       value.context_ops !== undefined ||
@@ -433,7 +561,7 @@ export const ProjectUpdateInputSchema = z
       value.id_prefix !== undefined,
     {
       message:
-        "provide name, repo_url, context, current_version, context_source or id_prefix",
+        "provide name, organization, repo_url, context, current_version, context_source or id_prefix",
     },
   )
   .refine(
@@ -490,6 +618,8 @@ export const ProjectDeleteOutputSchema = z.object({
 export const TaskListInputSchema = z.object({
   project_id: ProjectRefSchema.optional(),
   mission_id: z.string().min(1).optional(),
+  /** Cards of every project in this organization. */
+  organization: OrganizationRefSchema.optional(),
   /** Exact release tag stored on the card. */
   resolved_in: z.string().min(1).optional(),
   status: z.union([CardStatusSchema, z.array(CardStatusSchema)]).optional(),
@@ -586,6 +716,8 @@ export const TaskGetOutputSchema = z.object({
 export const TaskSearchInputSchema = z.object({
   q: z.string().min(1).max(500),
   project_id: ProjectRefSchema.optional(),
+  /** Restricts the search to the projects of this organization. */
+  organization: OrganizationRefSchema.optional(),
   /** Exact release tag stored on the card. */
   resolved_in: z.string().min(1).optional(),
   type: TaskTypeSchema.optional(),
@@ -1433,6 +1565,11 @@ export const InsightsQueryOutputSchema = z.object({
 });
 
 export const MCP_TOOL_NAMES = [
+  "organization_list",
+  "organization_get",
+  "organization_create",
+  "organization_update",
+  "organization_delete",
   "project_list",
   "project_get",
   "project_create",
@@ -1467,6 +1604,26 @@ export const MCP_TOOL_NAMES = [
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 
 export const toolContracts = {
+  organization_list: {
+    input: OrganizationListInputSchema,
+    output: OrganizationListOutputSchema,
+  },
+  organization_get: {
+    input: OrganizationGetInputSchema,
+    output: OrganizationGetOutputSchema,
+  },
+  organization_create: {
+    input: OrganizationCreateInputSchema,
+    output: OrganizationCreateOutputSchema,
+  },
+  organization_update: {
+    input: OrganizationUpdateInputSchema,
+    output: OrganizationUpdateOutputSchema,
+  },
+  organization_delete: {
+    input: OrganizationDeleteInputSchema,
+    output: OrganizationDeleteOutputSchema,
+  },
   project_list: {
     input: ProjectListInputSchema,
     output: ProjectListOutputSchema,
@@ -1646,3 +1803,13 @@ export type ProjectContextRefreshOutput = z.infer<typeof ProjectContextRefreshOu
 export type ProjectDeleteInput = z.infer<typeof ProjectDeleteInputSchema>;
 export type ProjectDeleteOutput = z.infer<typeof ProjectDeleteOutputSchema>;
 export type ProjectMove = z.infer<typeof ProjectMoveSchema>;
+export type OrganizationListInput = z.infer<typeof OrganizationListInputSchema>;
+export type OrganizationListOutput = z.infer<typeof OrganizationListOutputSchema>;
+export type OrganizationGetInput = z.infer<typeof OrganizationGetInputSchema>;
+export type OrganizationGetOutput = z.infer<typeof OrganizationGetOutputSchema>;
+export type OrganizationCreateInput = z.infer<typeof OrganizationCreateInputSchema>;
+export type OrganizationCreateOutput = z.infer<typeof OrganizationCreateOutputSchema>;
+export type OrganizationUpdateInput = z.infer<typeof OrganizationUpdateInputSchema>;
+export type OrganizationUpdateOutput = z.infer<typeof OrganizationUpdateOutputSchema>;
+export type OrganizationDeleteInput = z.infer<typeof OrganizationDeleteInputSchema>;
+export type OrganizationDeleteOutput = z.infer<typeof OrganizationDeleteOutputSchema>;

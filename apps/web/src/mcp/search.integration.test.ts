@@ -128,6 +128,7 @@ describe("task_search", () => {
       .insert(project)
       .values({
         workspaceId: world.workspaceId,
+        organizationId: world.organizationId,
         name: "Other",
         idPrefix: "OTH",
         nextNumber: 1,

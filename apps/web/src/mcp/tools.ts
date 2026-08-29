@@ -17,6 +17,7 @@ import {
   nextShortId,
   normalizeModelKey,
   normalizeShortId,
+  organization,
   project,
   projectContextAudit,
   readTranscriptRef,
@@ -55,6 +56,7 @@ import {
   type Harness,
   type ListInclude,
   type McpToolName,
+  type OrganizationCounts,
   type ProjectMove,
   type ReadOptions,
   type Result,
@@ -120,7 +122,10 @@ import {
   harnessToDb,
   iso,
   looksLikeUuid,
+  emptyOrganizationCounts,
   mapMission,
+  mapOrganization,
+  mapOrganizationDetail,
   mapProject,
   mapProjectDetail,
   mapTask,
@@ -131,6 +136,7 @@ import {
   reviewerToColumns,
   serializeComoConfirmo,
   transcriptToWire,
+  type OrganizationRow,
   type ProjectRow,
   type TaskRow,
 } from "./map";
@@ -453,8 +459,43 @@ async function dispatchTool(
 ): Promise<unknown> {
   let value: unknown;
   switch (name) {
+    case "organization_list":
+      value = await organizationList(db, ctx);
+      break;
+    case "organization_get":
+      value = await organizationGet(
+        db,
+        ctx,
+        data as Parameters<typeof organizationGet>[2],
+      );
+      break;
+    case "organization_create":
+      value = await organizationCreate(
+        db,
+        ctx,
+        data as Parameters<typeof organizationCreate>[2],
+      );
+      break;
+    case "organization_update":
+      value = await organizationUpdate(
+        db,
+        ctx,
+        data as Parameters<typeof organizationUpdate>[2],
+      );
+      break;
+    case "organization_delete":
+      value = await organizationDelete(
+        db,
+        ctx,
+        data as Parameters<typeof organizationDelete>[2],
+      );
+      break;
     case "project_list":
-      value = await projectList(db, ctx);
+      value = await projectList(
+        db,
+        ctx,
+        data as Parameters<typeof projectList>[2],
+      );
       break;
     case "project_get":
       value = await projectGet(
@@ -609,14 +650,444 @@ export function isMcpToolName(name: string): name is McpToolName {
 }
 
 /** Every message that sends an agent back to the project tools says the same thing. */
+/** Every message that sends an agent back to the organization tools says the same thing. */
+const ORGANIZATION_HINT =
+  "Call organization_list to see the organizations in this workspace, or organization_create to start one.";
+
+async function listOrganizations(
+  db: Tx,
+  workspaceId: string,
+): Promise<OrganizationRow[]> {
+  return db
+    .select()
+    .from(organization)
+    .where(eq(organization.workspaceId, workspaceId))
+    .orderBy(asc(organization.createdAt));
+}
+
+/**
+ * Uuid or name. Unlike a mission ref, the name is a legitimate handle here: it
+ * is unique per workspace and it is what a human types.
+ */
+async function findOrganization(
+  db: Tx,
+  workspaceId: string,
+  organizationRef: string,
+  lock = false,
+): Promise<OrganizationRow | null> {
+  const ref = organizationRef.trim();
+  if (!ref) return null;
+  const identity = looksLikeUuid(ref)
+    ? eq(organization.id, ref)
+    : sql`lower(${organization.name}) = ${ref.toLowerCase()}`;
+
+  const query = db
+    .select()
+    .from(organization)
+    .where(and(eq(organization.workspaceId, workspaceId), identity))
+    .limit(1);
+  const rows = lock ? await query.for("update") : await query;
+  return rows[0] ?? null;
+}
+
+/** A miss always comes back with the list, so the next call is not a guess. */
+async function organizationNotFound(
+  db: Tx,
+  workspaceId: string,
+  ref: string,
+): Promise<Result<never>> {
+  const rows = await listOrganizations(db, workspaceId);
+  const options = rows.length
+    ? ` Available: ${rows.map((row) => `${row.name} (${row.id})`).join(", ")}.`
+    : "";
+  return err(
+    "NOT_FOUND",
+    `Organization ${ref} not found in this workspace.${options} ${ORGANIZATION_HINT}`,
+  );
+}
+
+/** Either the resolved row, or the refusal to hand straight back to the caller. */
+type OrganizationChoice =
+  | { row: OrganizationRow; refusal?: undefined }
+  | { row?: undefined; refusal: Result<never> };
+
+/**
+ * The organization a new project or mission lands in. Naming one resolves it;
+ * omitting it only works while the workspace holds a single business, because
+ * picking one of several on the caller's behalf is exactly how a repo ends up
+ * filed under the wrong company.
+ */
+async function resolveOrganizationChoice(
+  db: Tx,
+  workspaceId: string,
+  ref: string | undefined,
+): Promise<OrganizationChoice> {
+  if (ref !== undefined) {
+    const row = await findOrganization(db, workspaceId, ref);
+    return row
+      ? { row }
+      : { refusal: await organizationNotFound(db, workspaceId, ref) };
+  }
+
+  const rows = await listOrganizations(db, workspaceId);
+  const only = rows[0];
+  if (rows.length === 1 && only) return { row: only };
+  if (rows.length === 0) {
+    return {
+      refusal: err(
+        "INVALID_ARGUMENT",
+        "This workspace has no organization yet. Create one with organization_create and pass its name or id as organization.",
+      ),
+    };
+  }
+  return {
+    refusal: err(
+      "INVALID_ARGUMENT",
+      `This workspace has ${rows.length} organizations, so organization cannot be omitted: pass one of ${rows
+        .map((row) => `${row.name} (${row.id})`)
+        .join(", ")}.`,
+    ),
+  };
+}
+
+/** Names by id: one query answers a whole page of projects or missions. */
+async function organizationNames(
+  db: Tx,
+  workspaceId: string,
+): Promise<Map<string, string>> {
+  const rows = await db
+    .select({ id: organization.id, name: organization.name })
+    .from(organization)
+    .where(eq(organization.workspaceId, workspaceId));
+  return new Map(rows.map((row) => [row.id, row.name]));
+}
+
+/**
+ * The foreign key guarantees the row exists, so a miss here means the map was
+ * built for another workspace, not that a project has no business.
+ */
+function organizationNameOf(names: Map<string, string>, id: string): string {
+  const name = names.get(id);
+  if (!name) throw new Error(`organization ${id} is not in this workspace`);
+  return name;
+}
+
+/** The organization a project or mission already points at, by the same rule. */
+async function organizationOf(
+  db: Tx,
+  workspaceId: string,
+  organizationId: string,
+): Promise<OrganizationRow> {
+  const row = await findOrganization(db, workspaceId, organizationId);
+  if (!row) {
+    throw new Error(`organization ${organizationId} is not in this workspace`);
+  }
+  return row;
+}
+
+/** What every organization in the workspace holds, in three grouped queries. */
+async function organizationCounts(
+  db: Tx,
+  workspaceId: string,
+): Promise<Map<string, OrganizationCounts>> {
+  const [projects, missions, cards] = await Promise.all([
+    db
+      .select({ id: project.organizationId, n: count() })
+      .from(project)
+      .where(eq(project.workspaceId, workspaceId))
+      .groupBy(project.organizationId),
+    db
+      .select({ id: mission.organizationId, n: count() })
+      .from(mission)
+      .where(eq(mission.workspaceId, workspaceId))
+      .groupBy(mission.organizationId),
+    db
+      .select({ id: project.organizationId, n: count() })
+      .from(task)
+      .innerJoin(project, eq(task.projectId, project.id))
+      .where(eq(project.workspaceId, workspaceId))
+      .groupBy(project.organizationId),
+  ]);
+
+  const tally = new Map<string, OrganizationCounts>();
+  const bucket = (id: string): OrganizationCounts => {
+    const found = tally.get(id) ?? emptyOrganizationCounts();
+    tally.set(id, found);
+    return found;
+  };
+  for (const row of projects) bucket(row.id).projects = Number(row.n);
+  for (const row of missions) bucket(row.id).missions = Number(row.n);
+  for (const row of cards) bucket(row.id).cards = Number(row.n);
+  return tally;
+}
+
+async function organizationList(db: McpDatabase, ctx: AuthContext) {
+  const rows = await listOrganizations(db, ctx.workspaceId);
+  const counts = await organizationCounts(db, ctx.workspaceId);
+  return {
+    organizations: rows.map((row) =>
+      mapOrganization(row, counts.get(row.id) ?? emptyOrganizationCounts()),
+    ),
+  };
+}
+
+async function organizationGet(
+  db: McpDatabase,
+  ctx: AuthContext,
+  input: { organization_id: string },
+) {
+  const row = await findOrganization(db, ctx.workspaceId, input.organization_id);
+  if (!row) {
+    return organizationNotFound(db, ctx.workspaceId, input.organization_id);
+  }
+  const counts = await organizationCounts(db, ctx.workspaceId);
+  return {
+    organization: mapOrganizationDetail(
+      row,
+      counts.get(row.id) ?? emptyOrganizationCounts(),
+    ),
+  };
+}
+
+async function organizationCreate(
+  db: McpDatabase,
+  ctx: AuthContext,
+  input: { name: string; context?: string },
+) {
+  const name = input.name.trim();
+  // The name is how callers refer to a business, so two of them sharing one
+  // would make every reference ambiguous. Checked here for a clean message,
+  // and again by the unique index below for concurrent creates.
+  const taken = await findOrganization(db, ctx.workspaceId, name);
+  if (taken) {
+    return err(
+      "INVALID_ARGUMENT",
+      `Organization '${taken.name}' already exists in this workspace. Pass a different name, or edit it with organization_update.`,
+    );
+  }
+
+  let row: OrganizationRow | undefined;
+  try {
+    [row] = await db
+      .insert(organization)
+      .values({
+        workspaceId: ctx.workspaceId,
+        name,
+        context: input.context?.trim() ? input.context : null,
+      })
+      .returning();
+  } catch (error) {
+    if (isOrganizationNameConflict(error)) {
+      return err(
+        "INVALID_ARGUMENT",
+        `Organization '${name}' was just created by another caller. Pass a different name.`,
+      );
+    }
+    throw error;
+  }
+  if (!row) {
+    throw new Error("failed to insert organization");
+  }
+  return {
+    organization: mapOrganizationDetail(row, emptyOrganizationCounts()),
+  };
+}
+
+function isOrganizationNameConflict(error: unknown): boolean {
+  const message =
+    error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : "";
+  return message.includes("organization_workspace_name");
+}
+
+async function organizationUpdate(
+  db: McpDatabase,
+  ctx: AuthContext,
+  input: {
+    organization_id: string;
+    name?: string;
+    context?: string | null;
+    return?: "ack" | "full";
+  },
+) {
+  const current = await findOrganization(
+    db,
+    ctx.workspaceId,
+    input.organization_id,
+  );
+  if (!current) {
+    return organizationNotFound(db, ctx.workspaceId, input.organization_id);
+  }
+
+  const patch: { name?: string; context?: string | null } = {};
+  if (input.name !== undefined) {
+    const name = input.name.trim();
+    if (name.toLowerCase() !== current.name.toLowerCase()) {
+      const taken = await findOrganization(db, ctx.workspaceId, name);
+      if (taken) {
+        return err(
+          "INVALID_ARGUMENT",
+          `Organization '${taken.name}' already exists in this workspace. Pass a different name.`,
+        );
+      }
+    }
+    patch.name = name;
+  }
+  if (input.context !== undefined) {
+    patch.context = input.context?.trim() ? input.context : null;
+  }
+
+  let row: OrganizationRow | undefined;
+  try {
+    [row] = await db
+      .update(organization)
+      .set(patch)
+      .where(
+        and(
+          eq(organization.id, current.id),
+          eq(organization.workspaceId, ctx.workspaceId),
+        ),
+      )
+      .returning();
+  } catch (error) {
+    if (isOrganizationNameConflict(error)) {
+      return err(
+        "INVALID_ARGUMENT",
+        `Organization '${patch.name}' was just taken by another caller. Pass a different name.`,
+      );
+    }
+    throw error;
+  }
+  if (!row) throw new Error("failed to update organization");
+
+  if (input.return === "full") {
+    const counts = await organizationCounts(db, ctx.workspaceId);
+    return {
+      organization: mapOrganizationDetail(
+        row,
+        counts.get(row.id) ?? emptyOrganizationCounts(),
+      ),
+    };
+  }
+
+  const changed: ChangedFields = {};
+  if (current.name !== row.name) changed.name = row.name;
+  if (current.context !== row.context) changed.context = row.context;
+  return rowWriteAck(row.id, row.updatedAt, changed);
+}
+
+async function organizationDelete(
+  db: McpDatabase,
+  ctx: AuthContext,
+  input: { organization_id: string; reassign_to?: string },
+) {
+  return db.transaction(async (tx) => {
+    const current = await findOrganization(
+      tx,
+      ctx.workspaceId,
+      input.organization_id,
+      true,
+    );
+    if (!current) {
+      return organizationNotFound(tx, ctx.workspaceId, input.organization_id);
+    }
+
+    let heir: OrganizationRow | null = null;
+    if (input.reassign_to !== undefined) {
+      heir = await findOrganization(tx, ctx.workspaceId, input.reassign_to);
+      if (!heir) {
+        return organizationNotFound(tx, ctx.workspaceId, input.reassign_to);
+      }
+      if (heir.id === current.id) {
+        return err(
+          "INVALID_ARGUMENT",
+          `reassign_to names '${current.name}', the organization being deleted. Name the organization that inherits its projects and missions.`,
+        );
+      }
+    }
+
+    const [projectRow] = await tx
+      .select({ n: count() })
+      .from(project)
+      .where(eq(project.organizationId, current.id));
+    const [missionRow] = await tx
+      .select({ n: count() })
+      .from(mission)
+      .where(eq(mission.organizationId, current.id));
+    const projects = Number(projectRow?.n ?? 0);
+    const missions = Number(missionRow?.n ?? 0);
+
+    // Both columns are not null and both foreign keys restrict, so there is no
+    // force here and nothing to detach: an organization holding rows is either
+    // emptied by hand or inherited by another one.
+    if ((projects > 0 || missions > 0) && !heir) {
+      const held = [
+        projects > 0 ? `${projects} project${projects === 1 ? "" : "s"}` : null,
+        missions > 0 ? `${missions} mission${missions === 1 ? "" : "s"}` : null,
+      ]
+        .filter(Boolean)
+        .join(" and ");
+      return err(
+        "INVALID_ARGUMENT",
+        `Organization '${current.name}' still holds ${held}, and neither can exist without one. Repeat this call with reassign_to naming the organization that inherits them, or move them one by one with project_update and mission_update passing organization.`,
+      );
+    }
+
+    if (heir) {
+      if (projects > 0) {
+        await tx
+          .update(project)
+          .set({ organizationId: heir.id })
+          .where(eq(project.organizationId, current.id));
+      }
+      if (missions > 0) {
+        await tx
+          .update(mission)
+          .set({ organizationId: heir.id })
+          .where(eq(mission.organizationId, current.id));
+      }
+    }
+
+    await tx
+      .delete(organization)
+      .where(
+        and(
+          eq(organization.id, current.id),
+          eq(organization.workspaceId, ctx.workspaceId),
+        ),
+      );
+
+    return {
+      deleted: true as const,
+      organization_id: current.id,
+      name: current.name,
+      reassigned_to: heir ? { id: heir.id, name: heir.name } : null,
+      projects_reassigned: heir ? projects : 0,
+      missions_reassigned: heir ? missions : 0,
+    };
+  });
+}
+
 const PROJECT_HINT =
   "Call project_list to see the projects in this workspace, or project_create to start one.";
 
-async function projectList(db: McpDatabase, ctx: AuthContext) {
+async function projectList(
+  db: McpDatabase,
+  ctx: AuthContext,
+  input: { organization?: string },
+) {
+  const filters = [eq(project.workspaceId, ctx.workspaceId)];
+  if (input.organization) {
+    const org = await findOrganization(db, ctx.workspaceId, input.organization);
+    if (!org) {
+      return organizationNotFound(db, ctx.workspaceId, input.organization);
+    }
+    filters.push(eq(project.organizationId, org.id));
+  }
+
   const rows = await db
     .select()
     .from(project)
-    .where(eq(project.workspaceId, ctx.workspaceId))
+    .where(and(...filters))
     .orderBy(asc(project.createdAt));
 
   const ids = rows.map((row) => row.id);
@@ -638,9 +1109,14 @@ async function projectList(db: McpDatabase, ctx: AuthContext) {
     byProject.set(row.projectId, tally);
   }
 
+  const names = await organizationNames(db, ctx.workspaceId);
   return {
     projects: rows.map((row) =>
-      mapProject(row, byProject.get(row.id) ?? emptyCardCounts()),
+      mapProject(
+        row,
+        organizationNameOf(names, row.organizationId),
+        byProject.get(row.id) ?? emptyCardCounts(),
+      ),
     ),
   };
 }
@@ -662,10 +1138,12 @@ async function projectGet(
     );
   }
   const cards = await projectCardCounts(db, row.id);
+  const names = await organizationNames(db, ctx.workspaceId);
+  const orgName = organizationNameOf(names, row.organizationId);
   return {
     project: contextReadRequested(input)
-      ? mapProjectDetail(row, cards)
-      : mapProject(row, cards),
+      ? mapProjectDetail(row, orgName, cards)
+      : mapProject(row, orgName, cards),
   };
 }
 
@@ -674,6 +1152,7 @@ async function projectCreate(
   ctx: AuthContext,
   input: {
     name: string;
+    organization?: string;
     repo_url?: string;
     context?: string;
     current_version?: string;
@@ -716,12 +1195,21 @@ async function projectCreate(
     );
   }
 
+  const choice = await resolveOrganizationChoice(
+    db,
+    ctx.workspaceId,
+    input.organization,
+  );
+  if (choice.refusal) return choice.refusal;
+  const org = choice.row;
+
   let row: ProjectRow | undefined;
   try {
     [row] = await db
       .insert(project)
       .values({
         workspaceId: ctx.workspaceId,
+        organizationId: org.id,
         name,
         repoUrl: input.repo_url?.trim() || null,
         context: input.context?.trim() ? input.context : null,
@@ -758,7 +1246,7 @@ async function projectCreate(
     throw new Error("failed to insert project");
   }
 
-  return { project: mapProjectDetail(row, emptyCardCounts()) };
+  return { project: mapProjectDetail(row, org.name, emptyCardCounts()) };
 }
 
 function isPrefixConflict(error: unknown): boolean {
@@ -837,6 +1325,7 @@ async function projectUpdate(
   input: {
     project_id: string;
     name?: string;
+    organization?: string;
     repo_url?: string | null;
     context?: string | null;
     context_ops?: ContextOp[];
@@ -863,6 +1352,7 @@ async function projectUpdate(
 
     const patch: {
       name?: string;
+      organizationId?: string;
       repoUrl?: string | null;
       context?: string | null;
       currentVersion?: string | null;
@@ -877,6 +1367,22 @@ async function projectUpdate(
         return err("INVALID_ARGUMENT", "Project name cannot be empty.");
       }
       patch.name = name;
+    }
+
+    // The cards follow the project: they are read through it, never filed
+    // under a business of their own.
+    let org = await organizationOf(tx, ctx.workspaceId, proj.organizationId);
+    if (input.organization !== undefined) {
+      const moved = await findOrganization(
+        tx,
+        ctx.workspaceId,
+        input.organization,
+      );
+      if (!moved) {
+        return organizationNotFound(tx, ctx.workspaceId, input.organization);
+      }
+      patch.organizationId = moved.id;
+      org = moved;
     }
 
     if (input.repo_url !== undefined) {
@@ -996,11 +1502,15 @@ async function projectUpdate(
 
     const counts = await projectCardCounts(tx, row.id);
     if (input.return === "full") {
-      return { project: mapProjectDetail(row, counts) };
+      return { project: mapProjectDetail(row, org.name, counts) };
     }
 
     const changed: ChangedFields = {};
     if (proj.name !== row.name) changed.name = row.name;
+    if (proj.organizationId !== row.organizationId) {
+      changed.organization_id = row.organizationId;
+      changed.organization_name = org.name;
+    }
     if (proj.repoUrl !== row.repoUrl) changed.repo_url = row.repoUrl;
     if (proj.context !== row.context) changed.context = row.context;
     if (proj.currentVersion !== row.currentVersion) {
@@ -1035,8 +1545,13 @@ async function projectContextRefresh(
   });
   if (!refreshed) return err("NOT_FOUND", "Project disappeared during refresh.");
   const counts = await projectCardCounts(db, refreshed.project.id);
+  const names = await organizationNames(db, ctx.workspaceId);
   return {
-    project: mapProjectDetail(refreshed.project, counts),
+    project: mapProjectDetail(
+      refreshed.project,
+      organizationNameOf(names, refreshed.project.organizationId),
+      counts,
+    ),
     updated: refreshed.updated,
     updates: refreshed.updates,
   };
@@ -1103,10 +1618,17 @@ async function projectDelete(
 async function missionList(
   db: McpDatabase,
   ctx: AuthContext,
-  input: { status?: "ativa" | "pausada" | "concluida" },
+  input: { status?: "ativa" | "pausada" | "concluida"; organization?: string },
 ) {
   const filters = [eq(mission.workspaceId, ctx.workspaceId)];
   if (input.status) filters.push(eq(mission.status, input.status));
+  if (input.organization) {
+    const org = await findOrganization(db, ctx.workspaceId, input.organization);
+    if (!org) {
+      return organizationNotFound(db, ctx.workspaceId, input.organization);
+    }
+    filters.push(eq(mission.organizationId, org.id));
+  }
 
   const rows = await db
     .select()
@@ -1125,8 +1647,15 @@ async function missionList(
           .groupBy(task.missionId);
   const byMission = new Map(counts.map((row) => [row.missionId, Number(row.n)]));
 
+  const names = await organizationNames(db, ctx.workspaceId);
   return {
-    missions: rows.map((row) => mapMission(row, byMission.get(row.id) ?? 0)),
+    missions: rows.map((row) =>
+      mapMission(
+        row,
+        organizationNameOf(names, row.organizationId),
+        byMission.get(row.id) ?? 0,
+      ),
+    ),
   };
 }
 
@@ -1150,7 +1679,12 @@ async function missionGet(
     .select({ n: count() })
     .from(task)
     .where(eq(task.missionId, row.id));
-  const mapped = mapMission(row, Number(counted?.n ?? 0));
+  const names = await organizationNames(db, ctx.workspaceId);
+  const mapped = mapMission(
+    row,
+    organizationNameOf(names, row.organizationId),
+    Number(counted?.n ?? 0),
+  );
   if (contextReadRequested(input)) return { mission: mapped };
   const { objective: _objective, context: _context, ...summary } = mapped;
   return { mission: summary };
@@ -1161,17 +1695,27 @@ async function missionCreate(
   ctx: AuthContext,
   input: {
     title: string;
+    organization?: string;
     objective?: string;
     context?: string;
     status?: "ativa" | "pausada" | "concluida";
   },
 ) {
+  const choice = await resolveOrganizationChoice(
+    db,
+    ctx.workspaceId,
+    input.organization,
+  );
+  if (choice.refusal) return choice.refusal;
+  const org = choice.row;
+
   const objective = (input.objective ?? input.context ?? "").trim();
   const context = (input.context ?? input.objective ?? "").trim();
   const [row] = await db
     .insert(mission)
     .values({
       workspaceId: ctx.workspaceId,
+      organizationId: org.id,
       title: input.title.trim(),
       objective,
       context,
@@ -1181,7 +1725,7 @@ async function missionCreate(
   if (!row) {
     throw new Error("failed to insert mission");
   }
-  return { mission: mapMission(row, 0) };
+  return { mission: mapMission(row, org.name, 0) };
 }
 
 async function missionUpdate(
@@ -1190,6 +1734,7 @@ async function missionUpdate(
   input: {
     mission_id: string;
     title?: string;
+    organization?: string;
     objective?: string;
     objective_ops?: ContextOp[];
     context?: string;
@@ -1246,12 +1791,27 @@ async function missionUpdate(
 
     const patch: {
       title?: string;
+      organizationId?: string;
       objective?: string;
       context?: string;
       status?: "ativa" | "pausada" | "concluida";
     } = {};
     if (input.title !== undefined) patch.title = input.title.trim();
     if (input.status !== undefined) patch.status = input.status;
+
+    let org = await organizationOf(tx, ctx.workspaceId, current.organizationId);
+    if (input.organization !== undefined) {
+      const moved = await findOrganization(
+        tx,
+        ctx.workspaceId,
+        input.organization,
+      );
+      if (!moved) {
+        return organizationNotFound(tx, ctx.workspaceId, input.organization);
+      }
+      patch.organizationId = moved.id;
+      org = moved;
+    }
 
     if (contextChanged) {
       const guard = contextGuardError(current.context, input, "Mission context");
@@ -1291,7 +1851,9 @@ async function missionUpdate(
         .from(task)
         .where(eq(task.missionId, current.id));
       if (input.return === "full") {
-        return { mission: mapMission(current, Number(counted?.n ?? 0)) };
+        return {
+          mission: mapMission(current, org.name, Number(counted?.n ?? 0)),
+        };
       }
       return rowWriteAck(
         current.id,
@@ -1318,11 +1880,17 @@ async function missionUpdate(
       .from(task)
       .where(eq(task.missionId, row.id));
     if (input.return === "full") {
-      return { mission: mapMission(row, Number(counted?.n ?? 0)) };
+      return {
+        mission: mapMission(row, org.name, Number(counted?.n ?? 0)),
+      };
     }
 
   const changed: ChangedFields = {};
   if (current.title !== row.title) changed.title = row.title;
+  if (current.organizationId !== row.organizationId) {
+    changed.organization_id = row.organizationId;
+    changed.organization_name = org.name;
+  }
   if (current.objective !== row.objective) changed.objective = row.objective;
   if (current.context !== row.context) changed.context = row.context;
   if (current.status !== row.status) changed.status = row.status;
@@ -1996,6 +2564,7 @@ async function taskList(
   input: {
     project_id?: string;
     mission_id?: string;
+    organization?: string;
     resolved_in?: string;
     status?: CardStatus | CardStatus[];
     priority?: Task["priority"];
@@ -2027,6 +2596,13 @@ async function taskList(
       );
     }
     filters.push(eq(task.missionId, input.mission_id));
+  }
+  if (input.organization) {
+    const org = await findOrganization(db, ctx.workspaceId, input.organization);
+    if (!org) {
+      return organizationNotFound(db, ctx.workspaceId, input.organization);
+    }
+    filters.push(eq(project.organizationId, org.id));
   }
   if (input.resolved_in) filters.push(eq(task.resolvedIn, input.resolved_in));
   if (input.priority) filters.push(eq(task.priority, input.priority));
@@ -2184,6 +2760,7 @@ async function taskSearch(
   input: {
     q: string;
     project_id?: string;
+    organization?: string;
     resolved_in?: string;
     type?: Task["type"];
     status?: CardStatus | CardStatus[];
@@ -2206,6 +2783,13 @@ async function taskSearch(
       );
     }
     filters.push(eq(task.projectId, proj.id));
+  }
+  if (input.organization) {
+    const org = await findOrganization(db, ctx.workspaceId, input.organization);
+    if (!org) {
+      return organizationNotFound(db, ctx.workspaceId, input.organization);
+    }
+    filters.push(eq(project.organizationId, org.id));
   }
   if (input.resolved_in) filters.push(eq(task.resolvedIn, input.resolved_in));
   if (input.type) filters.push(eq(task.tipo, input.type));
@@ -4732,10 +5316,22 @@ async function assembleTaskPayload(
     reopenComment: comment,
     reportsCount: count,
   });
+  // The business above the project. Loaded only for a briefing: every other
+  // read of a card has no use for the organization markdown.
+  const projectOrganization = wantsBriefing
+    ? await organizationOf(db, proj.workspaceId, proj.organizationId)
+    : null;
   let missionPayload = null;
   if (wantsMission && row.missionId) {
     const miss = await findMission(db, proj.workspaceId, row.missionId);
-    if (miss) missionPayload = mapMission(miss);
+    if (miss) {
+      const missOrg = await organizationOf(
+        db,
+        proj.workspaceId,
+        miss.organizationId,
+      );
+      missionPayload = mapMission(miss, missOrg.name);
+    }
   }
   const comments = wantsComments ? await listTaskComments(db, row.id) : [];
   const convention = branchConvention(mapped.short_id, mapped.title);
@@ -4789,6 +5385,12 @@ async function assembleTaskPayload(
     ? renderBriefingMarkdown({
         task: mapped,
         mission: missionPayload,
+        organization: projectOrganization
+          ? {
+              name: projectOrganization.name,
+              context: projectOrganization.context,
+            }
+          : null,
         project: {
           name: proj.name,
           idPrefix: proj.idPrefix,

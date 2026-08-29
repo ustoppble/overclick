@@ -52,6 +52,24 @@ const TEST_EXECUTORS: ExecutorConfig[] = [
   },
 ];
 
+/**
+ * Every project and mission hangs off an organization, so a fixture that
+ * reaches past the MCP tools to insert one directly — usually to build a
+ * neighbouring workspace the token must not see — needs a business first.
+ */
+export async function insertOrganization(
+  db: McpDatabase,
+  workspaceId: string,
+  name = "General",
+): Promise<string> {
+  const [row] = await db
+    .insert(organization)
+    .values({ workspaceId, name })
+    .returning({ id: organization.id });
+  if (!row) throw new Error("failed to insert organization");
+  return row.id;
+}
+
 export async function createTestWorld(): Promise<TestWorld> {
   const client = new PGlite();
   const files = readdirSync(MIGRATIONS_DIR)
