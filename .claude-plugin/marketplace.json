@@ -8,7 +8,7 @@
     {
       "name": "overclick",
       "description": "Claim, execute, and deliver cards on your own self-hosted OverClick board. Ships the workflow skill, the /overclick:* commands, and hooks: a session-start board snapshot and a delivery commit check run by default, while the claim guard and the stop/harness guards ship disabled. The only network endpoint is the OverClick instance you configure - no third-party calls, no telemetry.",
-      "version": "0.2.9",
+      "version": "0.3.0",
       "source": "./plugin"
     }
   ]
