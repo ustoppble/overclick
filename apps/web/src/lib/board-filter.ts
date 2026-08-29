@@ -2,6 +2,8 @@ import type { TaskPriority, TaskType } from "@agent-board/db";
 import { isReleaseVersion } from "@agent-board/mcp-core";
 
 export const ALL_PROJECTS = "all";
+/** Same sentinel on the organization column: every business, spelled out. */
+export const ALL_ORGANIZATIONS = "all";
 /**
  * The cards nobody put in a mission. A bucket, not a mission: without it a
  * loose card is only ever visible under "all missions", which is the same as
@@ -21,6 +23,11 @@ export const TASK_PRIORITIES: readonly TaskPriority[] = [
 
 export type BoardFilter = {
   /**
+   * The businesses on screen. Empty is every organization, which is what an
+   * instance that never split into more than one keeps seeing forever.
+   */
+  organizationIds: string[];
+  /**
    * The projects on screen. Empty is the All projects shortcut, which is every
    * project of the workspace: work that spans projects can only be seen
    * together if the filter takes more than one answer.
@@ -36,6 +43,7 @@ export type BoardFilter = {
 };
 
 type StoredBoardFilter = {
+  organizationId?: string | null;
   projectId: string | null;
   missionId: string | null;
   types?: string | string[] | null;
@@ -44,6 +52,8 @@ type StoredBoardFilter = {
 };
 
 type FilterableCard = {
+  /** The organization of the card's project, carried on the row it filters. */
+  organizationId: string;
   projectId: string;
   missionId: string | null;
   tipo: TaskType;
@@ -61,6 +71,16 @@ export type SearchableBoardCard = FilterableCard & {
 
 export function defaultProjectId(projects: { id: string }[]): string | null {
   return projects[0]?.id ?? null;
+}
+
+/**
+ * Empty is "all": unlike the project filter, the organization filter has no
+ * first-organization default to fall back to.
+ */
+export function encodeOrganizationSelection(organizationIds: string[]): string {
+  return organizationIds.length === 0
+    ? ALL_ORGANIZATIONS
+    : organizationIds.join(",");
 }
 
 /**
@@ -121,6 +141,37 @@ export function isTaskPriority(value: string): value is TaskPriority {
 }
 
 /**
+ * The stored selection read back against the organizations that still exist.
+ * A selection nothing answers is every organization, not none: a business
+ * that was deleted must not leave the board pinned to an empty screen.
+ */
+export function resolveOrganizationSelection(
+  stored: string | null | undefined,
+  organizations: { id: string }[],
+): string[] {
+  if (stored == null || stored === ALL_ORGANIZATIONS) return [];
+  const known = new Set(organizations.map((item) => item.id));
+  const picked = stored
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => known.has(id));
+  return picked.length === organizations.length ? [] : picked;
+}
+
+/** The projects the organization selection leaves on the table. */
+export function projectsInOrganizations<T extends { organizationId?: string }>(
+  projects: T[],
+  organizationIds: string[],
+): T[] {
+  if (organizationIds.length === 0) return projects;
+  return projects.filter(
+    (item) =>
+      item.organizationId !== undefined &&
+      organizationIds.includes(item.organizationId),
+  );
+}
+
+/**
  * The stored selection read back against the projects that still exist. A
  * selection whose projects all disappeared falls back to the first project,
  * the same default a user who never chose anything gets.
@@ -163,12 +214,37 @@ export function toggleProject(
 }
 
 /**
+ * Checking and unchecking an organization, with the same two edges the All
+ * shortcut creates on the project filter: the first click out of All narrows
+ * to what was clicked, and a selection that ends up empty or covering
+ * everything is All again.
+ */
+export function toggleOrganization(
+  current: string[],
+  organizationId: string,
+  organizations: { id: string }[],
+): string[] {
+  if (current.length === 0) return [organizationId];
+  const next = current.includes(organizationId)
+    ? current.filter((id) => id !== organizationId)
+    : [...current, organizationId];
+  if (next.length === 0 || next.length >= organizations.length) return [];
+  return organizations
+    .filter((item) => next.includes(item.id))
+    .map((item) => item.id);
+}
+
+/**
  * The filter as a query string, so a link can hand the same selection to
  * another page. Insights reads it back with boardFilterFromQuery, which is
  * what makes the topbar total and the Insights page agree by construction.
  */
 export function boardFilterToQuery(filter: BoardFilter): string {
   const params = new URLSearchParams();
+  params.set(
+    "organizations",
+    encodeOrganizationSelection(filter.organizationIds),
+  );
   params.set("projects", encodeProjectSelection(filter.projectIds));
   if (filter.missionId) params.set("mission", filter.missionId);
   if (filter.types.length > 0) params.set("types", filter.types.join(","));
@@ -184,18 +260,21 @@ export function boardFilterToQuery(filter: BoardFilter): string {
 /** The other end of boardFilterToQuery. No params at all means everything. */
 export function boardFilterFromQuery(
   params: {
+    organizations?: string | null;
     projects?: string | null;
     mission?: string | null;
     types?: string | null;
     priorities?: string | null;
     release?: string | null;
   },
-  projects: { id: string }[],
+  projects: { id: string; organizationId?: string }[],
   missions: { id: string }[] = [],
   releases?: { value: string }[],
+  organizations: { id: string }[] = [],
 ): BoardFilter {
   return resolveBoardFilter(
     {
+      organizationId: params.organizations ?? ALL_ORGANIZATIONS,
       projectId: params.projects ?? ALL_PROJECTS,
       missionId: params.mission ?? null,
       types: params.types,
@@ -205,20 +284,40 @@ export function boardFilterFromQuery(
     projects,
     missions,
     releases,
+    organizations,
   );
 }
 
-function inScope(filter: BoardFilter, projectId: string): boolean {
-  return filter.projectIds.length === 0 || filter.projectIds.includes(projectId);
+function inScope(filter: BoardFilter, card: FilterableCard): boolean {
+  if (
+    filter.organizationIds.length > 0 &&
+    !filter.organizationIds.includes(card.organizationId)
+  ) {
+    return false;
+  }
+  return (
+    filter.projectIds.length === 0 || filter.projectIds.includes(card.projectId)
+  );
 }
 
 export function resolveBoardFilter(
   stored: StoredBoardFilter,
-  projects: { id: string }[],
+  projects: { id: string; organizationId?: string }[],
   missions: { id: string }[] = [],
   releases?: { value: string }[],
+  organizations: { id: string }[] = [],
 ): BoardFilter {
-  const projectIds = resolveProjectSelection(stored.projectId, projects);
+  const organizationIds = resolveOrganizationSelection(
+    stored.organizationId,
+    organizations,
+  );
+  // The project selection is read inside the businesses on screen, so choosing
+  // an organization narrows the board even while a wider project selection is
+  // still stored on the user from before.
+  const projectIds = resolveProjectSelection(
+    stored.projectId,
+    projectsInOrganizations(projects, organizationIds),
+  );
 
   const missionIds = new Set(missions.map((item) => item.id));
   const missionId =
@@ -230,6 +329,7 @@ export function resolveBoardFilter(
   const resolvedIn = resolveReleaseSelection(stored.resolvedIn, releases);
 
   return {
+    organizationIds,
     projectIds,
     missionId,
     types: resolveFacetSelection(stored.types, TASK_TYPES),
@@ -265,7 +365,7 @@ export function filterBoardCards<T extends FilterableCard>(
   filter: BoardFilter,
 ): T[] {
   return cards.filter((card) => {
-    if (!inScope(filter, card.projectId)) return false;
+    if (!inScope(filter, card)) return false;
     if (!matchesFacets(card, filter)) return false;
     if (!matchesRelease(card, filter)) return false;
     return matchesMission(card, filter);
@@ -304,7 +404,7 @@ export function countLooseCards<T extends FilterableCard>(
   return cards.filter(
     (card) =>
       card.missionId === null &&
-      inScope(filter, card.projectId) &&
+      inScope(filter, card) &&
       matchesFacets(card, filter) &&
       matchesRelease(card, filter),
   ).length;
@@ -322,7 +422,7 @@ export type ProjectCount = { id: string; name: string; count: number };
  */
 export function projectFilterOptions<T extends FilterableCard>(
   cards: T[],
-  projects: { id: string; name: string }[],
+  projects: { id: string; name: string; organizationId?: string }[],
   filter: BoardFilter,
 ): ProjectCount[] {
   const counts = new Map<string, number>();
@@ -339,10 +439,43 @@ export function projectFilterOptions<T extends FilterableCard>(
     }
     counts.set(card.projectId, (counts.get(card.projectId) ?? 0) + 1);
   }
-  return projects.map((proj) => ({
-    id: proj.id,
-    name: proj.name,
-    count: counts.get(proj.id) ?? 0,
+  // Only the projects of the businesses on screen: an organization filter
+  // that left this list whole would offer a one-click way straight back out
+  // of the business just chosen.
+  return projectsInOrganizations(projects, filter.organizationIds).map(
+    (proj) => ({
+      id: proj.id,
+      name: proj.name,
+      count: counts.get(proj.id) ?? 0,
+    }),
+  );
+}
+
+/** An organization the filter can offer, with the cards it would put on screen. */
+export type OrganizationCount = { id: string; name: string; count: number };
+
+/**
+ * Every organization of the workspace, each with what picking it alone would
+ * show. The count answers the facets, the release and the mission in force,
+ * but not the project selection: that selection lives inside this one and is
+ * re-read the moment the business changes.
+ */
+export function organizationFilterOptions<T extends FilterableCard>(
+  cards: T[],
+  organizations: { id: string; name: string }[],
+  filter: BoardFilter,
+): OrganizationCount[] {
+  const counts = new Map<string, number>();
+  for (const card of cards) {
+    if (!matchesFacets(card, filter)) continue;
+    if (!matchesRelease(card, filter)) continue;
+    if (!matchesMission(card, filter)) continue;
+    counts.set(card.organizationId, (counts.get(card.organizationId) ?? 0) + 1);
+  }
+  return organizations.map((org) => ({
+    id: org.id,
+    name: org.name,
+    count: counts.get(org.id) ?? 0,
   }));
 }
 
@@ -368,7 +501,7 @@ export function missionFilterOptions<T extends FilterableCard>(
 ): MissionCount[] {
   const counts = new Map<string, number>();
   for (const card of cards) {
-    if (!inScope(filter, card.projectId)) continue;
+    if (!inScope(filter, card)) continue;
     if (!matchesFacets(card, filter)) continue;
     if (!matchesRelease(card, filter)) continue;
     if (!card.missionId) continue;
@@ -410,7 +543,7 @@ export function releaseFilterOptions<T extends FilterableCard>(
 ): ReleaseCount[] {
   const counts = new Map<string | null, number>();
   for (const card of cards) {
-    if (!inScope(filter, card.projectId)) continue;
+    if (!inScope(filter, card)) continue;
     if (!matchesFacets(card, filter)) continue;
     if (!matchesMission(card, filter)) continue;
     counts.set(card.resolvedIn, (counts.get(card.resolvedIn) ?? 0) + 1);

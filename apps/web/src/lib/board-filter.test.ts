@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALL_ORGANIZATIONS,
   ALL_PROJECTS,
   NO_MISSION,
   boardFilterFromQuery,
@@ -10,24 +11,36 @@ import {
   encodeReleaseSelection,
   filterBoardCards,
   missionFilterOptions,
+  organizationFilterOptions,
   projectFilterOptions,
   releaseFilterOptions,
   releaseValueOptions,
   resolveBoardFilter,
+  resolveOrganizationSelection,
   resolveReleaseSelection,
   resolveProjectSelection,
   searchBoardCards,
   searchMissions,
   shouldSearchMissions,
+  toggleOrganization,
   toggleProject,
   type BoardFilter,
 } from "./board-filter";
 
-const projects = [{ id: "p1" }, { id: "p2" }, { id: "p3" }];
+// Two businesses, so every assertion about narrowing has something to narrow.
+const organizations = [
+  { id: "o1", name: "Acme" },
+  { id: "o2", name: "Other" },
+];
+const projects = [
+  { id: "p1", organizationId: "o1" },
+  { id: "p2", organizationId: "o1" },
+  { id: "p3", organizationId: "o2" },
+];
 const named = [
-  { id: "p1", name: "Board" },
-  { id: "p2", name: "Funnel" },
-  { id: "p3", name: "Empty" },
+  { id: "p1", name: "Board", organizationId: "o1" },
+  { id: "p2", name: "Funnel", organizationId: "o1" },
+  { id: "p3", name: "Empty", organizationId: "o2" },
 ];
 const missions = [{ id: "m1" }, { id: "m2" }];
 const titled = [
@@ -36,10 +49,22 @@ const titled = [
   { id: "m3", title: "Empty elsewhere" },
 ];
 const cards = [
-  { id: "a", projectId: "p1", missionId: "m1", tipo: "feature" as const, priority: "urgente" as const, resolvedIn: "v1.2.0" },
-  { id: "b", projectId: "p1", missionId: null, tipo: "bug" as const, priority: "alta" as const, resolvedIn: null },
-  { id: "c", projectId: "p2", missionId: "m2", tipo: "bug" as const, priority: "media" as const, resolvedIn: "v1.1.0" },
+  { id: "a", organizationId: "o1", projectId: "p1", missionId: "m1", tipo: "feature" as const, priority: "urgente" as const, resolvedIn: "v1.2.0" },
+  { id: "b", organizationId: "o1", projectId: "p1", missionId: null, tipo: "bug" as const, priority: "alta" as const, resolvedIn: null },
+  { id: "c", organizationId: "o1", projectId: "p2", missionId: "m2", tipo: "bug" as const, priority: "media" as const, resolvedIn: "v1.1.0" },
 ];
+/** The only card of the second business, which is what o2 narrows down to. */
+const otherBusinessCard = {
+  id: "d",
+  organizationId: "o2",
+  projectId: "p3",
+  missionId: null,
+  tipo: "feature" as const,
+  priority: "baixa" as const,
+  resolvedIn: null,
+};
+const allCards = [...cards, otherBusinessCard];
+
 const searchableCards = [
   {
     ...cards[0],
@@ -66,6 +91,7 @@ const ALL: string[] = [];
 
 function boardFilter(overrides: Partial<BoardFilter> = {}): BoardFilter {
   return {
+    organizationIds: [],
     projectIds: ALL,
     missionId: null,
     types: [],
@@ -77,6 +103,7 @@ function boardFilter(overrides: Partial<BoardFilter> = {}): BoardFilter {
 describe("board filters", () => {
   it("defaults to the first project when the user has no stored choice", () => {
     expect(resolveBoardFilter({ projectId: null, missionId: null }, projects, missions)).toEqual({
+      organizationIds: [],
       projectIds: ["p1"],
       missionId: null,
       types: [],
@@ -260,10 +287,10 @@ describe("several projects at once", () => {
         }),
       ),
     ).toBe(
-      "projects=p1%2Cp2&mission=m1&types=bug%2Cfeature&priorities=urgente%2Calta&release=v1.2.0",
+      "organizations=all&projects=p1%2Cp2&mission=m1&types=bug%2Cfeature&priorities=urgente%2Calta&release=v1.2.0",
     );
     expect(boardFilterToQuery(boardFilter())).toBe(
-      "projects=all",
+      "organizations=all&projects=all",
     );
 
     expect(
@@ -271,6 +298,7 @@ describe("several projects at once", () => {
     ).toEqual(boardFilter({ projectIds: ["p1", "p2"], missionId: "m1" }));
     // No params at all is the whole workspace, not the first project.
     expect(boardFilterFromQuery({}, projects, missions)).toEqual({
+      organizationIds: [],
       projectIds: ALL,
       missionId: null,
       types: [],
@@ -389,8 +417,8 @@ describe("the missions the filter offers", () => {
   it("counts every card of the mission, not just the first", () => {
     const many = [
       ...cards,
-      { id: "d", projectId: "p1", missionId: "m1", tipo: "feature" as const, priority: "urgente" as const, resolvedIn: "v1.2.0" },
-      { id: "e", projectId: "p1", missionId: "m1", tipo: "feature" as const, priority: "urgente" as const, resolvedIn: "v1.2.0" },
+      { id: "d", organizationId: "o1", projectId: "p1", missionId: "m1", tipo: "feature" as const, priority: "urgente" as const, resolvedIn: "v1.2.0" },
+      { id: "e", organizationId: "o1", projectId: "p1", missionId: "m1", tipo: "feature" as const, priority: "urgente" as const, resolvedIn: "v1.2.0" },
     ];
     expect(
       missionFilterOptions(many, titled, boardFilter({ projectIds: ["p1"] })),
@@ -441,6 +469,7 @@ describe("the release filter only offers releases", () => {
       ...cards,
       {
         id: "d",
+        organizationId: "o1",
         projectId: "p1",
         missionId: null,
         tipo: "bug" as const,
@@ -469,5 +498,103 @@ describe("the release filter only offers releases", () => {
 
   it("refuses to restore a stored selection that is not a release", () => {
     expect(resolveReleaseSelection(branch, [{ value: branch }])).toBeUndefined();
+  });
+
+  it("shows only the cards of the organizations picked", () => {
+    expect(
+      filterBoardCards(allCards, boardFilter({ organizationIds: ["o2"] })).map(
+        (card) => card.id,
+      ),
+    ).toEqual(["d"]);
+    // No organization picked is every organization, not none: a single
+    // business instance must keep seeing its whole board.
+    expect(filterBoardCards(allCards, boardFilter()).map((card) => card.id)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
+  });
+
+  it("offers only the projects of the organizations picked", () => {
+    expect(
+      projectFilterOptions(
+        allCards,
+        named,
+        boardFilter({ organizationIds: ["o2"] }),
+      ),
+    ).toEqual([{ id: "p3", name: "Empty", count: 1 }]);
+    expect(
+      projectFilterOptions(allCards, named, boardFilter()).map((option) => option.id),
+    ).toEqual(["p1", "p2", "p3"]);
+  });
+
+  it("counts every organization against the other filters in force", () => {
+    expect(
+      organizationFilterOptions(allCards, organizations, boardFilter()),
+    ).toEqual([
+      { id: "o1", name: "Acme", count: 3 },
+      { id: "o2", name: "Other", count: 1 },
+    ]);
+    // The project selection is not applied: it lives inside this choice and is
+    // replaced the moment the business changes.
+    expect(
+      organizationFilterOptions(
+        allCards,
+        organizations,
+        boardFilter({ projectIds: ["p1"], types: ["bug"] }),
+      ),
+    ).toEqual([
+      { id: "o1", name: "Acme", count: 2 },
+      { id: "o2", name: "Other", count: 0 },
+    ]);
+  });
+
+  it("reads a stored project selection inside the organizations picked", () => {
+    // p1 and p2 are stored, but the board is on the other business now: the
+    // stale selection cannot survive as an empty screen.
+    expect(
+      resolveBoardFilter(
+        { organizationId: "o2", projectId: "p1,p2", missionId: null },
+        projects,
+        missions,
+        undefined,
+        organizations,
+      ),
+    ).toEqual({
+      organizationIds: ["o2"],
+      projectIds: ["p3"],
+      missionId: null,
+      types: [],
+      priorities: [],
+    });
+  });
+
+  it("falls back to every organization when the stored one is gone", () => {
+    expect(resolveOrganizationSelection("deleted-id", organizations)).toEqual([]);
+    expect(resolveOrganizationSelection(ALL_ORGANIZATIONS, organizations)).toEqual([]);
+    expect(resolveOrganizationSelection(null, organizations)).toEqual([]);
+    // Picking every organization one by one is the same as picking All.
+    expect(resolveOrganizationSelection("o1,o2", organizations)).toEqual([]);
+  });
+
+  it("toggles organizations with the same All edges the project filter has", () => {
+    expect(toggleOrganization([], "o1", organizations)).toEqual(["o1"]);
+    expect(toggleOrganization(["o1"], "o1", organizations)).toEqual([]);
+    expect(toggleOrganization(["o1"], "o2", organizations)).toEqual([]);
+  });
+
+  it("carries the organization selection to another page and back", () => {
+    const query = boardFilterToQuery(boardFilter({ organizationIds: ["o2"] }));
+    expect(query).toContain("organizations=o2");
+    expect(
+      boardFilterFromQuery(
+        Object.fromEntries(new URLSearchParams(query)),
+        projects,
+        missions,
+        undefined,
+        organizations,
+      ).organizationIds,
+    ).toEqual(["o2"]);
   });
 });

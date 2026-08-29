@@ -25,6 +25,7 @@ import { dict } from "../../lib/i18n";
 import { commandFor } from "./commands";
 
 type ProjectData = {
+  organizationName: string;
   name: string;
   repoUrl: string;
   prefix: string;
@@ -60,6 +61,12 @@ export function Wizard({
   const [err, setErr] = useState<string | null>(null);
 
   // ---- T1
+  // The business comes before the project, because the project is filed under
+  // it. Left blank it is not a question the wizard insists on: the action
+  // falls back to the organization a fresh instance already has.
+  const [organizationName, setOrganizationName] = useState(
+    project?.organizationName ?? "",
+  );
   const [name, setName] = useState(project?.name ?? "");
   const [repo, setRepo] = useState(project?.repoUrl ?? "");
   const [prefix, setPrefix] = useState(project?.prefix ?? "");
@@ -152,7 +159,12 @@ export function Wizard({
     start(async () => {
       setErr(null);
       if (step === 1) {
-        const r = await saveProjectAction({ name, repoUrl: repo, prefix });
+        const r = await saveProjectAction({
+          organizationName,
+          name,
+          repoUrl: repo,
+          prefix,
+        });
         if (!r.ok) return setErr(r.error);
         setStep(2);
       } else if (step === 2) {
@@ -236,6 +248,18 @@ export function Wizard({
               <h2>{t.wizard.t1Title}</h2>
               <p className="sub">{t.wizard.t1Sub}</p>
               <div className="grid2 wiz-fields">
+                <div className="field">
+                  <label>
+                    <span className="lbl-text">{t.wizard.organizationName}</span>
+                    <span className="opt">{t.wizard.optional}</span>
+                  </label>
+                  <input
+                    className="input"
+                    value={organizationName}
+                    placeholder={t.wizard.organizationPlaceholder}
+                    onChange={(e) => setOrganizationName(e.target.value)}
+                  />
+                </div>
                 <div className="field">
                   <label>{t.wizard.projectName}</label>
                   <input

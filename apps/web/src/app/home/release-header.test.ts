@@ -9,6 +9,7 @@ import { ReleaseHeader, releaseOverview } from "./release-header";
 function card(overrides: Partial<BoardCard>): BoardCard {
   return {
     id: "card-1",
+    organizationId: "o1",
     shortId: "OCL-1",
     title: "Release card",
     tipo: "feature",
@@ -101,6 +102,7 @@ describe("release header", () => {
           estimated: 1,
         },
         filter: {
+          organizationIds: [],
           projectIds: [],
           missionId: null,
           types: [],

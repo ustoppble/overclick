@@ -1,4 +1,4 @@
-import { asc, desc, eq, isNotNull, and } from "drizzle-orm";
+import { asc, count, desc, eq, isNotNull, and } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import {
@@ -7,6 +7,8 @@ import {
   factoryCardapioPolicy,
   findModelPrice,
   mcpToken,
+  mission,
+  organization,
   project,
   recipeCoverage,
   task,
@@ -38,6 +40,7 @@ export const dynamic = "force-dynamic";
 /** The tabs the client knows, so a link can land on one (OCL-20). */
 const SETTINGS_TABS = new Set([
   "exec",
+  "organizations",
   "projects",
   "policy",
   "prices",
@@ -79,6 +82,34 @@ export default async function SettingsPage({
     },
   });
   const proj = projects[0];
+
+  // The counts the delete refusal is made of, read here so the editor can say
+  // what blocks a deletion before anyone clicks it.
+  const organizations = await db()
+    .select({
+      id: organization.id,
+      name: organization.name,
+      context: organization.context,
+    })
+    .from(organization)
+    .where(eq(organization.workspaceId, ws.id))
+    .orderBy(asc(organization.name));
+  const projectsPerOrganization = await db()
+    .select({ organizationId: project.organizationId, n: count() })
+    .from(project)
+    .where(eq(project.workspaceId, ws.id))
+    .groupBy(project.organizationId);
+  const missionsPerOrganization = await db()
+    .select({ organizationId: mission.organizationId, n: count() })
+    .from(mission)
+    .where(eq(mission.workspaceId, ws.id))
+    .groupBy(mission.organizationId);
+  const projectCounts = new Map(
+    projectsPerOrganization.map((row) => [row.organizationId, Number(row.n)]),
+  );
+  const missionCounts = new Map(
+    missionsPerOrganization.map((row) => [row.organizationId, Number(row.n)]),
+  );
 
   const entries = await db()
     .select()
@@ -218,6 +249,13 @@ export default async function SettingsPage({
         origin={origin}
         workspaceName={ws.name}
         projectName={proj?.name ?? ws.name}
+        organizations={organizations.map((row) => ({
+          id: row.id,
+          name: row.name,
+          context: row.context ?? "",
+          projectCount: projectCounts.get(row.id) ?? 0,
+          missionCount: missionCounts.get(row.id) ?? 0,
+        }))}
         projects={projects.map((row) => ({
           id: row.id,
           name: row.name,

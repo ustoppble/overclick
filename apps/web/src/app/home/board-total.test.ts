@@ -7,6 +7,7 @@ import { dict, type Lang } from "../../lib/i18n";
 import { BoardTotal, totalParts } from "./board-total";
 
 const FILTER: BoardFilter = {
+  organizationIds: [],
   projectIds: [],
   missionId: null,
   types: [],

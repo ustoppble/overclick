@@ -12,6 +12,7 @@ function attempt(overrides: Partial<InsightAttemptRow> = {}): InsightAttemptRow 
   seq += 1;
   return {
     attemptId: `attempt-${seq}`,
+    organizationId: "org-1",
     taskId: "task-1",
     taskShortId: "OC-1",
     taskTitle: "First card",
@@ -53,6 +54,7 @@ function missionAttempt(
   seq += 1;
   return {
     attemptId: `mission-attempt-${seq}`,
+    organizationId: "org-1",
     projectId: "proj-1",
     projectName: "OverClick",
     missionId: "mission-1",
