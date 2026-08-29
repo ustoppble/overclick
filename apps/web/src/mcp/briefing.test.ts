@@ -43,9 +43,57 @@ const mission: Mission = {
   id: "miss_1",
   title: "Norte do board",
   status: "ativa",
+  organization_id: "org_1",
+  organization_name: "Overclock",
   objective: "Fechar o loop MCP.",
   context: "O board é a fonte de verdade do trabalho.",
 };
+
+describe("the organization block", () => {
+  it("renders the business context above the project block", () => {
+    const md = renderBriefingMarkdown({
+      task,
+      mission,
+      organization: {
+        name: "Overclock",
+        context: "# Regras do negócio\n\nTudo em português com o cliente.",
+      },
+      project: {
+        name: "OverClick",
+        idPrefix: "OC",
+        context: "# Regras do repo",
+        currentVersion: null,
+      },
+      branchConvention: branchConvention(task.short_id, task.title),
+    });
+
+    expect(md).toContain("- organization: Overclock");
+    expect(md).toContain("Tudo em português com o cliente.");
+    // The worker reads the rules of the business before the rules of the repo.
+    expect(md.indexOf("## Organization context")).toBeLessThan(
+      md.indexOf("## Project context"),
+    );
+  });
+
+  it("says the context is not configured instead of leaving a blank section", () => {
+    const md = renderBriefingMarkdown({
+      task,
+      mission,
+      organization: { name: "Padre Miguel", context: null },
+      branchConvention: branchConvention(task.short_id, task.title),
+    });
+    expect(md).toContain("(organization context not configured)");
+  });
+
+  it("omits the block entirely when no organization was passed", () => {
+    const md = renderBriefingMarkdown({
+      task,
+      mission,
+      branchConvention: branchConvention(task.short_id, task.title),
+    });
+    expect(md).not.toContain("## Organization context");
+  });
+});
 
 describe("self-contained briefing markdown", () => {
   it("embeds contract, harness, mission context and branch convention", () => {

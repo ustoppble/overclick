@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { EXAMPLE_CARD, EXAMPLE_PROJECT, EXAMPLE_WORKSPACE } from "./seed-data";
+import {
+  EXAMPLE_CARD,
+  EXAMPLE_ORGANIZATION,
+  EXAMPLE_PROJECT,
+  EXAMPLE_WORKSPACE,
+} from "./seed-data";
+import { DEFAULT_ORGANIZATION_NAME } from "./defaults";
 
 describe("seed payload (spec §6 onboarding)", () => {
   it("ships one workspace, one project and one example card", () => {
     expect(EXAMPLE_WORKSPACE.name).toBe("Agent Board");
+    expect(EXAMPLE_ORGANIZATION.name).toBe(DEFAULT_ORGANIZATION_NAME);
     expect(EXAMPLE_PROJECT.idPrefix).toBe("AGB");
     expect(EXAMPLE_PROJECT.nextNumber).toBe(2);
     expect(EXAMPLE_CARD.shortId).toBe("AGB-1");

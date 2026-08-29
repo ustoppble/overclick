@@ -38,6 +38,10 @@ import { LANGUAGES, dict, type Dict } from "../../lib/i18n";
 import type { Runtime } from "../../lib/runtime";
 import type { UpdaterState } from "../../lib/updates";
 import {
+  OrganizationContextEditor,
+  type OrganizationRow,
+} from "./organization-context-editor";
+import {
   ProjectContextEditor,
   type ProjectContextRow,
 } from "./project-context-editor";
@@ -106,6 +110,7 @@ export function SettingsClient({
   origin,
   workspaceName,
   projectName,
+  organizations,
   projects,
   executors,
   seenSuggestions,
@@ -134,6 +139,7 @@ export function SettingsClient({
   origin: string;
   workspaceName: string;
   projectName: string;
+  organizations: OrganizationRow[];
   projects: ProjectContextRow[];
   executors: ExecutorSelection;
   seenSuggestions: SeenSuggestion[];
@@ -181,6 +187,7 @@ export function SettingsClient({
 
   const tabs = [
     { id: "exec", label: t.settings.tabExecutors },
+    { id: "organizations", label: t.settings.tabOrganizations },
     { id: "projects", label: t.settings.tabProjects },
     { id: "policy", label: t.settings.tabPolicy },
     { id: "prices", label: t.settings.tabPrices },
@@ -523,6 +530,16 @@ export function SettingsClient({
             misses because it printed below the fold. */}
         {err ? <p className="werr" role="alert">{err}</p> : null}
         {msg ? <p className="wok" role="status">{msg}</p> : null}
+
+        {/* ---- ORGANIZATIONS ---- */}
+        <div
+          className={`tabpane${tab === "organizations" ? " active" : ""}`}
+          id="setpane-organizations"
+          role="tabpanel"
+          aria-labelledby="settab-organizations"
+        >
+          <OrganizationContextEditor organizations={organizations} lang={lang} />
+        </div>
 
         {/* ---- PROJECT CONTEXT ---- */}
         <div

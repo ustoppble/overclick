@@ -17,6 +17,7 @@ function row(over: Partial<InsightAttemptRow>): InsightAttemptRow {
     taskStatus: "feito",
     tipo: "feature",
     priority: "media",
+    organizationId: "o1",
     projectId: "p1",
     projectName: "proj",
     missionId: null,

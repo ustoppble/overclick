@@ -88,6 +88,15 @@ function renderMissionTelemetry(): string[] {
 export function renderBriefingMarkdown(input: {
   task: Task;
   mission: Mission | null;
+  /**
+   * The business the card's project belongs to. It comes before the project
+   * block: a worker reads the rules of the company before the rules of the
+   * repo.
+   */
+  organization?: {
+    name: string;
+    context: string | null;
+  } | null;
   project?: {
     name: string;
     idPrefix: string;
@@ -115,6 +124,7 @@ export function renderBriefingMarkdown(input: {
   const {
     task,
     mission,
+    organization,
     project,
     branchConvention,
     comments,
@@ -155,6 +165,16 @@ export function renderBriefingMarkdown(input: {
         ...renderMissionTelemetry(),
       ].join("\n")
     : "## Missão\n\n(card solto — sem missão atribuída)";
+
+  const organizationBlock = organization
+    ? [
+        "## Organization context",
+        "",
+        `- organization: ${organization.name}`,
+        "",
+        organization.context ?? "(organization context not configured)",
+      ].join("\n")
+    : null;
 
   const projectBlock = project
     ? [
@@ -202,6 +222,7 @@ export function renderBriefingMarkdown(input: {
     "",
     missionBlock,
     "",
+    ...(organizationBlock ? [organizationBlock, ""] : []),
     projectBlock,
     "",
     contextEditingBlock,

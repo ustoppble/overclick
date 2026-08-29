@@ -1,10 +1,18 @@
-import { DEFAULT_CARDAPIO, KNOWN_EXECUTORS } from "./defaults";
+import {
+  DEFAULT_CARDAPIO,
+  DEFAULT_ORGANIZATION_NAME,
+  KNOWN_EXECUTORS,
+} from "./defaults";
 import type { Harness } from "./types";
 
 export const EXAMPLE_WORKSPACE = {
   name: "Agent Board",
   executors: KNOWN_EXECUTORS,
   cardapio: DEFAULT_CARDAPIO,
+};
+
+export const EXAMPLE_ORGANIZATION = {
+  name: DEFAULT_ORGANIZATION_NAME,
 };
 
 export const EXAMPLE_PROJECT = {

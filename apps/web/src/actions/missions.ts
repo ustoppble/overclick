@@ -1,7 +1,7 @@
 "use server";
 
-import { mission, project, task, workspace } from "@agent-board/db";
-import { and, count, eq, inArray } from "drizzle-orm";
+import { mission, organization, project, task, workspace } from "@agent-board/db";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "../lib/action-result";
 import { getSession } from "../lib/cookies";
@@ -29,10 +29,45 @@ function cleanMissionTitle(value: string): string | null {
   return title.length >= 1 && title.length <= 200 ? title : null;
 }
 
+/**
+ * The organization a new mission is filed under: the one asked for when the
+ * caller knows it, the only one when the instance has a single business, and
+ * otherwise the oldest — a board that never split has exactly one answer, and
+ * one that did gets the mission moved with mission_update rather than guessed
+ * at from a form that never asked.
+ */
+async function resolveMissionOrganization(
+  workspaceId: string,
+  requested: string | null | undefined,
+): Promise<string | null> {
+  if (requested) {
+    const [found] = await db()
+      .select({ id: organization.id })
+      .from(organization)
+      .where(
+        and(
+          eq(organization.id, requested),
+          eq(organization.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1);
+    if (found) return found.id;
+  }
+  const [first] = await db()
+    .select({ id: organization.id })
+    .from(organization)
+    .where(eq(organization.workspaceId, workspaceId))
+    .orderBy(asc(organization.createdAt))
+    .limit(1);
+  return first?.id ?? null;
+}
+
 export async function createMissionAction(input: {
   title: string;
   objective: string;
   context: string;
+  /** The business the board was filtered to when the mission was created. */
+  organizationId?: string | null;
 }): Promise<
   | { ok: true; mission: { id: string } }
   | { ok: false; error: string }
@@ -46,10 +81,22 @@ export async function createMissionAction(input: {
     return { ok: false, error: "Mission title must be 1 to 200 characters." };
   }
 
+  // A mission belongs to a business like a project does. The board creates it
+  // where the work already is: the only organization when there is one, and
+  // otherwise the one the current board filter is pointing at.
+  const organizationId = await resolveMissionOrganization(
+    workspaceId,
+    input.organizationId,
+  );
+  if (!organizationId) {
+    return { ok: false, error: "No organization to create the mission in." };
+  }
+
   const [created] = await db()
     .insert(mission)
     .values({
       workspaceId,
+      organizationId,
       title,
       objective: input.objective.trim(),
       context: input.context.trim(),

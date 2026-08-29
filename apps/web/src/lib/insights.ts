@@ -66,6 +66,8 @@ export type InsightUsageRow = {
 };
 
 export type InsightAttemptRow = InsightUsageRow & {
+  /** The business the card's project belongs to, which the board filters by. */
+  organizationId: string;
   taskId: string;
   taskShortId: string;
   taskTitle: string;
@@ -81,6 +83,8 @@ export type InsightAttemptRow = InsightUsageRow & {
 
 /** A mission attempt is deliberately not a card and therefore has no task fields. */
 export type MissionAttemptInsightRow = InsightUsageRow & {
+  /** A mission belongs to a business of its own, not to its project's. */
+  organizationId: string;
   missionTitle: string;
 };
 
@@ -104,6 +108,7 @@ export async function loadInsightAttemptRows(
       taskStatus: task.status,
       tipo: task.tipo,
       priority: task.priority,
+      organizationId: project.organizationId,
       projectId: project.id,
       projectName: project.name,
       missionId: task.missionId,
@@ -158,6 +163,7 @@ export async function loadMissionAttemptRows(
   const rows = await db
     .select({
       attemptId: missionAttempt.id,
+      organizationId: mission.organizationId,
       projectId: missionAttempt.projectId,
       projectName: project.name,
       missionId: missionAttempt.missionId,
@@ -193,9 +199,14 @@ export async function loadMissionAttemptRows(
 }
 
 /** Apply the project/mission part of the board filter to mission work. */
-export function filterMissionAttempts<T extends Pick<InsightUsageRow, "projectId" | "missionId">>(
+export function filterMissionAttempts<
+  T extends Pick<InsightUsageRow, "projectId" | "missionId"> & {
+    organizationId?: string;
+  },
+>(
   rows: T[],
   filter: {
+    organizationIds?: string[];
     projectIds: string[];
     missionId: string | null;
     types?: readonly unknown[];
@@ -211,6 +222,16 @@ export function filterMissionAttempts<T extends Pick<InsightUsageRow, "projectId
       (filter.types && filter.types.length > 0) ||
       (filter.priorities && filter.priorities.length > 0) ||
       filter.resolvedIn !== undefined
+    ) {
+      return false;
+    }
+    // A mission carries its own organization, so orchestration is narrowed by
+    // business even when the mission ran against no project at all.
+    if (
+      filter.organizationIds &&
+      filter.organizationIds.length > 0 &&
+      (!row.organizationId ||
+        !filter.organizationIds.includes(row.organizationId))
     ) {
       return false;
     }

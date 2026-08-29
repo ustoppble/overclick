@@ -14,6 +14,9 @@ import {
   type ConfiguredExecutorContract,
   type Harness,
   type Mission,
+  type Organization,
+  type OrganizationCounts,
+  type OrganizationDetail,
   type Origem,
   type Project,
   type ProjectCardCounts,
@@ -24,11 +27,17 @@ import {
   type TaskRead,
   type Usage,
 } from "@agent-board/mcp-core";
-import type { mission, project, task } from "@agent-board/db/schema";
+import type {
+  mission,
+  organization,
+  project,
+  task,
+} from "@agent-board/db/schema";
 
 export type TaskRow = typeof task.$inferSelect;
 export type ProjectRow = typeof project.$inferSelect;
 export type MissionRow = typeof mission.$inferSelect;
+export type OrganizationRow = typeof organization.$inferSelect;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -166,17 +175,48 @@ export function harnessToDb(
   };
 }
 
-export function mapMission(row: MissionRow, taskCount?: number): Mission {
+export function mapMission(
+  row: MissionRow,
+  /** Name of the mission's organization: the column is not null, so one exists. */
+  organizationName: string,
+  taskCount?: number,
+): Mission {
   const objective = row.objective;
   const context = row.context || row.objective;
   return {
     id: row.id,
     title: row.title,
     status: row.status,
+    organization_id: row.organizationId,
+    organization_name: organizationName,
     objective,
     context,
     ...(taskCount !== undefined ? { task_count: taskCount } : {}),
   };
+}
+
+export function emptyOrganizationCounts(): OrganizationCounts {
+  return { projects: 0, missions: 0, cards: 0 };
+}
+
+export function mapOrganization(
+  row: OrganizationRow,
+  counts: OrganizationCounts = emptyOrganizationCounts(),
+): Organization {
+  return {
+    id: row.id,
+    name: row.name,
+    has_context: Boolean(row.context?.trim()),
+    counts,
+    created_at: iso(row.createdAt),
+  };
+}
+
+export function mapOrganizationDetail(
+  row: OrganizationRow,
+  counts: OrganizationCounts = emptyOrganizationCounts(),
+): OrganizationDetail {
+  return { ...mapOrganization(row, counts), context: row.context };
 }
 
 export function emptyCardCounts(): ProjectCardCounts {
@@ -192,12 +232,16 @@ export function emptyCardCounts(): ProjectCardCounts {
 
 export function mapProject(
   row: ProjectRow,
+  /** Name of the project's organization: the column is not null, so one exists. */
+  organizationName: string,
   cards: ProjectCardCounts = emptyCardCounts(),
 ): Project {
   return {
     id: row.id,
     name: row.name,
     id_prefix: row.idPrefix,
+    organization_id: row.organizationId,
+    organization_name: organizationName,
     repo_url: row.repoUrl,
     has_context: Boolean(row.context?.trim()),
     next_number: row.nextNumber,
@@ -208,10 +252,11 @@ export function mapProject(
 
 export function mapProjectDetail(
   row: ProjectRow,
+  organizationName: string,
   cards: ProjectCardCounts = emptyCardCounts(),
 ): ProjectDetail {
   return {
-    ...mapProject(row, cards),
+    ...mapProject(row, organizationName, cards),
     context: row.context,
     current_version: row.currentVersion,
     latest_prerelease: row.latestPrerelease,

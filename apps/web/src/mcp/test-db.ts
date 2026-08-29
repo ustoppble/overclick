@@ -7,6 +7,7 @@ import {
   factoryCardapioPolicy,
   mcpToken,
   mission,
+  organization,
   project,
   workspace,
   type ExecutorConfig,
@@ -23,6 +24,7 @@ export type TestWorld = {
   db: McpDatabase;
   client: PGlite;
   workspaceId: string;
+  organizationId: string;
   projectId: string;
   missionId: string;
   tokenId: string;
@@ -49,6 +51,24 @@ const TEST_EXECUTORS: ExecutorConfig[] = [
     models: ["fable-5", "opus-5", "opus-4-8", "sonnet-5", "haiku-4-5"],
   },
 ];
+
+/**
+ * Every project and mission hangs off an organization, so a fixture that
+ * reaches past the MCP tools to insert one directly — usually to build a
+ * neighbouring workspace the token must not see — needs a business first.
+ */
+export async function insertOrganization(
+  db: McpDatabase,
+  workspaceId: string,
+  name = "General",
+): Promise<string> {
+  const [row] = await db
+    .insert(organization)
+    .values({ workspaceId, name })
+    .returning({ id: organization.id });
+  if (!row) throw new Error("failed to insert organization");
+  return row.id;
+}
 
 export async function createTestWorld(): Promise<TestWorld> {
   const client = new PGlite();
@@ -85,10 +105,17 @@ export async function createTestWorld(): Promise<TestWorld> {
     })),
   );
 
+  const [org] = await db
+    .insert(organization)
+    .values({ workspaceId: ws.id, name: "General" })
+    .returning({ id: organization.id });
+  if (!org) throw new Error("failed to insert organization");
+
   const [proj] = await db
     .insert(project)
     .values({
       workspaceId: ws.id,
+      organizationId: org.id,
       name: "OverClick",
       idPrefix: "OC",
       nextNumber: 1,
@@ -100,6 +127,7 @@ export async function createTestWorld(): Promise<TestWorld> {
     .insert(mission)
     .values({
       workspaceId: ws.id,
+      organizationId: org.id,
       title: "Norte do board",
       objective: "Fechar o loop MCP do MVP.",
       status: "ativa",
@@ -163,6 +191,7 @@ export async function createTestWorld(): Promise<TestWorld> {
     db,
     client,
     workspaceId: ws.id,
+    organizationId: org.id,
     projectId: proj.id,
     missionId: miss.id,
     tokenId: tok.id,

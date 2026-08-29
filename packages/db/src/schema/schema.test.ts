@@ -8,6 +8,7 @@ import {
   mission,
   missionAttempt,
   missionAttemptReport,
+  organization,
   project,
   projectContextAudit,
   task,
@@ -24,6 +25,7 @@ describe("complete schema from spec §3", () => {
   it("exposes every entity as a table", () => {
     expect(getTableName(workspace)).toBe("workspace");
     expect(getTableName(user)).toBe("user");
+    expect(getTableName(organization)).toBe("organization");
     expect(getTableName(mission)).toBe("mission");
     expect(getTableName(missionAttempt)).toBe("mission_attempt");
     expect(getTableName(missionAttemptReport)).toBe("mission_attempt_report");
@@ -308,5 +310,25 @@ describe("complete schema from spec §3", () => {
         "createdAt",
       ]),
     );
+  });
+});
+
+describe("organization layer", () => {
+  it("organization belongs to a workspace and carries its own context", () => {
+    expect(columnNames(organization)).toEqual([
+      "id",
+      "workspaceId",
+      "name",
+      "context",
+      "createdAt",
+      "updatedAt",
+    ]);
+  });
+
+  it("project and mission each point at exactly one organization", () => {
+    expect(columnNames(project)).toContain("organizationId");
+    expect(columnNames(mission)).toContain("organizationId");
+    expect(getTableColumns(project).organizationId.notNull).toBe(true);
+    expect(getTableColumns(mission).organizationId.notNull).toBe(true);
   });
 });

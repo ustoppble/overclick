@@ -1,3 +1,10 @@
+/**
+ * The organization a fresh instance starts with, and the one migration 0031
+ * adopted every pre-existing project and mission into. A board only splits by
+ * business once its owner says it has more than one.
+ */
+export const DEFAULT_ORGANIZATION_NAME = "General";
+
 import type { Cardapio, ExecutorConfig, Harness } from "./types";
 
 const mid: Harness = {
