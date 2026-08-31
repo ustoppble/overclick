@@ -164,6 +164,12 @@ describe("learning executors from connections", () => {
     expect(resolveCatalogCli("  ")).toBeNull();
   });
 
+  it("maps grok-cli, codex-cli and kimi-code to catalog ids", () => {
+    expect(resolveCatalogCli("grok-cli")).toBe("grok");
+    expect(resolveCatalogCli("codex-cli")).toBe("codex");
+    expect(resolveCatalogCli("kimi-code")).toBe("kimi");
+  });
+
   it("isPairInConfig matches enabled executors, alias-aware and case-insensitive", () => {
     const config = [
       { id: "claude-code", enabled: true, models: ["sonnet-5"] },

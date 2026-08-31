@@ -69,8 +69,11 @@ export const CUSTOM_EXECUTOR_ID = "generic-mcp";
 const CLI_ALIASES: Record<string, string> = {
   claude: "claude-code",
   "codex cli": "codex",
+  "codex-cli": "codex",
   gemini: "gemini-cli",
   copilot: "github-copilot",
+  "grok-cli": "grok",
+  "kimi-code": "kimi",
 };
 
 /** Resolves a connection's cli name to a catalog id, or null when unknown. */
