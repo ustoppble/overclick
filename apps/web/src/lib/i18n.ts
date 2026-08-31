@@ -90,7 +90,7 @@ const en = {
     totalEstShort: (n: number) => `${n} est.`,
     totalMissingShort: (n: number) => `${n} no usage`,
     totalSuspect: (n: number, tokens: string) =>
-      `${n} suspect, ${tokens} tokens kept outside totals`,
+      `${n} suspect, ${tokens} tokens marked suspect`,
     totalSuspectShort: (n: number) => `${n} suspect`,
     /** A model with no row in the price table adds nothing and says so. */
     totalUnpriced: (n: number) => `${n} unpriced model`,
@@ -249,7 +249,7 @@ const en = {
     executionSource: "reported by the agent",
     elapsedSource: "claim to deliver, measured by the board",
     usageSuspect:
-      "usage above the possible claim window, probably a whole-session total; kept outside Insights totals",
+      "usage above the possible claim window, probably a whole-session total; counted in Insights totals and marked suspect",
     timeline: "Execution trace",
     executorSwap: "executor swap",
     spawnFailure: "spawn failure",
@@ -741,7 +741,7 @@ const ptBR: Dict = {
     totalEstShort: (n: number) => `${n} est.`,
     totalMissingShort: (n: number) => `${n} sem uso`,
     totalSuspect: (n: number, tokens: string) =>
-      `${n} suspeito${n === 1 ? "" : "s"}, ${tokens} tokens contados à parte`,
+      `${n} suspeito${n === 1 ? "" : "s"}, ${tokens} tokens marcados como suspeitos`,
     totalSuspectShort: (n: number) => `${n} suspeito${n === 1 ? "" : "s"}`,
     totalUnpriced: (n: number) => `${n} modelo sem preço`,
     totalUnpricedShort: (n: number) => `${n} sem preço`,
@@ -854,7 +854,7 @@ const ptBR: Dict = {
     executionSource: "reportado pelo agente",
     elapsedSource: "do claim à entrega, medido pelo board",
     usageSuspect:
-      "usage acima do possível na janela, provável soma da sessão; contado à parte nos Insights",
+      "usage acima do possível na janela, provável soma da sessão; somado nos Insights e marcado como suspeito",
     timeline: "Rastro de execução",
     executorSwap: "troca de executor",
     spawnFailure: "falha de boot",

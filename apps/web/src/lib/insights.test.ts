@@ -120,7 +120,7 @@ describe("computeInsights totals", () => {
     expect(project?.total.tokens).toBe(1900);
   });
 
-  it("keeps open, abandoned and suspect mission attempts outside the trusted subtotal", () => {
+  it("keeps open and abandoned mission attempts outside the trusted subtotal", () => {
     const result = computeInsights(
       [],
       [],
@@ -134,7 +134,7 @@ describe("computeInsights totals", () => {
 
     expect(result.orchestrationTotals.attempts).toBe(1);
     expect(result.orchestrationTotals.suspect).toBe(1);
-    expect(result.orchestrationTotals.tokens).toBe(0);
+    expect(result.orchestrationTotals.tokens).toBe(400);
     expect(result.discarded.orchestration.attempts).toBe(1);
     expect(result.discarded.orchestration.tokens).toBe(400);
   });
@@ -247,7 +247,7 @@ describe("computeInsights totals", () => {
     expect(result.totals.attempts).toBe(3);
   });
 
-  it("keeps suspect usage outside trusted totals and exposes its own bucket", () => {
+  it("keeps a suspect attempt visible in the suspect bucket without dropping it from the total", () => {
     const result = computeInsights(
       [
         attempt(),
@@ -264,17 +264,51 @@ describe("computeInsights totals", () => {
       [],
     );
 
-    expect(result.totals.tokens).toBe(1_500);
-    expect(result.totals.costUsd).toBeCloseTo(1.5);
-    expect(result.totals.durationMs).toBe(60_000);
+    expect(result.totals.tokens).toBe(1_500 + 5_000_000);
+    expect(result.totals.costUsd).toBeCloseTo(100.5);
+    expect(result.totals.durationMs).toBe(120_000);
     expect(result.totals.suspect).toBe(1);
     expect(result.totals.suspectTokens).toBe(5_000_000);
     expect(result.totals.suspectCostUsd).toBeCloseTo(99);
     expect(result.perCard.find((card) => card.shortId === "OC-2")).toMatchObject({
-      tokens: 0,
+      tokens: 5_000_000,
       suspect: true,
       suspectTokens: 5_000_000,
     });
+  });
+
+  it("adds a suspect attempt into the total and into the suspect counters", () => {
+    const result = computeInsights(
+      [
+        attempt({
+          tokensIn: 1_000,
+          tokensOut: 500,
+          tokensCache: 0,
+          costUsd: "1.50",
+          durationMs: 60_000,
+        }),
+        attempt({
+          taskId: "task-2",
+          taskShortId: "OC-2",
+          tokensIn: 4_000_000,
+          tokensOut: 1_000_000,
+          tokensCache: 0,
+          costUsd: "99.00",
+          durationMs: 60_000,
+          usageSuspect: true,
+        }),
+      ],
+      [],
+    );
+
+    expect(result.totals.tokens).toBe(1_500 + 5_000_000);
+    expect(result.totals.costUsd).toBeCloseTo(100.5);
+    expect(result.totals.durationMs).toBe(120_000);
+    expect(result.totals.suspect).toBe(1);
+    expect(result.totals.suspectTokens).toBe(5_000_000);
+    expect(result.totals.suspectCostUsd).toBeCloseTo(99);
+    expect(result.byModel[0]?.tokens).toBe(1_500 + 5_000_000);
+    expect(result.byModel[0]?.suspect).toBe(1);
   });
 
   it("counts unverified deliveries by executor and model without hiding the run", () => {
@@ -717,6 +751,100 @@ describe("usage in segments per model", () => {
     expect(result.byModel[0]?.label).toBe("sonnet-5");
     expect(result.byModel[0]?.missing).toBe(1);
   });
+
+  it("groups gpt-5.6-sol and gpt-5-6-sol as the same model", () => {
+    const dotted = Array.from({ length: 6 }, (_, i) =>
+      attempt({
+        taskId: `task-dot-${i}`,
+        taskShortId: `OC-DOT-${i}`,
+        model: "gpt-5.6-sol",
+        usageSegments: [{ model: "gpt-5.6-sol", input: 10 }],
+        tokensIn: 10,
+        tokensOut: 0,
+        tokensCache: 0,
+      }),
+    );
+    const dashed = Array.from({ length: 67 }, (_, i) =>
+      attempt({
+        taskId: `task-dash-${i}`,
+        taskShortId: `OC-DASH-${i}`,
+        model: "gpt-5-6-sol",
+        usageSegments: [{ model: "gpt-5-6-sol", input: 20 }],
+        tokensIn: 20,
+        tokensOut: 0,
+        tokensCache: 0,
+      }),
+    );
+    const result = computeInsights([...dotted, ...dashed], []);
+
+    expect(result.byModel).toHaveLength(1);
+    expect(result.byModel[0]?.key).toBe("gpt-5-6-sol");
+    expect(result.byModel[0]?.label).toBe("gpt-5-6-sol");
+    expect(result.byModel[0]?.attempts).toBe(73);
+    expect(result.byModel[0]?.tokens).toBe(6 * 10 + 67 * 20);
+  });
+
+  it("collapses CLI aliases of the same model into one group", () => {
+    const result = computeInsights(
+      [
+        attempt({
+          model: "claude-opus-5",
+          usageSegments: [{ model: "claude-opus-5", input: 1 }],
+          tokensIn: 1,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+        attempt({
+          taskId: "task-2",
+          taskShortId: "OC-2",
+          model: "opus-5[1m]",
+          usageSegments: [{ model: "opus-5[1m]", input: 2 }],
+          tokensIn: 2,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+        attempt({
+          taskId: "task-3",
+          taskShortId: "OC-3",
+          model: "opus-5",
+          usageSegments: [{ model: "opus-5", input: 4 }],
+          tokensIn: 4,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+        attempt({
+          taskId: "task-4",
+          taskShortId: "OC-4",
+          model: "gpt-5.3-codex-spark",
+          usageSegments: [{ model: "gpt-5.3-codex-spark", input: 8 }],
+          tokensIn: 8,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+        attempt({
+          taskId: "task-5",
+          taskShortId: "OC-5",
+          model: "gpt-5-3-codex-spark",
+          usageSegments: [{ model: "gpt-5-3-codex-spark", input: 16 }],
+          tokensIn: 16,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+      ],
+      [],
+    );
+
+    const opus = result.byModel.find((g) => g.key === "opus-5");
+    const spark = result.byModel.find((g) => g.key === "gpt-5-3-codex-spark");
+    expect(result.byModel).toHaveLength(2);
+    expect(opus).toMatchObject({ key: "opus-5", label: "opus-5", attempts: 3, tokens: 7 });
+    expect(spark).toMatchObject({
+      key: "gpt-5-3-codex-spark",
+      label: "gpt-5-3-codex-spark",
+      attempts: 2,
+      tokens: 24,
+    });
+  });
 });
 
 describe("a model nobody priced", () => {
@@ -776,7 +904,7 @@ describe("a model nobody priced", () => {
     expect(result.totals.unpricedTokens).toBe(1_000_000);
     expect(result.totals.tokens).toBe(2_000_000);
 
-    const kimi = result.byModel.find((g) => g.label === "kimi-code/k3");
+    const kimi = result.byModel.find((g) => g.label === "k3");
     const sonnet = result.byModel.find((g) => g.label === "sonnet-5");
     expect(kimi?.costUsd).toBeNull();
     expect(sonnet?.costUsd).toBeCloseTo(3);
