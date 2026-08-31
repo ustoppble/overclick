@@ -1,4 +1,10 @@
-import { normalizeModelKey, type Harness as DbHarness } from "@agent-board/db";
+import {
+  factoryModelPrices,
+  findModelPrice,
+  MODEL_KEY_ALIASES,
+  normalizeModelKey,
+  type Harness as DbHarness,
+} from "@agent-board/db";
 import { resolveCatalogCli } from "../lib/executors";
 
 export type AttemptModelSource = "declared" | "harness" | "measured";
@@ -20,7 +26,36 @@ export type ResolvedClaimExecutor = ClaimExecutorInput & {
 /** The model Codex actually runs when its legacy labels carry no version. */
 export const DEFAULT_CODEX_MODEL = "gpt-5-6-sol";
 
+/** Exact Codex `--model` names listed when a generic family label is refused. */
+export const CODEX_EXACT_MODELS = [
+  "gpt-5.6-sol",
+  "gpt-5.6-luna",
+  "gpt-5.6-terra",
+  "gpt-5.3-codex-spark",
+] as const;
+
+/** Family labels Codex agents send instead of the exact `--model` flag. */
+const GENERIC_CODEX_MODELS = new Set(["gpt-5", "gpt-daybreak-blue-latest"]);
+
 const GENERIC_MODELS = new Set(["", "gpt-5", "codex", "claude", "o4-mini"]);
+
+/**
+ * Error text when a claim declares a known generic Codex family instead of
+ * the exact `--model`. Priced models and aliases pass: the refusal is only
+ * for the names that historically landed unpriced.
+ */
+export function genericCodexModelRefusal(
+  model: string | null | undefined,
+): string | null {
+  const raw = model?.trim();
+  if (!raw) return null;
+  const lowered = raw.toLowerCase();
+  if (MODEL_KEY_ALIASES[lowered] || findModelPrice(factoryModelPrices(), raw)) {
+    return null;
+  }
+  if (!GENERIC_CODEX_MODELS.has(lowered)) return null;
+  return `Codex must declare the exact model from --model, never ${lowered}. Accepted names: ${CODEX_EXACT_MODELS.join(", ")}.`;
+}
 
 /**
  * CLI names come from binaries and orchestrators, while the catalog uses one

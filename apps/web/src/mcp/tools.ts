@@ -107,6 +107,7 @@ import {
 import { renderBriefingMarkdown } from "./briefing";
 import { refreshProjectContext } from "../lib/project-context-refresh";
 import {
+  genericCodexModelRefusal,
   isExecutorPairConfigured,
   normalizeClaimCli,
   normalizeObservedExecutor,
@@ -3115,6 +3116,9 @@ async function taskClaim(
     transcript?: TranscriptRefWire;
   },
 ) {
+  const refusal = genericCodexModelRefusal(input.executor?.model);
+  if (refusal) return err("INVALID_ARGUMENT", refusal);
+
   const claimed = await db.transaction(async (tx) => {
     const found = await findTask(tx, ctx.workspaceId, input.task_id, true);
     if (!found) {

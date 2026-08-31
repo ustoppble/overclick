@@ -138,7 +138,7 @@ describe("MCP tool edge cases against a test db", () => {
     expect(out.task.harness?.model).toBe("opus-5");
   });
 
-  it("uses the harness model when Codex claims with generic gpt-5", async () => {
+  it("refuses a generic gpt-5 claim and names the exact Codex models", async () => {
     world = await createTestWorld();
     const [card] = await world.db
       .insert(task)
@@ -155,22 +155,42 @@ describe("MCP tool edge cases against a test db", () => {
       task_id: card.id,
       executor: { cli: "Codex CLI", model: "gpt-5" },
     });
+    expect(claimed.ok).toBe(false);
+    if (claimed.ok) return;
+    expect(claimed.error.code).toBe("INVALID_ARGUMENT");
+    expect(claimed.error.message).toContain("gpt-5.6-sol");
+    expect(claimed.error.message).toContain("gpt-5.6-luna");
+    expect(claimed.error.message).toContain("gpt-5.6-terra");
+    expect(claimed.error.message).toContain("gpt-5.3-codex-spark");
+
+    const [fresh] = await world.db.select().from(task).where(eq(task.id, card.id));
+    expect(fresh?.status).toBe("aberto");
+    expect(fresh?.claimedByTokenId).toBeNull();
+  });
+
+  it("claims normally when Codex declares gpt-5.6-sol", async () => {
+    world = await createTestWorld();
+    const [card] = await world.db
+      .insert(task)
+      .values({
+        projectId: world.projectId,
+        shortId: "OC-90b",
+        title: "Exact Codex claim sol",
+        harness: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+      })
+      .returning();
+    if (!card) throw new Error("failed to create card");
+
+    const claimed = await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "codex", model: "gpt-5.6-sol" },
+    });
     expect(claimed.ok).toBe(true);
     if (!claimed.ok) return;
-    const out = TaskClaimOutputSchema.parse(claimed.value);
-    expect(out.attempt.executor).toMatchObject({
+    expect(TaskClaimOutputSchema.parse(claimed.value).attempt.executor).toMatchObject({
       cli: "codex",
       model: "gpt-5-6-sol",
-      model_source: "harness",
-    });
-
-    const [attempt] = await world.db
-      .select()
-      .from(executionAttempt)
-      .where(eq(executionAttempt.taskId, card.id));
-    expect(attempt).toMatchObject({
-      model: "gpt-5-6-sol",
-      modelSource: "harness",
+      model_source: "declared",
     });
   });
 
@@ -215,7 +235,7 @@ describe("MCP tool edge cases against a test db", () => {
 
     await invokeTool(world.db, ctx(), "task_claim", {
       task_id: card.id,
-      executor: { cli: "codex", model: "gpt-5" },
+      executor: { cli: "codex", model: "gpt-5.6-sol" },
     });
     const delivered = await invokeTool(world.db, ctx(), "task_deliver", {
       task_id: card.id,
