@@ -295,7 +295,7 @@ export function usageHonestyNote(totals: UsageTotals): string {
   if (totals.zeroUsage > 0) parts.push(`${totals.zeroUsage} reported zero usage`);
   if (totals.suspect > 0) {
     parts.push(
-      `${totals.suspect} suspect · ${totals.suspectTokens} tokens kept separate`,
+      `${totals.suspect} suspect · ${totals.suspectTokens} tokens marked suspect`,
     );
   }
   if (totals.deliveryUnverified > 0) {
@@ -364,7 +364,7 @@ export type UsageTotals = {
   missing: number;
   /** Attempts that explicitly reported token counters whose sum is zero. */
   zeroUsage: number;
-  /** Attempts whose usage is intentionally outside the trusted sums. */
+  /** Attempts whose usage the window check could not confirm. Counted in the total and named here. */
   suspect: number;
   suspectTokens: number;
   suspectDurationMs: number;
@@ -741,7 +741,6 @@ function addAttempt(
       totals.suspectCostUsd += cost.costUsd;
       totals.suspectCostKnown = true;
     }
-    return;
   }
   totals.tokens += attemptTokens(a);
   addDurations(totals, a);
@@ -782,8 +781,6 @@ function addSegment(
       totals.suspectCostUsd += cost.costUsd;
       totals.suspectCostKnown = true;
     }
-    if (shared) totals.sharedAttempts = (totals.sharedAttempts ?? 0) + 1;
-    return;
   }
   totals.tokens += tokens;
   addDurations(totals, a);
@@ -1103,24 +1100,21 @@ export function computeInsights(
       if (cost.costUsd != null) {
         card.suspectCostUsd = (card.suspectCostUsd ?? 0) + cost.costUsd;
       }
-    } else {
-      card.tokens += attemptTokens(a);
-      card.durationMs += executionOnlyMs(a);
-      card.elapsedMs += elapsedOnlyMs(a);
     }
+    card.tokens += attemptTokens(a);
+    card.durationMs += executionOnlyMs(a);
+    card.elapsedMs += elapsedOnlyMs(a);
     // Tokens this card spent on a model nobody priced. Counted apart from the
     // dollars beside them, never folded in at zero.
-    if (!a.usageSuspect) {
-      for (const segment of segments) {
-        const spent = segmentTotalTokens(segment);
-        const model = segment.model ? normalizeModelKey(segment.model) : "unknown";
-        if (spent > 0 && unpricedModels.includes(model)) {
-          card.unpricedTokens += spent;
-        }
+    for (const segment of segments) {
+      const spent = segmentTotalTokens(segment);
+      const model = segment.model ? normalizeModelKey(segment.model) : "unknown";
+      if (spent > 0 && unpricedModels.includes(model)) {
+        card.unpricedTokens += spent;
       }
-      for (const model of unpricedModels) {
-        if (!card.unpricedModels.includes(model)) card.unpricedModels.push(model);
-      }
+    }
+    for (const model of unpricedModels) {
+      if (!card.unpricedModels.includes(model)) card.unpricedModels.push(model);
     }
     // Every model the card ran, in the order it ran them: the footer reads
     // "sonnet-5 to opus-5" off this list.
@@ -1140,16 +1134,14 @@ export function computeInsights(
         card.modelOrigins.push({ model, source: a.modelSource });
       }
     }
-    if (!a.usageSuspect && cost.costUsd != null) {
+    if (cost.costUsd != null) {
       card.hasCost = true;
       card.costUsd = (card.costUsd ?? 0) + cost.costUsd;
       card.sources.push(cost.source);
     }
-    if (!a.usageSuspect) {
-      if (!hasReportedUsage(a)) card.missing = true;
-      if (isZeroUsage(a)) card.zeroUsage = true;
-      if (hasReportedUsage(a) && a.usageEstimated) card.estimated = true;
-    }
+    if (!hasReportedUsage(a)) card.missing = true;
+    if (isZeroUsage(a)) card.zeroUsage = true;
+    if (hasReportedUsage(a) && a.usageEstimated) card.estimated = true;
   }
 
   // Mission attempts are a second source, never a synthetic card. They use

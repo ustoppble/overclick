@@ -120,7 +120,7 @@ describe("computeInsights totals", () => {
     expect(project?.total.tokens).toBe(1900);
   });
 
-  it("keeps open, abandoned and suspect mission attempts outside the trusted subtotal", () => {
+  it("keeps open and abandoned mission attempts outside the trusted subtotal", () => {
     const result = computeInsights(
       [],
       [],
@@ -134,7 +134,7 @@ describe("computeInsights totals", () => {
 
     expect(result.orchestrationTotals.attempts).toBe(1);
     expect(result.orchestrationTotals.suspect).toBe(1);
-    expect(result.orchestrationTotals.tokens).toBe(0);
+    expect(result.orchestrationTotals.tokens).toBe(400);
     expect(result.discarded.orchestration.attempts).toBe(1);
     expect(result.discarded.orchestration.tokens).toBe(400);
   });
@@ -247,7 +247,7 @@ describe("computeInsights totals", () => {
     expect(result.totals.attempts).toBe(3);
   });
 
-  it("keeps suspect usage outside trusted totals and exposes its own bucket", () => {
+  it("keeps a suspect attempt visible in the suspect bucket without dropping it from the total", () => {
     const result = computeInsights(
       [
         attempt(),
@@ -264,17 +264,51 @@ describe("computeInsights totals", () => {
       [],
     );
 
-    expect(result.totals.tokens).toBe(1_500);
-    expect(result.totals.costUsd).toBeCloseTo(1.5);
-    expect(result.totals.durationMs).toBe(60_000);
+    expect(result.totals.tokens).toBe(1_500 + 5_000_000);
+    expect(result.totals.costUsd).toBeCloseTo(100.5);
+    expect(result.totals.durationMs).toBe(120_000);
     expect(result.totals.suspect).toBe(1);
     expect(result.totals.suspectTokens).toBe(5_000_000);
     expect(result.totals.suspectCostUsd).toBeCloseTo(99);
     expect(result.perCard.find((card) => card.shortId === "OC-2")).toMatchObject({
-      tokens: 0,
+      tokens: 5_000_000,
       suspect: true,
       suspectTokens: 5_000_000,
     });
+  });
+
+  it("adds a suspect attempt into the total and into the suspect counters", () => {
+    const result = computeInsights(
+      [
+        attempt({
+          tokensIn: 1_000,
+          tokensOut: 500,
+          tokensCache: 0,
+          costUsd: "1.50",
+          durationMs: 60_000,
+        }),
+        attempt({
+          taskId: "task-2",
+          taskShortId: "OC-2",
+          tokensIn: 4_000_000,
+          tokensOut: 1_000_000,
+          tokensCache: 0,
+          costUsd: "99.00",
+          durationMs: 60_000,
+          usageSuspect: true,
+        }),
+      ],
+      [],
+    );
+
+    expect(result.totals.tokens).toBe(1_500 + 5_000_000);
+    expect(result.totals.costUsd).toBeCloseTo(100.5);
+    expect(result.totals.durationMs).toBe(120_000);
+    expect(result.totals.suspect).toBe(1);
+    expect(result.totals.suspectTokens).toBe(5_000_000);
+    expect(result.totals.suspectCostUsd).toBeCloseTo(99);
+    expect(result.byModel[0]?.tokens).toBe(1_500 + 5_000_000);
+    expect(result.byModel[0]?.suspect).toBe(1);
   });
 
   it("counts unverified deliveries by executor and model without hiding the run", () => {
