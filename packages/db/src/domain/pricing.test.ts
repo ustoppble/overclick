@@ -33,6 +33,10 @@ describe("model key normalization", () => {
     expect(normalizeModelKey("haiku-4.5")).toBe("haiku-4-5");
   });
 
+  it("drops a context-window suffix so opus-5[1m] prices as opus-5", () => {
+    expect(normalizeModelKey("opus-5[1m]")).toBe("opus-5");
+  });
+
   it("leaves an unknown model as its own key", () => {
     expect(normalizeModelKey("gpt-5.6-sol")).toBe("gpt-5-6-sol");
   });

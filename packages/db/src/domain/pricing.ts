@@ -176,6 +176,7 @@ export function normalizeModelKey(raw: string): string {
   const normalized = aliased
     .replace(/^[a-z0-9_.-]+\//, "")
     .replace(/-\d{8}$/, "")
+    .replace(/\[[^\]]+\]/g, "")
     .replace(/\./g, "-")
     .replace(/^claude-/, "");
   return MODEL_KEY_ALIASES[normalized] ?? normalized;

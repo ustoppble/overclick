@@ -717,6 +717,100 @@ describe("usage in segments per model", () => {
     expect(result.byModel[0]?.label).toBe("sonnet-5");
     expect(result.byModel[0]?.missing).toBe(1);
   });
+
+  it("groups gpt-5.6-sol and gpt-5-6-sol as the same model", () => {
+    const dotted = Array.from({ length: 6 }, (_, i) =>
+      attempt({
+        taskId: `task-dot-${i}`,
+        taskShortId: `OC-DOT-${i}`,
+        model: "gpt-5.6-sol",
+        usageSegments: [{ model: "gpt-5.6-sol", input: 10 }],
+        tokensIn: 10,
+        tokensOut: 0,
+        tokensCache: 0,
+      }),
+    );
+    const dashed = Array.from({ length: 67 }, (_, i) =>
+      attempt({
+        taskId: `task-dash-${i}`,
+        taskShortId: `OC-DASH-${i}`,
+        model: "gpt-5-6-sol",
+        usageSegments: [{ model: "gpt-5-6-sol", input: 20 }],
+        tokensIn: 20,
+        tokensOut: 0,
+        tokensCache: 0,
+      }),
+    );
+    const result = computeInsights([...dotted, ...dashed], []);
+
+    expect(result.byModel).toHaveLength(1);
+    expect(result.byModel[0]?.key).toBe("gpt-5-6-sol");
+    expect(result.byModel[0]?.label).toBe("gpt-5-6-sol");
+    expect(result.byModel[0]?.attempts).toBe(73);
+    expect(result.byModel[0]?.tokens).toBe(6 * 10 + 67 * 20);
+  });
+
+  it("collapses CLI aliases of the same model into one group", () => {
+    const result = computeInsights(
+      [
+        attempt({
+          model: "claude-opus-5",
+          usageSegments: [{ model: "claude-opus-5", input: 1 }],
+          tokensIn: 1,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+        attempt({
+          taskId: "task-2",
+          taskShortId: "OC-2",
+          model: "opus-5[1m]",
+          usageSegments: [{ model: "opus-5[1m]", input: 2 }],
+          tokensIn: 2,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+        attempt({
+          taskId: "task-3",
+          taskShortId: "OC-3",
+          model: "opus-5",
+          usageSegments: [{ model: "opus-5", input: 4 }],
+          tokensIn: 4,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+        attempt({
+          taskId: "task-4",
+          taskShortId: "OC-4",
+          model: "gpt-5.3-codex-spark",
+          usageSegments: [{ model: "gpt-5.3-codex-spark", input: 8 }],
+          tokensIn: 8,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+        attempt({
+          taskId: "task-5",
+          taskShortId: "OC-5",
+          model: "gpt-5-3-codex-spark",
+          usageSegments: [{ model: "gpt-5-3-codex-spark", input: 16 }],
+          tokensIn: 16,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+      ],
+      [],
+    );
+
+    const opus = result.byModel.find((g) => g.key === "opus-5");
+    const spark = result.byModel.find((g) => g.key === "gpt-5-3-codex-spark");
+    expect(result.byModel).toHaveLength(2);
+    expect(opus).toMatchObject({ key: "opus-5", label: "opus-5", attempts: 3, tokens: 7 });
+    expect(spark).toMatchObject({
+      key: "gpt-5-3-codex-spark",
+      label: "gpt-5-3-codex-spark",
+      attempts: 2,
+      tokens: 24,
+    });
+  });
 });
 
 describe("a model nobody priced", () => {
@@ -776,7 +870,7 @@ describe("a model nobody priced", () => {
     expect(result.totals.unpricedTokens).toBe(1_000_000);
     expect(result.totals.tokens).toBe(2_000_000);
 
-    const kimi = result.byModel.find((g) => g.label === "kimi-code/k3");
+    const kimi = result.byModel.find((g) => g.label === "k3");
     const sonnet = result.byModel.find((g) => g.label === "sonnet-5");
     expect(kimi?.costUsd).toBeNull();
     expect(sonnet?.costUsd).toBeCloseTo(3);

@@ -512,6 +512,20 @@ function executorLabel(raw: string | null): string | null {
 }
 
 /**
+ * One Insights row per model, keyed by the catalog spelling. Agents send
+ * "gpt-5.6-sol", "claude-opus-5" or "opus-5[1m]"; the group is "gpt-5-6-sol"
+ * or "opus-5". The label is that same canonical name so the table stays
+ * readable instead of showing whichever raw string arrived first.
+ */
+function modelGroupKey(model: string | null | undefined): string {
+  return model ? normalizeModelKey(model) : NO_MODEL;
+}
+
+function modelGroupLabel(model: string | null | undefined): string | null {
+  return model ? normalizeModelKey(model) : null;
+}
+
+/**
  * Totals while they are being summed. The running cost is a number here and
  * only becomes null at the end, when it turns out nothing fed it.
  */
@@ -1040,7 +1054,7 @@ export function computeInsights(
     if (shared) switchedRuns += 1;
     for (const segment of segments) {
       addSegment(
-        group(byModel, segment.model ?? NO_MODEL, segment.model),
+        group(byModel, modelGroupKey(segment.model), modelGroupLabel(segment.model)),
         a,
         segment,
         segmentCost(a, segment, prices, !shared),
@@ -1164,7 +1178,11 @@ export function computeInsights(
     if (shared) switchedRuns += 1;
     for (const segment of segments) {
       addSegment(
-        group(orchestrationByModel, segment.model ?? NO_MODEL, segment.model),
+        group(
+          orchestrationByModel,
+          modelGroupKey(segment.model),
+          modelGroupLabel(segment.model),
+        ),
         a,
         segment,
         segmentCost(a, segment, prices, !shared),
@@ -1245,7 +1263,11 @@ export function computeInsights(
     );
     for (const segment of segments) {
       addSegment(
-        group(discardedByModel, segment.model ?? NO_MODEL, segment.model),
+        group(
+          discardedByModel,
+          modelGroupKey(segment.model),
+          modelGroupLabel(segment.model),
+        ),
         a,
         segment,
         segmentCost(a, segment, prices, segments.length === 1),
