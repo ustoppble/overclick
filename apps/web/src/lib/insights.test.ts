@@ -847,6 +847,94 @@ describe("usage in segments per model", () => {
   });
 });
 
+describe("grouping by executor", () => {
+  it("groups claude and claude-code as the same catalog CLI", () => {
+    const result = computeInsights(
+      [
+        attempt({
+          executor: "claude",
+          tokensIn: 10,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+        attempt({
+          taskId: "task-2",
+          taskShortId: "OC-2",
+          executor: "claude-code",
+          tokensIn: 20,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+        attempt({
+          taskId: "task-3",
+          taskShortId: "OC-3",
+          executor: JSON.stringify({ cli: "claude" }),
+          tokensIn: 40,
+          tokensOut: 0,
+          tokensCache: 0,
+        }),
+      ],
+      [],
+    );
+
+    expect(result.byExecutor).toHaveLength(1);
+    expect(result.byExecutor[0]).toMatchObject({
+      key: "claude-code",
+      label: "claude-code",
+      attempts: 3,
+      tokens: 70,
+    });
+  });
+
+  it("keeps an unknown CLI under the name it sent", () => {
+    const result = computeInsights([attempt({ executor: "aider" })], []);
+    expect(result.byExecutor).toHaveLength(1);
+    expect(result.byExecutor[0]).toMatchObject({
+      key: "aider",
+      label: "aider",
+      attempts: 1,
+    });
+  });
+
+  it("collapses grok-cli, codex-cli and kimi-code into their catalog ids", () => {
+    const result = computeInsights(
+      [
+        attempt({ executor: "grok" }),
+        attempt({ taskId: "t2", taskShortId: "OC-2", executor: "grok-cli" }),
+        attempt({ taskId: "t3", taskShortId: "OC-3", executor: "codex" }),
+        attempt({ taskId: "t4", taskShortId: "OC-4", executor: "codex-cli" }),
+        attempt({ taskId: "t5", taskShortId: "OC-5", executor: "kimi" }),
+        attempt({ taskId: "t6", taskShortId: "OC-6", executor: "kimi-code" }),
+      ],
+      [],
+    );
+
+    expect(result.byExecutor).toHaveLength(3);
+    expect(result.byExecutor.find((g) => g.key === "grok")).toMatchObject({
+      label: "grok",
+      attempts: 2,
+    });
+    expect(result.byExecutor.find((g) => g.key === "codex")).toMatchObject({
+      label: "codex",
+      attempts: 2,
+    });
+    expect(result.byExecutor.find((g) => g.key === "kimi")).toMatchObject({
+      label: "kimi",
+      attempts: 2,
+    });
+  });
+
+  it("buckets an executor object without cli or agent as unknown, never as raw JSON", () => {
+    const blob = JSON.stringify({ model: "sonnet-5", effort: "high" });
+    const result = computeInsights([attempt({ executor: blob })], []);
+
+    expect(result.byExecutor).toHaveLength(1);
+    expect(result.byExecutor[0]?.key).toBe("__unknown__");
+    expect(result.byExecutor[0]?.label).toBeNull();
+    expect(JSON.stringify(result.byExecutor.map((g) => g.label))).not.toContain("{");
+  });
+});
+
 describe("a model nobody priced", () => {
   const prices = [
     { model: "sonnet-5", label: "sonnet-5", inputPerMtok: 3, outputPerMtok: 15, cachePerMtok: 0.3 },

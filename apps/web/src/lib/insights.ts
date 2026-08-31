@@ -27,6 +27,7 @@ import {
   type ResolvedCost,
   type UsageSegment,
 } from "@agent-board/db";
+import { resolveCatalogCli } from "./executors";
 
 /** Postgres or PGlite drizzle client — the query surface insights needs. */
 export type InsightsDb = Pick<Database, "select">;
@@ -499,16 +500,26 @@ const NO_RELEASE = "__no_release__";
 const NO_MODEL = "__unknown__";
 const CROSS_PROJECT = "__cross_project__";
 
+/**
+ * One Insights row per CLI, keyed by the catalog id. Agents send the binary
+ * name ("claude") or a JSON blob `{cli, agent}`; the group is "claude-code".
+ * An object without either field is unknown, never the JSON itself. A name
+ * the catalog does not know stays as sent.
+ */
 function executorLabel(raw: string | null): string | null {
   if (!raw) return null;
+  let name = raw;
   try {
     const parsed = JSON.parse(raw) as { cli?: unknown; agent?: unknown };
-    if (typeof parsed.cli === "string" && parsed.cli) return parsed.cli;
-    if (typeof parsed.agent === "string" && parsed.agent) return parsed.agent;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      if (typeof parsed.cli === "string" && parsed.cli) name = parsed.cli;
+      else if (typeof parsed.agent === "string" && parsed.agent) name = parsed.agent;
+      else return null;
+    }
   } catch {
     // Older rows stored the executor label directly.
   }
-  return raw;
+  return resolveCatalogCli(name) ?? name;
 }
 
 /**
