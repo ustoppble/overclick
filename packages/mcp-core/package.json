@@ -1,6 +1,6 @@
 {
   "name": "@agent-board/mcp-core",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "Pure TypeScript contracts, card state machine, and harness recommendation for the agent board MCP surface.",
   "type": "module",
