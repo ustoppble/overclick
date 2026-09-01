@@ -112,11 +112,11 @@ import {
 import { renderBriefingMarkdown } from "./briefing";
 import { refreshProjectContext } from "../lib/project-context-refresh";
 import {
-  genericCodexModelRefusal,
   isExecutorPairConfigured,
   normalizeClaimCli,
   normalizeObservedExecutor,
   resolveClaimExecutor,
+  unregisteredClaimModelRefusal,
 } from "./executor-identity";
 import {
   decodeExecutor,
@@ -3121,8 +3121,26 @@ async function taskClaim(
     transcript?: TranscriptRefWire;
   },
 ) {
-  const refusal = genericCodexModelRefusal(input.executor?.model);
-  if (refusal) return err("INVALID_ARGUMENT", refusal);
+  const declaredModel = input.executor?.model?.trim();
+  if (declaredModel) {
+    const [claimWs] = await db
+      .select({ executors: workspace.executors })
+      .from(workspace)
+      .where(eq(workspace.id, ctx.workspaceId))
+      .limit(1);
+    if (!claimWs) {
+      return err(
+        "NOT_FOUND",
+        "The workspace for this token no longer exists. Generate a new token in the board Settings.",
+      );
+    }
+    const refusal = unregisteredClaimModelRefusal(
+      input.executor?.cli,
+      declaredModel,
+      claimWs.executors,
+    );
+    if (refusal) return err("INVALID_ARGUMENT", refusal);
+  }
 
   const claimed = await db.transaction(async (tx) => {
     const found = await findTask(tx, ctx.workspaceId, input.task_id, true);
