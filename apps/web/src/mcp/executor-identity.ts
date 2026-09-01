@@ -121,10 +121,7 @@ export function isExecutorPairConfigured(
 
 /**
  * True when the claim's cli resolves to an executor the workspace already
- * has at least one model registered under. A cli the board has never heard
- * of yet (or configured with zero models) has no catalog to validate
- * against, so it stays on the old learn-from-claims path (recordSeenExecutor)
- * instead of being blocked before the board can ever discover it.
+ * has at least one model registered under.
  */
 function isKnownClaimCli(
   cli: string | null | undefined,
@@ -139,17 +136,21 @@ function isKnownClaimCli(
 }
 
 /**
- * Refuses a task_claim whose declared model matches nothing the workspace
- * has configured, for a cli the board already knows. Replaces the OCL-148
- * blacklist: that list only ever caught the four family names it already
- * knew about ("", gpt-5, codex, claude, o4-mini — left alone here since
- * resolveClaimExecutor's harness/Codex fallback already handles them), so
- * grok-4 and grok-4-fast, never listed, landed as if they were registered
- * models the board actually ran, splitting Insights into twin rows.
+ * Refuses a task_claim whose declared model matches nothing the workspace has
+ * configured. Replaces the OCL-148 blacklist: that list only ever caught the
+ * four family names it already knew about ("", gpt-5, codex, claude, o4-mini
+ * — left alone here since resolveClaimExecutor's harness/Codex fallback
+ * already handles them), so grok-4 and grok-4-fast, never listed, landed as
+ * if they were registered models the board actually ran, splitting Insights
+ * into twin rows.
  *
- * A cli the workspace has not configured yet is left alone (see
- * isKnownClaimCli): blocking it here would foreclose ever discovering a
- * genuinely new connection through recordSeenExecutor.
+ * An unknown cli is refused too, and says so in its own words. The first cut
+ * let it through, reasoning that a cli with no catalog has nothing to
+ * validate against and would otherwise never be discoverable. But that keeps
+ * the guarantee at "for the CLIs you already use" — and a made-up model under
+ * a made-up cli is exactly as invented as one under a known cli, only harder
+ * to notice. The board learns a connection when a human registers it, once,
+ * not when an agent asserts it.
  */
 export function unregisteredClaimModelRefusal(
   cli: string | null | undefined,
@@ -158,13 +159,21 @@ export function unregisteredClaimModelRefusal(
 ): string | null {
   const raw = model?.trim();
   if (!raw || isGenericModelLabel(raw)) return null;
-  if (!isKnownClaimCli(cli, executors)) return null;
+
+  const registered = [...new Set((executors ?? []).flatMap((item) => item.models))];
+  // Nothing registered at all is a fresh board, not a bad claim: there is no
+  // catalog to pick from yet, and refusing every claim would leave no way in.
+  if (registered.length === 0) return null;
+
+  if (!isKnownClaimCli(cli, executors)) {
+    const clis = [...new Set((executors ?? []).map((item) => item.id))].join(", ");
+    return `CLI '${cli?.trim() || "(none)"}' is not among this workspace's configured executors. Registered: ${clis}. If this is a real connection, ask a human to register it with executors_update — the agent does not register executors on its own.`;
+  }
 
   const key = normalizeModelKey(raw);
-  const registered = [...new Set((executors ?? []).flatMap((item) => item.models))];
   if (registered.some((candidate) => normalizeModelKey(candidate) === key)) {
     return null;
   }
-  const list = registered.length > 0 ? registered.join(", ") : "no models registered yet";
+  const list = registered.join(", ");
   return `Model '${raw}' is not among this workspace's configured executors. Registered: ${list}. If '${raw}' is a real, legitimate model, ask a human to register it with executors_update — the agent does not register models on its own.`;
 }

@@ -78,8 +78,24 @@ describe("executor identity aliases", () => {
     expect(unregisteredClaimModelRefusal("codex", "", executors)).toBeNull();
   });
 
-  it("does not block a cli the workspace has not configured yet", () => {
-    expect(unregisteredClaimModelRefusal("some-new-cli", "whatever-1", executors)).toBeNull();
+  it("refuses a cli the workspace has not configured yet, and says which are", () => {
+    // The first cut let an unknown cli through so the board could discover it
+    // from the claim itself. That kept the guarantee at "for the CLIs you
+    // already use": a made-up model under a made-up cli is exactly as invented
+    // as one under a known cli, only harder to notice. A connection is learned
+    // when a human registers it, not when an agent asserts it.
+    const refusal = unregisteredClaimModelRefusal(
+      "some-new-cli",
+      "whatever-1",
+      executors,
+    );
+    expect(refusal).toContain("some-new-cli");
+    expect(refusal).toContain("executors_update");
+  });
+
+  it("lets anything through on a board with nothing registered yet", () => {
+    // No catalog to pick from is a fresh board, not a bad claim: refusing
+    // every claim would leave no way in at all.
     expect(unregisteredClaimModelRefusal("codex", "gpt-9-ultra", [])).toBeNull();
   });
 

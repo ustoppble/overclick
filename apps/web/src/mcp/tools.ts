@@ -3139,7 +3139,18 @@ async function taskClaim(
       declaredModel,
       claimWs.executors,
     );
-    if (refusal) return err("INVALID_ARGUMENT", refusal);
+    if (refusal) {
+      // Refused, but not forgotten: the pair still lands in seen_executors,
+      // which is what Settings offers as "add this executor?". Otherwise
+      // closing the catalog would also close the only path by which a real
+      // new connection becomes known — the agent would be told to ask a human
+      // to register it, and the human would have nothing to click.
+      await recordSeenExecutor(db, ctx.workspaceId, {
+        cli: input.executor?.cli,
+        model: declaredModel ?? undefined,
+      });
+      return err("INVALID_ARGUMENT", refusal);
+    }
   }
 
   const claimed = await db.transaction(async (tx) => {

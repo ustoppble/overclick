@@ -65,6 +65,11 @@ function createTestWorld(): Promise<TestWorld> {
         models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.3-codex-spark"],
       },
       { id: "grok", label: "Grok", enabled: true, models: ["grok-4.6", "grok-4.5"] },
+      // Recipe yields no tokens on disk: the honest-estimate path.
+      { id: "gemini-cli", label: "Gemini CLI", enabled: true, models: ["gemini-3-flash"] },
+      // Registered with no recipe at all: "no recipe" and "not registered"
+      // are different states, and only the first earns the generic recipe.
+      { id: "cursor", label: "Cursor", enabled: true, models: ["auto"] },
     ],
   });
 }
@@ -833,9 +838,12 @@ describe("MCP tool edge cases against a test db", () => {
     if (!created.ok) return;
     const card = TaskCreateOutputSchema.parse(created.value).task;
 
+    // Registered, and the board ships no recipe for it: "no recipe" and "not
+    // registered" are different states, and only the first one earns the
+    // generic recipe. An unregistered cli is refused before it gets here.
     const claimed = await invokeTool(world.db, ctx(), "task_claim", {
       task_id: card.id,
-      executor: { cli: "some-new-cli", model: "whatever-1" },
+      executor: { cli: "cursor", model: "auto" },
     });
     expect(claimed.ok).toBe(true);
     if (!claimed.ok) return;
@@ -1587,16 +1595,19 @@ describe("MCP tool edge cases against a test db", () => {
     });
     expect(await seen()).toEqual([]);
 
-    // A cli the workspace has not configured yet is learned, bumped on a
-    // second claim and on deliver: OCL-170 only gates a cli the board
-    // already has a catalog for (see "refuses a claim naming a model
-    // outside the workspace's catalog" above), so discovery of a genuinely
-    // new connection still goes through recordSeenExecutor.
+    // A cli the workspace has not configured yet is REFUSED — and still
+    // learned. The refusal keeps the invented pair out of the attempt, where
+    // it would become a model line in Insights; recording it keeps the pair
+    // in seen_executors, which is what Settings offers as "add this
+    // executor?". Without both halves, closing the catalog would tell the
+    // agent to ask a human to register the connection and leave the human
+    // with nothing to click.
     const b = await mkCard("Unknown pair B");
-    await invokeTool(world.db, ctx(), "task_claim", {
+    const refused = await invokeTool(world.db, ctx(), "task_claim", {
       task_id: b.id,
       executor: { cli: "some-other-cli", model: "claude-future-model" },
     });
+    expect(refused.ok).toBe(false);
     let rows = await seen();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -1605,11 +1616,13 @@ describe("MCP tool edge cases against a test db", () => {
       count: 1,
     });
 
-    const submitted = await invokeTool(world.db, ctx(), "task_deliver", {
+    // The card was never claimed, so it is still open for whoever registers
+    // that executor and comes back.
+    const again = await invokeTool(world.db, ctx(), "task_claim", {
       task_id: b.id,
-      summary: "done",
+      executor: { cli: "some-other-cli", model: "claude-future-model" },
     });
-    expect(submitted.ok).toBe(true);
+    expect(again.ok).toBe(false);
     rows = await seen();
     expect(rows).toHaveLength(1);
     expect(rows[0]?.count).toBe(2);
@@ -1866,12 +1879,15 @@ describe("MCP tool edge cases against a test db", () => {
 
     const claimed = await invokeTool(world.db, ctx(), "task_claim", {
       task_id: card.id,
-      executor: { cli: "kimi-cli", model: "kimi-k2", session_id: "sess_swap" },
+      // Registered, and deliberately not what the card planned: divergence
+      // is about the plan versus what actually ran, and both sides have to be
+      // real executors — an unregistered one never gets this far (OCL-170).
+      executor: { cli: "grok", model: "grok-4.5", session_id: "sess_swap" },
     });
     expect(claimed.ok).toBe(true);
     if (!claimed.ok) return;
     const out = TaskClaimOutputSchema.parse(claimed.value);
-    expect(out.harness_divergence?.warning).toContain("kimi-k2");
+    expect(out.harness_divergence?.warning).toContain("grok-4-5");
 
     const entries = await world.db
       .select()
@@ -1881,7 +1897,7 @@ describe("MCP tool edge cases against a test db", () => {
     expect(swap).toBeTruthy();
     expect(swap?.body).toContain(`planned`);
     expect(swap?.body).toContain(card.harness?.model ?? "");
-    expect(swap?.body).toContain("actual kimi-cli · kimi-k2");
+    expect(swap?.body).toContain("actual grok · grok-4-5");
   });
 
   it("keeps the timeline clean when the executor matches the harness", async () => {
