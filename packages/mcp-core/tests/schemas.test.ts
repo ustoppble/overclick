@@ -860,6 +860,17 @@ describe("task_deliver usage and artifacts", () => {
     expect(updated.usage?.tokens_in).toBe(5000);
   });
 
+  it("keeps the reason the usage recipe prints next to estimated", () => {
+    const reason =
+      "The Grok transcript /missing/updates.jsonl is missing or unreadable. Estimate usage and send estimated: true.";
+    const delivered = TaskDeliverInputSchema.parse({
+      task_id: "OC-1",
+      summary: "transcript ausente",
+      usage: { tokens_in: 1000, tokens_out: 200, estimated: true, reason },
+    });
+    expect(delivered.usage?.reason).toBe(reason);
+  });
+
   it("accepts usage in segments, one per model that ran", () => {
     const delivered = TaskDeliverInputSchema.parse({
       task_id: "OC-1",

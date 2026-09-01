@@ -4303,6 +4303,47 @@ function resolveHarnessAgainstConfig(
   });
 }
 
+/** Where the shipped recipe looks for this CLI's session transcript. */
+function recipeTranscriptHint(cli: string): string {
+  switch (cli) {
+    case "grok":
+      return "~/.grok/sessions/<cwd>/<session>/updates.jsonl";
+    case "claude-code":
+      return "~/.claude/projects/<cwd-slug>/<session>.jsonl";
+    case "codex":
+      return "~/.codex/sessions/<date>/rollout-*.jsonl";
+    case "kimi":
+      return "the Kimi session directory indexed in ~/.kimi-code/session_index.jsonl";
+    default:
+      return "the transcript path the recipe prints";
+  }
+}
+
+/**
+ * A tokens_per_model recipe already measured the run. estimated: true is only
+ * allowed when the recipe itself could not read the transcript and printed
+ * a reason to send along.
+ */
+function estimatedUsageRecipeRefusal(recipe: {
+  cli: string;
+  label: string;
+  yields: string;
+  instructions: string;
+  command: string;
+}): Result<never> {
+  const path = recipeTranscriptHint(recipe.cli);
+  const body = [
+    `${recipe.label} (${recipe.cli}) yields ${recipe.yields}: exact tokens are on disk, so usage.estimated = true is refused unless you send the reason the recipe prints when it cannot read the transcript.`,
+    `Transcript: ${path}`,
+    "",
+    recipe.instructions,
+    recipe.command,
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+  return err("INVALID_ARGUMENT", body);
+}
+
 async function taskDeliver(
   db: McpDatabase,
   ctx: AuthContext,
@@ -4395,6 +4436,20 @@ async function taskDeliver(
           openAttempt.modelSource,
         )
       : {};
+    if (input.usage?.estimated === true) {
+      const recipes = await loadUsageRecipes(tx as RecipesDb, ctx.workspaceId);
+      const recipe = recipeForCli(
+        recipes,
+        claimExecutor.cli ??
+          found.row.claimedByExecutor ??
+          found.row.harness?.cli ??
+          null,
+      );
+      const reason = input.usage.reason?.trim() ?? "";
+      if (recipe?.yields === "tokens_per_model" && !reason) {
+        return estimatedUsageRecipeRefusal(recipe);
+      }
+    }
     const transcript = mergeTranscriptRef(
       readTranscriptRef(openAttempt?.transcript, {
         cli: claimExecutor.cli,

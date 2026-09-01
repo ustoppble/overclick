@@ -79,6 +79,8 @@ export type UsageReport = {
   duration_ms?: number;
   turns?: number;
   estimated?: boolean;
+  /** Why the executor estimated: the reason the usage recipe printed. */
+  reason?: string;
   /**
    * One entry per model that ran, so a conversation that switched model is
    * recorded truthfully. The flat counters above stay filled with what the

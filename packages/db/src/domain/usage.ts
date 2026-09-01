@@ -37,6 +37,7 @@ export type SegmentedUsage = FlatUsageTokens & {
   duration_ms?: number;
   turns?: number;
   estimated?: boolean;
+  reason?: string;
 };
 
 function counter(value: number | null | undefined): number {

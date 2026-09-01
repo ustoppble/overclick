@@ -235,10 +235,17 @@ export const UsageSchema = z.object({
   turns: z.number().int().nonnegative().optional(),
   /**
    * True when the numbers are the executor's estimate instead of exact
-   * telemetry. Estimates are welcome: the card labels them "estimated"
-   * rather than showing nothing.
+   * telemetry. Allowed when the CLI recipe yields no tokens, or when the
+   * recipe itself printed a reason that the transcript was missing. A CLI
+   * whose recipe yields tokens_per_model cannot send this flag alone.
    */
   estimated: z.boolean().optional(),
+  /**
+   * Why the numbers are estimated. Paste the `reason` the usage recipe
+   * prints when it cannot read the transcript; task_deliver stores it on
+   * the card. Required for estimated usage on a tokens_per_model CLI.
+   */
+  reason: z.string().optional(),
 });
 
 /**

@@ -1051,11 +1051,13 @@ export const TaskDeliverInputSchema = z.object({
   /** Mutations are compact by default; request the complete handoff explicitly. */
   return: WriteReturnSchema.optional(),
   /**
-   * Required by contract: report exact numbers when the harness exposes
-   * them, otherwise ESTIMATE tokens, turns and cost and set estimated: true.
-   * The schema still accepts a missing block so a delivery is never lost,
-   * but the response then carries usage_warning and the card shows
-   * "usage not reported". Duration is measured server-side regardless.
+   * Required by contract: report exact numbers when the CLI recipe yields
+   * tokens_per_model. estimated: true is refused for those CLIs unless
+   * usage.reason is the message the recipe prints when it cannot read the
+   * transcript. CLIs whose recipe yields no_tokens may estimate. The schema
+   * still accepts a missing block so a delivery is never lost, but the
+   * response then carries usage_warning and the card shows "usage not
+   * reported". Duration is measured server-side regardless.
    */
   usage: UsageSchema.optional(),
   /**
