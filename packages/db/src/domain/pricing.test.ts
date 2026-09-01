@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   areSegmentsPriced,
+  MODEL_KEY_ALIASES,
   assessAttemptCost,
   computeCostUsd,
   factoryModelPrices,
@@ -326,5 +327,30 @@ describe("cost of a run recorded in segments", () => {
     ).toBe(false);
     // No tokens anywhere: nothing to price, so nothing to claim as priced.
     expect(areSegmentsPriced([{ model: "opus-5" }], prices)).toBe(false);
+  });
+});
+
+/**
+ * The guard that keeps the model list honest after this mission (OCL-146 to
+ * OCL-156): an alias exists to send a spelling somewhere, so wherever it
+ * points must be a model the board can price. Without this, adding an alias
+ * to a key that has no price row silently moves tokens into a "no price"
+ * line, which is the shape of the bug the mission spent its time undoing.
+ */
+describe("every alias target is a model the board can price", () => {
+  it("resolves a price for the canonical key behind each alias", () => {
+    const prices = factoryModelPrices();
+    const unpriced = [...new Set(Object.values(MODEL_KEY_ALIASES))]
+      .filter((model) => findModelPrice(prices, model) == null)
+      .sort();
+    expect(unpriced).toEqual([]);
+  });
+
+  it("resolves a price for every alias spelling itself", () => {
+    const prices = factoryModelPrices();
+    const unpriced = Object.keys(MODEL_KEY_ALIASES)
+      .filter((spelling) => findModelPrice(prices, spelling) == null)
+      .sort();
+    expect(unpriced).toEqual([]);
   });
 });
