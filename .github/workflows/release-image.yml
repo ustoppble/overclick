@@ -56,3 +56,33 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # OCL-158: the Release is what the update check reads. `checkForUpdate` in
+  # apps/web/src/lib/updates.ts asks GitHub for the LATEST RELEASE and compares
+  # it against the running version — a published image alone is invisible to
+  # it. This step used to be a human remembering; on 2026-08-31 v0.3.2 and
+  # v0.3.3 both shipped images with no Release, and the hosted instance sat on
+  # v0.3.1 for two versions without ever showing a banner. It runs after the
+  # image so a Release never announces a version nobody can pull.
+  release:
+    needs: [publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: notes
+        # The body of the release commit is the changelog, written once by
+        # scripts/release.sh. `%b` is the body alone, without the subject.
+        run: |
+          {
+            echo 'body<<RELEASE_NOTES_EOF'
+            git log -1 --pretty=%b "${GITHUB_REF_NAME}"
+            echo 'RELEASE_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "OverClick ${GITHUB_REF_NAME#v}" \
+            --notes "${{ steps.notes.outputs.body }}"
