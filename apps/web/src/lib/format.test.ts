@@ -41,6 +41,14 @@ describe("formatTokens", () => {
     expect(formatTokens(950)).toBe("950");
     expect(formatTokens(0)).toBe("0");
   });
+
+  it("reaches the billion a long-running board actually gets to", () => {
+    expect(formatTokens(12_519_100_000)).toBe("12.5B");
+    expect(formatTokens(1_000_000_000)).toBe("1B");
+    // One token below the step still reads in millions, so the boundary is
+    // the billion itself and not a rounding artefact.
+    expect(formatTokens(999_999_999)).toBe("1000M");
+  });
 });
 
 describe("formatDuration", () => {

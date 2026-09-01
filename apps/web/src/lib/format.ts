@@ -34,9 +34,14 @@ export function formatMoneyOrNone(
   return value == null ? none : formatMoney(value, lang);
 }
 
-/** `175M` / `94.8M` / `12k` / `950`. The unit word, when there is room for
- *  one, is the call site's to spend. */
+/** `12.5B` / `175M` / `94.8M` / `12k` / `950`. The unit word, when there is
+ *  room for one, is the call site's to spend. The billion step exists because
+ *  a board that runs for a few months reaches it, and `12519.1M` makes the
+ *  reader count digits to find the order of magnitude. */
 export function formatTokens(n: number): string {
+  if (n >= 1_000_000_000) {
+    return `${(n / 1_000_000_000).toFixed(1).replace(".0", "")}B`;
+  }
   if (n >= 1_000_000) {
     return `${(n / 1_000_000).toFixed(1).replace(".0", "")}M`;
   }
