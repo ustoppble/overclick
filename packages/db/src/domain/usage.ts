@@ -44,26 +44,38 @@ function counter(value: number | null | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-/** The three buckets of one segment, with the two cache counters added up. */
+/**
+ * The four buckets of one segment. Read and write stay apart: they price
+ * differently on every provider that bills a cache write at all (Anthropic:
+ * 1.25x-2x input to write, 0.1x to read), so a bucket that merged them could
+ * never be priced correctly no matter what the price table said.
+ */
 export function segmentTokenCounts(segment: UsageSegment): {
   input: number;
   output: number;
-  cache: number;
+  cacheRead: number;
+  cacheWrite: number;
 } {
   return {
     input: counter(segment.input),
     output: counter(segment.output),
-    cache: counter(segment.cache_read) + counter(segment.cache_write),
+    cacheRead: counter(segment.cache_read),
+    cacheWrite: counter(segment.cache_write),
   };
 }
 
 /** Every token in one segment, whatever the bucket. */
 export function segmentTotalTokens(segment: UsageSegment): number {
   const tokens = segmentTokenCounts(segment);
-  return tokens.input + tokens.output + tokens.cache;
+  return tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
 }
 
-/** The flat counters a list of segments adds up to. */
+/**
+ * The flat counters a list of segments adds up to. `tokens_cache` merges read
+ * and write back into one number: it is the legacy display total, never the
+ * shape cost is computed from — that reads segments and prices each bucket
+ * apart.
+ */
 export function flattenUsageSegments(
   segments: readonly UsageSegment[],
 ): Required<FlatUsageTokens> {
@@ -74,7 +86,7 @@ export function flattenUsageSegments(
     const tokens = segmentTokenCounts(segment);
     tokensIn += tokens.input;
     tokensOut += tokens.output;
-    tokensCache += tokens.cache;
+    tokensCache += tokens.cacheRead + tokens.cacheWrite;
   }
   return {
     tokens_in: tokensIn,

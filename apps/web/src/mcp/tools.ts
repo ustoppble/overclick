@@ -4799,6 +4799,7 @@ async function harnessList(db: McpDatabase, ctx: AuthContext) {
       input_per_mtok: price.inputPerMtok,
       output_per_mtok: price.outputPerMtok,
       cache_per_mtok: price.cachePerMtok,
+      cache_write_per_mtok: price.cacheWritePerMtok,
       source: price.source,
       seeded_at: price.seededAt,
       updated_by: price.updatedBy,

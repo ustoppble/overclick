@@ -7,9 +7,9 @@ import {
   factoryModelPrices,
   findModelPrice,
   mergeCostSources,
+  MODEL_PRICES_CACHE_WRITE_SEEDED_AT,
   MODEL_PRICES_FAMILIES_SEEDED_AT,
   MODEL_PRICES_INVENTORY_SEEDED_AT,
-  MODEL_PRICES_SEEDED_AT,
   normalizeModelKey,
   resolveAttemptCost,
   resolveSegmentedCost,
@@ -17,8 +17,8 @@ import {
 } from "./pricing";
 
 const PRICES: ModelPrice[] = [
-  { model: "opus-5", label: "opus-5", inputPerMtok: 5, outputPerMtok: 25, cachePerMtok: 0.5 },
-  { model: "haiku-4-5", label: "haiku-4-5", inputPerMtok: 1, outputPerMtok: 5, cachePerMtok: 0.1 },
+  { model: "opus-5", label: "opus-5", inputPerMtok: 5, outputPerMtok: 25, cachePerMtok: 0.5, cacheWritePerMtok: 6.25 },
+  { model: "haiku-4-5", label: "haiku-4-5", inputPerMtok: 1, outputPerMtok: 5, cachePerMtok: 0.1, cacheWritePerMtok: 1.25 },
 ];
 
 describe("model key normalization", () => {
@@ -78,15 +78,32 @@ describe("price lookup", () => {
 });
 
 describe("cost arithmetic", () => {
-  it("prices input, output and cache per million tokens", () => {
+  it("prices input, output, cache read and cache write per million tokens", () => {
     const price = PRICES[0]!;
     expect(
-      computeCostUsd(price, { input: 1_000_000, output: 1_000_000, cache: 1_000_000 }),
-    ).toBe(30.5);
+      computeCostUsd(price, {
+        input: 1_000_000,
+        output: 1_000_000,
+        cacheRead: 1_000_000,
+        cacheWrite: 1_000_000,
+      }),
+    ).toBe(36.75);
   });
 
   it("rounds to the precision the column stores", () => {
     expect(computeCostUsd(PRICES[1]!, { input: 1 })).toBe(0.000001);
+  });
+
+  it("prices a cache write at a different rate than a cache read", () => {
+    // OCL-160: the two cache counters used to share one column, seeded at
+    // the read rate, so a write billed 12.5x too cheap. Same tokens, same
+    // price row, different bucket — the dollar answer must differ too.
+    const price = PRICES[0]!;
+    const readOnly = computeCostUsd(price, { cacheRead: 1_000_000 });
+    const writeOnly = computeCostUsd(price, { cacheWrite: 1_000_000 });
+    expect(readOnly).toBe(0.5);
+    expect(writeOnly).toBe(6.25);
+    expect(writeOnly).not.toBe(readOnly);
   });
 });
 
@@ -201,13 +218,22 @@ describe("seeded price list", () => {
       expect(row.inputPerMtok).toBeGreaterThanOrEqual(0);
       expect(row.outputPerMtok).toBeGreaterThanOrEqual(0);
     }
-    expect(rows.some((row) => row.seededAt === MODEL_PRICES_SEEDED_AT)).toBe(true);
+    // OCL-160 reread every Claude and GPT-5.6+ row against the public list to
+    // add its cache-write price, which moved them off the original 2026-08-16
+    // stamp onto today's; MODEL_PRICES_SEEDED_AT stays exported as the record
+    // of that first batch even though no row wears it anymore.
     expect(
       rows.some((row) => row.seededAt === MODEL_PRICES_FAMILIES_SEEDED_AT),
     ).toBe(true);
     expect(
       rows.some((row) => row.seededAt === MODEL_PRICES_INVENTORY_SEEDED_AT),
     ).toBe(true);
+    expect(
+      rows.some((row) => row.seededAt === MODEL_PRICES_CACHE_WRITE_SEEDED_AT),
+    ).toBe(true);
+    for (const row of rows) {
+      expect(row.cacheWritePerMtok).toBeGreaterThanOrEqual(0);
+    }
   });
 
   it("covers the model families the CLI catalog actually offers", () => {
@@ -248,7 +274,8 @@ describe("seeded price list", () => {
     expect(findModelPrice(rows, "muse-spark-1.2")).toBeNull();
     // Not models: the board never received a name, a synthetic row, or
     // "gpt-5" — a name agents typed on claim. Local Codex rollouts never
-    // wrote it; gpt-daybreak-blue-latest did, and has its own price.
+    // wrote it; gpt-daybreak-blue-latest did, and prices as the gpt-5.6-sol
+    // row it is an alias for (OCL-160).
     expect(findModelPrice(rows, "__unknown__")).toBeNull();
     expect(findModelPrice(rows, "<synthetic>")).toBeNull();
     expect(findModelPrice(rows, "gpt-5")).toBeNull();
@@ -278,8 +305,8 @@ describe("seeded price list", () => {
 
 describe("cost of a run recorded in segments", () => {
   const prices = [
-    { model: "sonnet-5", label: "sonnet-5", inputPerMtok: 3, outputPerMtok: 15, cachePerMtok: 0.3 },
-    { model: "opus-5", label: "opus-5", inputPerMtok: 5, outputPerMtok: 25, cachePerMtok: 0.5 },
+    { model: "sonnet-5", label: "sonnet-5", inputPerMtok: 3, outputPerMtok: 15, cachePerMtok: 0.3, cacheWritePerMtok: 3.75 },
+    { model: "opus-5", label: "opus-5", inputPerMtok: 5, outputPerMtok: 25, cachePerMtok: 0.5, cacheWritePerMtok: 6.25 },
   ];
 
   it("prices every model at its own rate instead of the run at one", () => {

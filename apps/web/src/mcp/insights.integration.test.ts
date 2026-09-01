@@ -394,6 +394,7 @@ describe("insights_query answers what the Insights page answers", () => {
       inputPerMtok: "6",
       outputPerMtok: "30",
       cachePerMtok: "0.6",
+      cacheWritePerMtok: "7.5",
       seededAt: null,
       updatedBy: "owner@local.test",
     });

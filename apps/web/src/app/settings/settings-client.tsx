@@ -75,6 +75,7 @@ type PriceRow = {
   input: string;
   output: string;
   cache: string;
+  cacheWrite: string;
   source: "seed" | "custom";
   seededAt: string | null;
   updatedBy: string | null;
@@ -332,6 +333,7 @@ export function SettingsClient({
       input: String(p.inputPerMtok),
       output: String(p.outputPerMtok),
       cache: String(p.cachePerMtok),
+      cacheWrite: String(p.cacheWritePerMtok),
       source: p.source,
       seededAt: p.seededAt,
       updatedBy: p.updatedBy,
@@ -357,6 +359,7 @@ export function SettingsClient({
               input: "0",
               output: "0",
               cache: "0",
+              cacheWrite: "0",
               source: "custom",
               seededAt: null,
               updatedBy: null,
@@ -388,6 +391,7 @@ export function SettingsClient({
           inputPerMtok: Number(row.input),
           outputPerMtok: Number(row.output),
           cachePerMtok: Number(row.cache),
+          cacheWritePerMtok: Number(row.cacheWrite),
         })),
       );
       if (!r.ok) setErr(r.error);
@@ -732,6 +736,7 @@ export function SettingsClient({
                 <th>{t.settings.thPriceInput}</th>
                 <th>{t.settings.thPriceOutput}</th>
                 <th>{t.settings.thPriceCache}</th>
+                <th>{t.settings.thPriceCacheWrite}</th>
                 <th>{t.settings.thPriceOrigin}</th>
               </tr>
             </thead>
@@ -743,7 +748,7 @@ export function SettingsClient({
                 const ranHere = unpricedRanModels.includes(row.label);
                 const stillEmpty =
                   ranHere &&
-                  [row.input, row.output, row.cache].every(
+                  [row.input, row.output, row.cache, row.cacheWrite].every(
                     (value) => Number(value) === 0,
                   );
                 return (
@@ -761,6 +766,7 @@ export function SettingsClient({
                       ["input", t.settings.thPriceInput],
                       ["output", t.settings.thPriceOutput],
                       ["cache", t.settings.thPriceCache],
+                      ["cacheWrite", t.settings.thPriceCacheWrite],
                     ] as const
                   ).map(([field, heading]) => (
                     <td key={field} data-label={heading}>

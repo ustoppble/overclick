@@ -47,7 +47,7 @@ describe("usage segments", () => {
     expect(segments[0]?.model).toBeNull();
   });
 
-  it("adds both cache counters into one bucket", () => {
+  it("keeps a cache read and a cache write apart, since they price apart", () => {
     expect(
       segmentTokenCounts({
         model: "opus-5",
@@ -56,7 +56,7 @@ describe("usage segments", () => {
         cache_read: 4,
         cache_write: 8,
       }),
-    ).toEqual({ input: 1, output: 2, cache: 12 });
+    ).toEqual({ input: 1, output: 2, cacheRead: 4, cacheWrite: 8 });
     expect(segmentTotalTokens({ model: "opus-5", input: 1, cache_write: 8 })).toBe(9);
   });
 
