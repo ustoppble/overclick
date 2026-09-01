@@ -1140,10 +1140,14 @@ export function computeInsights(
       if (!card.unpricedModels.includes(model)) card.unpricedModels.push(model);
     }
     // Every model the card ran, in the order it ran them: the footer reads
-    // "sonnet-5 to opus-5" off this list.
+    // "sonnet-5 to opus-5" off this list. Canonical, like every other place a
+    // model is named — this list was the last one still showing the raw
+    // spelling the CLI happened to send, so the chart said `opus-5` while the
+    // card beside it said `opus-5[1m]` for the same run.
     for (const segment of segments) {
-      if (segment.model && !card.models.includes(segment.model)) {
-        card.models.push(segment.model);
+      const model = modelGroupLabel(segment.model);
+      if (model && !card.models.includes(model)) {
+        card.models.push(model);
       }
     }
     if (a.model && a.modelSource) {

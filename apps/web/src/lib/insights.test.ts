@@ -1135,3 +1135,27 @@ describe("model groups with no consumption", () => {
     expect(result.totals.suspect).toBe(1);
   });
 });
+
+/**
+ * The card table was the last place still printing the spelling the CLI
+ * happened to send: the chart said `opus-5` while the card beside it said
+ * `opus-5[1m]` for the very same run, and the two looked like different
+ * models to whoever was reading.
+ */
+describe("the model chain on a card is canonical", () => {
+  it("names the model the way every other view names it", () => {
+    const result = computeInsights(
+      [
+        attempt({
+          model: "opus-5[1m]",
+          usageSegments: [
+            { model: "claude-opus-5", input: 100 },
+            { model: "opus-5[1m]", output: 50 },
+          ],
+        }),
+      ],
+      [],
+    );
+    expect(result.perCard[0]?.models).toEqual(["opus-5"]);
+  });
+});
