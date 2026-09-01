@@ -18,13 +18,11 @@ const POLL_MS = 2000;
 /**
  * The Update button, and the honest version of what it can do.
  *
- * Hosted compose builds the app from source, so a pull is a no-op: the panel
- * never offers the click there, and shows `./deploy/deploy.sh` instead
- * (OCL-157). Quickstart declares an image, and with the optional updater
- * profile running the button asks it to pull that image and recreate the app,
- * then follows the run to its result. The app is recreated in the middle of
- * that run, so the progress is read from the volume both containers share and
- * survives the restart that kills this page's own server.
+ * With the optional updater profile running, the button asks it to pull the
+ * new image and recreate the app, then follows the run to its result. The app
+ * is recreated in the middle of that run, so the progress is read from the
+ * volume both containers share and survives the restart that kills this page's
+ * own server.
  *
  * Without the sidecar there is nothing on this machine allowed to restart a
  * container, so the panel says so and shows the one command that changes it,
@@ -44,7 +42,6 @@ export function UpdatePanel({
   initialState,
   lastUpdate,
   lang,
-  offerSidecarUpdate,
 }: {
   version: string;
   runtime: Runtime;
@@ -55,12 +52,6 @@ export function UpdatePanel({
   /** What the last update did, whoever started it. Null until one runs. */
   lastUpdate: AutoUpdateRecord | null;
   lang: string;
-  /**
-   * False on hosted: a pull of a build-from-source service is a no-op, so
-   * the panel shows the real command instead of a button that would lie
-   * (OCL-157). Quickstart keeps the button.
-   */
-  offerSidecarUpdate: boolean;
 }) {
   const t = dict(lang);
   const [state, setState] = useState(initialState);
@@ -254,11 +245,6 @@ export function UpdatePanel({
           <div className="policy-note" style={{ borderTop: 0, paddingTop: 8 }}>
             {t.updates.sourceRestart}
           </div>
-        </>
-      ) : !offerSidecarUpdate ? (
-        <>
-          <p className="upd-state">{t.updates.hostedPullIsNoop}</p>
-          {commandRow(manualCommand)}
         </>
       ) : state.running ? (
         <>

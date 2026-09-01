@@ -50,7 +50,7 @@ import {
 } from "../../lib/update-commands";
 import { scheduledUpdateCheck } from "../../lib/update-scheduler";
 import { scheduledProjectContextRefresh } from "../../lib/project-context-scheduler";
-import { readUpdaterState, sidecarCanUpdate } from "../../lib/updates";
+import { readUpdaterState } from "../../lib/updates";
 import { decodeExecutor, parseComoConfirmo } from "../../mcp/map";
 import type {
   BoardCard,
@@ -706,11 +706,8 @@ export default async function HomePage() {
   // In automatic it also starts the update here, without holding the render.
   const release = await scheduledUpdateCheck(ws);
   scheduledProjectContextRefresh(db(), ws.id);
-  // Only a live sidecar on a compose file that actually pulls an image makes
-  // the banner's button do anything (OCL-157). Read it just when there is a
-  // banner to draw.
-  const deployMode = detectDeployMode();
-  const offerSidecarUpdate = sidecarCanUpdate(deployMode);
+  // Only a live sidecar makes the banner's button do anything. Read it just
+  // when there is a banner to draw.
   const updater = release ? await readUpdaterState() : null;
   const rows = await loadTasks(projects.map((item) => item.id));
   // Same rule as the Insights page: no money layer, no price table to read.
@@ -761,13 +758,12 @@ export default async function HomePage() {
           version={release.version}
           changelog={release.changelog}
           url={release.url}
-          helper={offerSidecarUpdate && (updater?.running ?? false)}
+          helper={updater?.running ?? false}
           runtime={detectRuntime()}
           lang={ws.language}
-          manualCommand={updateCommand(deployMode)}
-          enableCommand={updaterEnableCommand(deployMode)}
+          manualCommand={updateCommand(detectDeployMode())}
+          enableCommand={updaterEnableCommand(detectDeployMode())}
           sourceCommand={SOURCE_UPDATE_COMMAND}
-          offerSidecarUpdate={offerSidecarUpdate}
         />
       ) : null}
 

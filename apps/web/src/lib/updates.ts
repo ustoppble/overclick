@@ -2,7 +2,6 @@ import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import pkg from "../../package.json";
-import type { DeployMode } from "./deploy-mode";
 
 /** Version this instance is running, straight from the package manifest. */
 export const APP_VERSION: string = pkg.version;
@@ -83,20 +82,6 @@ export const STATUS_FILE = "update-status";
 export const TRIGGER_FILE = "update-requested";
 
 /**
- * Whether Settings may offer a one-click update.
- *
- * A fresh sidecar heartbeat only proves someone is listening, not that the
- * click does anything. Hosted compose builds `app` from source
- * (`build: context: ..`) with no `image:`, so `docker compose pull app` is
- * a no-op: the click reports success and the instance stays on the old
- * version (OCL-157). Quickstart declares `image:`, so pull replaces the
- * running container and the button is honest.
- */
-export function sidecarCanUpdate(mode: DeployMode): boolean {
-  return mode === "quickstart";
-}
-
-/**
  * How stale a heartbeat may be before the sidecar counts as gone. The loop
  * writes every 5 seconds, so this tolerates a few missed beats without
  * calling a container that died five minutes ago "running".
@@ -156,7 +141,7 @@ export function parseUpdateStatus(raw: string): UpdateStatus | null {
 }
 
 export type UpdaterState = {
-  /** True when the sidecar's heartbeat is fresh. Not permission to offer a click: see `sidecarCanUpdate`. */
+  /** True when the sidecar's heartbeat is fresh: the button can pull. */
   running: boolean;
   /** Last heartbeat, so a stopped sidecar can say when it was last alive. */
   lastSeenAt: string | null;

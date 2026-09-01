@@ -134,7 +134,6 @@ export function SettingsClient({
   enableCommand,
   manualCommand,
   sourceCommand,
-  offerSidecarUpdate,
 }: {
   host: string;
   origin: string;
@@ -177,8 +176,6 @@ export function SettingsClient({
   enableCommand: string;
   manualCommand: string;
   sourceCommand: string;
-  /** False on hosted: pull of a build-from-source service is a no-op (OCL-157). */
-  offerSidecarUpdate: boolean;
 }) {
   const t = dict(lang);
   const dateLocale = lang === "pt-BR" ? "pt-BR" : "en-US";
@@ -1163,7 +1160,6 @@ export function SettingsClient({
             initialState={updater}
             lastUpdate={updateLog}
             lang={lang}
-            offerSidecarUpdate={offerSidecarUpdate}
           />
         </div>
       </div>

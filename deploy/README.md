@@ -75,17 +75,22 @@ enabled, `deploy/docker-compose.traefik.yml`. If the listing contains a root
 compose file, stop and remove that legacy project before retrying; the deploy
 script refuses to guess which project is safe to change.
 
-## Updating a hosted instance
+## One-click update from the UI
 
-Settings does not offer a one-click Update button here (OCL-157). The `app`
-service is built from the checkout (`build: context: ..`) with no `image:`,
-so `docker compose pull app` is a no-op: the click would report success and
-leave the instance on the old version. The path is the same command this
-directory already documents:
+Off by default; a signed-in owner turns it on from Settings → Updates, or a
+human runs it directly:
 
 ```bash
-./deploy/deploy.sh
+docker compose -p overclick -f deploy/docker-compose.cloud.yml --profile updater up -d
 ```
+
+It watches for the Update button in the board, then runs `./deploy/deploy.sh`
+itself, from inside the sidecar container, over the checkout and the docker
+socket. It takes the same `/tmp/overclick-deploy.lock` flock a human running
+`./deploy/deploy.sh` on the host takes, so the two can never interleave: one
+waits its turn. Progress and any failure detail land in the board's Settings
+page. It needs the docker socket, which is root on the host — that is the
+whole reason it stays behind the `updater` profile instead of running always.
 
 ## Releasing a new version
 

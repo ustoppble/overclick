@@ -28,7 +28,7 @@ import {
   updateCommand,
   updaterEnableCommand,
 } from "../../lib/update-commands";
-import { APP_VERSION, readUpdaterState, sidecarCanUpdate } from "../../lib/updates";
+import { APP_VERSION, readUpdaterState } from "../../lib/updates";
 import { SettingsClient } from "./settings-client";
 import {
   isExecutorPairConfigured,
@@ -230,10 +230,7 @@ export default async function SettingsPage({
   // Hosted vs quickstart (OCL-73): picks the command that matches the compose
   // project this instance actually runs under, so a hosted instance is never
   // shown the quickstart's raw docker compose command.
-  // OCL-157: hosted also must not offer the sidecar click. Heartbeat only
-  // proves someone is listening; pull of a build-from-source service is a no-op.
   const deployMode = detectDeployMode();
-  const offerSidecarUpdate = sidecarCanUpdate(deployMode);
 
   // Pairs observed on real connections that the config still does not cover.
   const seenSuggestions = normalizedSeen
@@ -283,7 +280,6 @@ export default async function SettingsPage({
         enableCommand={updaterEnableCommand(deployMode)}
         manualCommand={updateCommand(deployMode)}
         sourceCommand={SOURCE_UPDATE_COMMAND}
-        offerSidecarUpdate={offerSidecarUpdate}
         seenSuggestions={seenSuggestions}
         cardapio={cardapioRows}
         prices={prices}
