@@ -35,3 +35,48 @@ describe("usage claim window guard", () => {
     expect(MAX_OUTPUT_TOKENS_PER_SECOND).toBe(2_000);
   });
 });
+
+/**
+ * OCL-161. The ceiling is about work the machine had to do, and a cache read
+ * is not that: it is a prefix that already exists being handed back. Counting
+ * reads put the 50k ceiling at the 91st percentile of real runs and marked
+ * 29% of the board suspect.
+ */
+describe("the window ignores cache reads", () => {
+  const MINUTE = 60_000;
+
+  it("clears a run that only read a large cache", () => {
+    const check = checkUsageWindow(
+      {
+        segments: [
+          { model: "opus-5", input: 20_000, output: 10_000, cache_read: 5_000_000 },
+        ],
+      },
+      MINUTE,
+    );
+    expect(check.suspect).toBe(false);
+  });
+
+  it("still catches the same volume as real input", () => {
+    const check = checkUsageWindow(
+      { segments: [{ model: "opus-5", input: 5_000_000 }] },
+      MINUTE,
+    );
+    expect(check.suspect).toBe(true);
+  });
+
+  it("still catches a cache the run had to build", () => {
+    const check = checkUsageWindow(
+      { segments: [{ model: "opus-5", cache_write: 5_000_000 }] },
+      MINUTE,
+    );
+    expect(check.suspect).toBe(true);
+  });
+
+  it("keeps the old reading when there are no segments", () => {
+    // The flat contract merges reads and writes into tokens_cache, so there is
+    // no honest way to tell which half it was: the old behaviour stands.
+    const check = checkUsageWindow({ tokens_cache: 5_000_000 }, MINUTE);
+    expect(check.suspect).toBe(true);
+  });
+});
