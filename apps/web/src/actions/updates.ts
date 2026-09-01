@@ -9,6 +9,7 @@ import type { ActionResult } from "../lib/action-result";
 import { toRecord } from "../lib/auto-update";
 import { getSession } from "../lib/cookies";
 import { db } from "../lib/db";
+import { detectDeployMode } from "../lib/deploy-mode";
 import { detectRuntime } from "../lib/runtime";
 import type { SourceUpdateReport } from "../lib/source-update";
 import {
@@ -18,6 +19,7 @@ import {
 } from "../lib/source-update-host";
 import {
   readUpdaterState,
+  sidecarCanUpdate,
   STATUS_FILE,
   TRIGGER_FILE,
   updateHelperDir,
@@ -57,10 +59,14 @@ export type TriggerUpdateResult =
  * Asks the optional compose updater profile to pull the new image and
  * recreate the app. Reports triggered: false when no sidecar is running, so
  * the UI shows the command that enables it instead of pretending to work.
+ * Hosted is the same refusal: pull of a build-from-source service is a no-op
+ * (OCL-157), so a click must never write the trigger.
  */
 export async function triggerUpdateAction(): Promise<TriggerUpdateResult> {
   const session = await getSession();
   if (!session) return { ok: false, error: "Session expired. Sign in again." };
+
+  if (!sidecarCanUpdate(detectDeployMode())) return { ok: true, triggered: false };
 
   const dir = updateHelperDir();
   if (!dir) return { ok: true, triggered: false };

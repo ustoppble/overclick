@@ -626,6 +626,8 @@ const en = {
       "This install is not a git checkout, so there is nothing to pull. Update it the way you deployed it.",
     updaterDetected:
       "Updater sidecar running. The button below pulls the new image and recreates the app.",
+    hostedPullIsNoop:
+      "A one-click pull does nothing here: the app is built from source, not pulled from a registry. Update it on the server with:",
     updaterAbsent:
       "No updater sidecar running, so nothing here can restart a container. Turn it on with:",
     socketNote:
@@ -1220,6 +1222,8 @@ const ptBR: Dict = {
       "Esta instalação não é um checkout do git, então não há o que baixar. Atualize do jeito que você fez o deploy.",
     updaterDetected:
       "Sidecar de atualização rodando. O botão abaixo baixa a nova imagem e recria o app.",
+    hostedPullIsNoop:
+      "Um pull de um clique não faz nada aqui: o app é construído do fonte, não baixado de um registro. Atualize no servidor com:",
     updaterAbsent:
       "Nenhum sidecar de atualização rodando, então nada aqui consegue reiniciar um container. Ligue com:",
     socketNote:

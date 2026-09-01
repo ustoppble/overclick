@@ -22,6 +22,9 @@ services:
     networks: [overclick]
 
   app:
+    # OCL-157: no `image:` — this service is built from the checkout.
+    # `docker compose pull app` does nothing, which is why Settings never
+    # offers the one-click button here. The path is ./deploy/deploy.sh.
     build:
       context: ..
       dockerfile: Dockerfile
@@ -54,23 +57,18 @@ services:
       - "127.0.0.1:${OVERCLICK_PORT:-3100}:3000"
     networks: [overclick]
 
-  # One-click updater for the hosted deploy (OCL-73). Off by default; enable
-  # with:
+  # Optional sidecar left from OCL-73. Settings no longer offers a click
+  # against it (OCL-157): a pull of this build-only `app` service is a no-op,
+  # so the honest path is always ./deploy/deploy.sh. The profile stays for a
+  # sidecar already running; it is not advertised. Enable only by hand:
   #   docker compose -p overclick -f deploy/docker-compose.cloud.yml --profile updater up -d
   #
-  # On trigger it runs the exact same ./deploy/deploy.sh a human would run by
-  # hand, from inside this container, over the checkout mounted at /workspace
-  # and the docker socket: same git pull, same build, same health probe, same
-  # legacy-orphan and compose-project guards. It takes the same
-  # /tmp/overclick-deploy.lock flock deploy.sh takes (OCL-43) — host /tmp is
-  # bind-mounted straight over the container's own, so it is literally the
-  # same lock file — so whichever of the two gets there first, a human running
-  # deploy.sh on the host or this sidecar answering the UI button, blocks the
-  # other out instead of letting two deploys interleave.
-  #
-  # It needs the docker socket, which is root on the host, which is why it
-  # stays behind an explicit profile. Without it Settings shows the command
-  # that enables it and the one (./deploy/deploy.sh) that updates by hand.
+  # On trigger it runs ./deploy/deploy.sh from inside this container, over
+  # the checkout mounted at /workspace and the docker socket: same git pull,
+  # same build, same health probe, same legacy-orphan and compose-project
+  # guards. It takes the same /tmp/overclick-deploy.lock flock deploy.sh
+  # takes (OCL-43) — host /tmp is bind-mounted straight over the container's
+  # own, so it is literally the same lock file.
   updater:
     image: docker:27-cli
     restart: unless-stopped

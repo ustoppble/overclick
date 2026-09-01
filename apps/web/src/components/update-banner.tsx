@@ -15,6 +15,7 @@ export function UpdateBanner({
   manualCommand,
   enableCommand,
   sourceCommand,
+  offerSidecarUpdate,
 }: {
   version: string;
   changelog: string;
@@ -28,6 +29,8 @@ export function UpdateBanner({
   manualCommand: string;
   enableCommand: string;
   sourceCommand: string;
+  /** False on hosted: a pull would lie, so the banner shows the real command (OCL-157). */
+  offerSidecarUpdate: boolean;
 }) {
   const t = dict(lang);
   const [pending, start] = useTransition();
@@ -78,10 +81,18 @@ export function UpdateBanner({
         <button className="btn-ghost oc-tappable" onClick={() => setHidden(true)}>
           {t.updates.dismiss}
         </button>
-        <button className="btn-new oc-tappable" disabled={pending || requested} onClick={onUpdate}>
-          {t.updates.updateBtn}
-        </button>
+        {offerSidecarUpdate ? (
+          <button className="btn-new oc-tappable" disabled={pending || requested} onClick={onUpdate}>
+            {t.updates.updateBtn}
+          </button>
+        ) : null}
       </div>
+      {offerSidecarUpdate ? null : (
+        <div className="ub-cmd">
+          <span>{t.updates.hostedPullIsNoop}</span>
+          <code>{manualCommand}</code>
+        </div>
+      )}
       {notes && showNotes ? <pre className="ub-notes">{notes.slice(0, 800)}</pre> : null}
       {requested ? <p className="wok">{t.updates.updateRequested}</p> : null}
       {showCmd ? (
