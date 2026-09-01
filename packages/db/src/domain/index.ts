@@ -39,6 +39,7 @@ export {
   mergeCostSources,
   MODEL_KEY_ALIASES,
   MODEL_PRICES_FAMILIES_SEEDED_AT,
+  MODEL_PRICES_INVENTORY_SEEDED_AT,
   MODEL_PRICES_SEEDED_AT,
   normalizeModelKey,
   resolveAttemptCost,
