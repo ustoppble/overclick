@@ -5,6 +5,7 @@ import {
   isHeartbeatFresh,
   isNewer,
   parseUpdateStatus,
+  sidecarCanUpdate,
 } from "./updates";
 
 describe("update version comparison", () => {
@@ -38,6 +39,16 @@ describe("update version comparison", () => {
 
   it("reads the running version from the package manifest", () => {
     expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+/);
+  });
+});
+
+describe("whether a click on Update actually updates this instance (OCL-157)", () => {
+  it("does not offer the click on hosted: pull of a build-from-source service is a no-op", () => {
+    expect(sidecarCanUpdate("hosted")).toBe(false);
+  });
+
+  it("keeps the button on quickstart, where the service has an image to pull", () => {
+    expect(sidecarCanUpdate("quickstart")).toBe(true);
   });
 });
 

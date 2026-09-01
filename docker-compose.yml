@@ -21,6 +21,9 @@ services:
     restart: unless-stopped
 
   app:
+    # OCL-157: `image:` is what makes `docker compose pull app` (and the
+    # Settings Update button) actually replace the running container. The
+    # hosted compose file has no image key on purpose: pull there is a no-op.
     image: ghcr.io/ustoppble/overclick:latest
     build: .
     depends_on:
