@@ -68,6 +68,10 @@ import {
 } from "@agent-board/mcp-core";
 import { createHash } from "node:crypto";
 import {
+  canonicalTranscriptModel,
+  identityFromTranscript,
+} from "./transcript-model";
+import {
   and,
   asc,
   count,
@@ -288,7 +292,7 @@ function measuredModelIdentity(
   const models: string[] = [];
   for (const segment of segments ?? []) {
     if (!segment.model) continue;
-    const model = normalizeModelKey(segment.model);
+    const model = canonicalTranscriptModel(segment.model);
     if (model && !models.includes(model)) models.push(model);
   }
   const model = models.at(-1);
@@ -4069,7 +4073,9 @@ async function applyUsageToLatestAttempt(
     segments: assessment.normalizedSegments,
   };
   const measured = measuredModelIdentity(storedUsage.segments);
-  const claimedModel = attempt.model ? normalizeModelKey(attempt.model) : null;
+  const claimedModel = attempt.model
+    ? canonicalTranscriptModel(attempt.model)
+    : null;
   const modelChanged = Boolean(measured && measured.model !== claimedModel);
 
   await db
@@ -4464,6 +4470,23 @@ async function taskDeliver(
           }
         : null,
     );
+    // The file the card points at is the proof of which model ran. When it
+    // is reachable and names one, that name wins over the claim and over
+    // whatever the agent typed into usage.segments. Unreadable path → keep
+    // the declared model (or the existing segments correction).
+    const fromTranscript = identityFromTranscript({
+      cli: transcript?.cli,
+      path: transcript?.path,
+    });
+    const usageForCost =
+      fromTranscript && !fromTranscript.chain.includes(" to ") && usage?.segments?.length
+        ? {
+            ...usage,
+            segments: usage.segments.map((segment) =>
+              segment.model ? { ...segment, model: fromTranscript.model } : segment,
+            ),
+          }
+        : usage;
 
     const finishedAt = new Date();
     const serverDurationMs = openAttempt
@@ -4472,30 +4495,30 @@ async function taskDeliver(
     const sessionId =
       transcript?.sessionId ?? openAttempt?.sessionId ?? claimExecutor.session_id ?? null;
     const usageGuard =
-      openAttempt && usage
+      openAttempt && usageForCost
         ? await usageGuardForAttempt(
             tx,
             ctx.workspaceId,
             openAttempt.id,
             openAttempt.taskId,
             sessionId,
-            usage,
+            usageForCost,
             serverDurationMs,
           )
         : { suspect: false, reason: null };
     const prices = await loadModelPrices(tx as PricesDb, ctx.workspaceId);
-    const assessment = assessAttemptCost(usage?.segments ?? [], prices, {
-      reportedCostUsd: usage?.cost_usd,
-      usageEstimated: usage?.estimated,
+    const assessment = assessAttemptCost(usageForCost?.segments ?? [], prices, {
+      reportedCostUsd: usageForCost?.cost_usd,
+      usageEstimated: usageForCost?.estimated,
       usageSuspect: usageGuard.suspect,
-      tokensReported: tokenCountersReported(usage),
+      tokensReported: tokenCountersReported(usageForCost),
     });
-    const storedUsage: UsageReport | undefined = usage
-      ? { ...usage, segments: assessment.normalizedSegments }
+    const storedUsage: UsageReport | undefined = usageForCost
+      ? { ...usageForCost, segments: assessment.normalizedSegments }
       : undefined;
-    const measured = measuredModelIdentity(storedUsage?.segments);
+    const measured = fromTranscript ?? measuredModelIdentity(storedUsage?.segments);
     const claimedModel = openAttempt?.model
-      ? normalizeModelKey(openAttempt.model)
+      ? canonicalTranscriptModel(openAttempt.model)
       : null;
     const modelChanged = Boolean(measured && measured.model !== claimedModel);
 

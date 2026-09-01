@@ -27,6 +27,9 @@ import {
   workspace,
 } from "@agent-board/db";
 import { eq } from "drizzle-orm";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   closeTestWorld,
@@ -262,6 +265,117 @@ describe("MCP tool edge cases against a test db", () => {
       kind: "executor_swap",
       body: "declarou gpt-5-6-sol, mediu gpt-5-6-terra",
     });
+  });
+
+  it("corrects grok-4.6 to grok-4-5 when the transcript recorded grok-4.5-build", async () => {
+    world = await createTestWorld();
+    const dir = mkdtempSync(path.join(tmpdir(), "ocl-162-"));
+    const file = path.join(dir, "updates.jsonl");
+    writeFileSync(
+      file,
+      `${JSON.stringify({
+        timestamp: 2_000_000_000,
+        method: "_x.ai/session/update",
+        params: {
+          update: {
+            sessionUpdate: "turn_completed",
+            usage: {
+              modelUsage: {
+                "grok-4.5-build": { inputTokens: 80, outputTokens: 20 },
+              },
+            },
+          },
+        },
+      })}\n`,
+    );
+    try {
+      const [card] = await world.db
+        .insert(task)
+        .values({
+          projectId: world.projectId,
+          shortId: "OC-162a",
+          title: "Grok transcript wins",
+          harness: { cli: "grok", model: "grok-4.6", effort: "high" },
+        })
+        .returning();
+      if (!card) throw new Error("failed to create card");
+
+      await invokeTool(world.db, ctx(), "task_claim", {
+        task_id: card.id,
+        executor: { cli: "grok", model: "grok-4.6", session_id: "sess-162a" },
+      });
+      const delivered = await invokeTool(world.db, ctx(), "task_deliver", {
+        task_id: card.id,
+        summary: "transcript 4.5",
+        usage: {
+          segments: [{ model: "grok-4.6", input: 80, output: 20 }],
+        },
+        transcript: { cli: "grok", path: file },
+      });
+      expect(delivered.ok).toBe(true);
+
+      const [attempt] = await world.db
+        .select()
+        .from(executionAttempt)
+        .where(eq(executionAttempt.taskId, card.id));
+      expect(attempt).toMatchObject({
+        model: "grok-4-5",
+        modelSource: "measured",
+      });
+      expect(attempt?.usageSegments?.[0]?.model).toBe("grok-4-5");
+      const [note] = await world.db
+        .select()
+        .from(taskComment)
+        .where(eq(taskComment.taskId, card.id));
+      expect(note).toMatchObject({
+        kind: "executor_swap",
+        body: "declarou grok-4-6, mediu grok-4-5",
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the declared grok model when the transcript is unreachable", async () => {
+    world = await createTestWorld();
+    const [card] = await world.db
+      .insert(task)
+      .values({
+        projectId: world.projectId,
+        shortId: "OC-162b",
+        title: "Grok transcript missing",
+        harness: { cli: "grok", model: "grok-4.6", effort: "high" },
+      })
+      .returning();
+    if (!card) throw new Error("failed to create card");
+
+    await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "grok", model: "grok-4.6", session_id: "sess-162b" },
+    });
+    const delivered = await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: card.id,
+      summary: "no transcript",
+      usage: {
+        segments: [{ model: "grok-4.6", input: 80, output: 20 }],
+      },
+      transcript: { cli: "grok", path: "/no/such/ocl-162-updates.jsonl" },
+    });
+    expect(delivered.ok).toBe(true);
+
+    const [attempt] = await world.db
+      .select()
+      .from(executionAttempt)
+      .where(eq(executionAttempt.taskId, card.id));
+    expect(attempt).toMatchObject({
+      model: "grok-4-6",
+      modelSource: "declared",
+    });
+    const notes = await world.db
+      .select()
+      .from(taskComment)
+      .where(eq(taskComment.taskId, card.id));
+    expect(notes).toEqual([]);
   });
 
   it("atomically supersedes a running card, preserves usage and inherits its contract", async () => {
