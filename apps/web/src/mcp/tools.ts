@@ -81,6 +81,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lt,
   ne,
   or,
   sql,
@@ -4046,12 +4047,10 @@ async function applyUsageToLatestAttempt(
       sessionId: executor.session_id,
     })?.sessionId ??
     null;
+  const attemptFinishedAt = attempt.finishedAt ?? new Date();
   const measuredWindowMs =
     attempt.serverDurationMs ??
-    Math.max(
-      0,
-      (attempt.finishedAt ?? new Date()).getTime() - attempt.startedAt.getTime(),
-    );
+    Math.max(0, attemptFinishedAt.getTime() - attempt.startedAt.getTime());
   const guard = await usageGuardForAttempt(
     db,
     workspaceId,
@@ -4060,6 +4059,8 @@ async function applyUsageToLatestAttempt(
     sessionId,
     merged,
     measuredWindowMs,
+    attempt.startedAt,
+    attemptFinishedAt,
   );
   const prices = await loadModelPrices(db as PricesDb, workspaceId);
   const assessment = assessAttemptCost(merged.segments ?? [], prices, {
@@ -4504,6 +4505,8 @@ async function taskDeliver(
             sessionId,
             usageForCost,
             serverDurationMs,
+            openAttempt.startedAt,
+            finishedAt,
           )
         : { suspect: false, reason: null };
     const prices = await loadModelPrices(tx as PricesDb, ctx.workspaceId);
@@ -5577,7 +5580,11 @@ async function latestUsageGuardForTask(
 /**
  * The server-side guard is advisory, never a delivery veto. It compares the
  * report with the server's claim window and checks whether this exact executor
- * session had already completed a different card in the same workspace.
+ * session had already completed a different card in the same workspace whose
+ * execution window overlaps this one. The usage recipe counts from each
+ * card's own claimed_at, so two cards worked back to back by the same session
+ * measure disjoint stretches of work and cannot double-count anything —
+ * only an actual overlap can.
  */
 async function usageGuardForAttempt(
   db: McpDatabase,
@@ -5587,14 +5594,17 @@ async function usageGuardForAttempt(
   sessionId: string | null,
   usage: UsageReport,
   measuredWindowMs: number,
+  startedAt: Date,
+  finishedAt: Date,
 ): Promise<UsageGuard> {
   const window = checkUsageWindow(usage, measuredWindowMs);
   let reusedSession = false;
+  let overlappingAttemptIds: string[] = [];
   let orchestrationReuse = false;
 
   if (sessionId) {
-    const [previous] = await db
-      .select({ id: executionAttempt.id })
+    const overlapping = await db
+      .select({ id: executionAttempt.id, usageSuspectReason: executionAttempt.usageSuspectReason })
       .from(executionAttempt)
       .innerJoin(task, eq(executionAttempt.taskId, task.id))
       .innerJoin(project, eq(task.projectId, project.id))
@@ -5605,10 +5615,30 @@ async function usageGuardForAttempt(
           isNotNull(executionAttempt.finishedAt),
           ne(executionAttempt.id, attemptId),
           ne(executionAttempt.taskId, taskId),
+          lt(executionAttempt.startedAt, finishedAt),
+          gt(executionAttempt.finishedAt, startedAt),
         ),
-      )
-      .limit(1);
-    reusedSession = Boolean(previous);
+      );
+    reusedSession = overlapping.length > 0;
+    overlappingAttemptIds = overlapping.map((row) => row.id);
+
+    if (reusedSession) {
+      // The other side of the overlap never got a chance to know about this
+      // attempt when it was delivered, so it is marked retroactively here —
+      // the same both-sides pattern markOrchestrationSessionReuse uses below.
+      for (const other of overlapping) {
+        await db
+          .update(executionAttempt)
+          .set({
+            usageSuspect: true,
+            usageSuspectReason: addUsageSuspectReason(
+              other.usageSuspectReason,
+              `session_reused:${attemptId}`,
+            ),
+          })
+          .where(eq(executionAttempt.id, other.id));
+      }
+    }
 
     const orchestrationAttempts = await db
       .select({
@@ -5647,7 +5677,9 @@ async function usageGuardForAttempt(
 
   const reasons = [
     ...(window.suspect ? ["claim_window_exceeded"] : []),
-    ...(reusedSession ? ["session_reused"] : []),
+    ...(reusedSession
+      ? [`session_reused:${overlappingAttemptIds.join("+")}`]
+      : []),
     ...(orchestrationReuse ? ["session_reused_orchestration"] : []),
   ];
   return {

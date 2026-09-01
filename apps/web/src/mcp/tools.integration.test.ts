@@ -1304,7 +1304,7 @@ describe("MCP tool edge cases against a test db", () => {
     });
   });
 
-  it("keeps plausible usage trusted and flags a second card reusing its session", async () => {
+  it("keeps plausible usage trusted when the same session delivers two cards back to back", async () => {
     world = await createTestWorld();
     const createCard = async (title: string) => {
       const created = await invokeTool(world.db, ctx(), "task_create", {
@@ -1321,8 +1321,11 @@ describe("MCP tool edge cases against a test db", () => {
     };
     const first = await createCard("Primeiro card da sessao");
     const second = await createCard("Segundo card da sessao");
-    const sessionId = "reused-executor-session";
+    const sessionId = "sequential-executor-session";
 
+    // Sequential: the second card is claimed only after the first is
+    // delivered, so the two execution windows never touch — reusing the
+    // session here cannot double-count anything.
     await invokeTool(world.db, ctx(), "task_claim", {
       task_id: first.id,
       executor: { cli: "codex", model: "gpt-5.6-sol", session_id: sessionId },
@@ -1350,15 +1353,89 @@ describe("MCP tool edge cases against a test db", () => {
     expect(secondDelivery.ok).toBe(true);
     if (!secondDelivery.ok) return;
     const out = TaskDeliverOutputSchema.parse(secondDelivery.value);
-    expect(out.usage_suspect).toBe(true);
-    expect(out.usage_suspect_reason).toContain("session_reused");
+    expect(out.usage_suspect).toBe(false);
+    expect(out.usage_suspect_reason).toBeNull();
 
     const [stored] = await world.db
       .select()
       .from(executionAttempt)
       .where(eq(executionAttempt.taskId, second.id));
     expect(stored?.sessionId).toBe(sessionId);
-    expect(stored?.usageSuspect).toBe(true);
+    expect(stored?.usageSuspect).toBe(false);
+  });
+
+  it("flags both cards when the same session's execution windows overlap", async () => {
+    world = await createTestWorld();
+    const createCard = async (title: string) => {
+      const created = await invokeTool(world.db, ctx(), "task_create", {
+        project_id: world.projectId,
+        title,
+        type: "feature",
+        o_que: "Um card pequeno.",
+        por_que: "Cobrir a guarda de sessao.",
+        como_confirmo: [{ step: "entrega", expected: "usage classificado" }],
+        origem,
+      });
+      if (!created.ok) throw new Error(created.error.message);
+      return TaskCreateOutputSchema.parse(created.value).task;
+    };
+    const first = await createCard("Primeiro card da sessao sobreposta");
+    const second = await createCard("Segundo card da sessao sobreposta");
+    const sessionId = "overlapping-executor-session";
+
+    // Overlapping: the second card is claimed before the first is
+    // delivered, so both cards' windows cover a shared stretch of time.
+    await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: first.id,
+      executor: { cli: "codex", model: "gpt-5.6-sol", session_id: sessionId },
+    });
+    await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: second.id,
+      executor: { cli: "codex", model: "gpt-5.6-sol", session_id: sessionId },
+    });
+
+    const firstDelivery = await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: first.id,
+      summary: "primeiro",
+      usage: { tokens_in: 2_000, tokens_out: 500, duration_ms: 60_000, turns: 3 },
+    });
+    expect(firstDelivery.ok).toBe(true);
+    if (!firstDelivery.ok) return;
+    // The first delivery has no earlier finished attempt to overlap with yet.
+    expect(TaskDeliverOutputSchema.parse(firstDelivery.value).usage_suspect).toBe(
+      false,
+    );
+
+    const secondDelivery = await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: second.id,
+      summary: "segundo",
+      usage: { tokens_in: 1_000, tokens_out: 200, duration_ms: 60_000, turns: 2 },
+    });
+    expect(secondDelivery.ok).toBe(true);
+    if (!secondDelivery.ok) return;
+    const out = TaskDeliverOutputSchema.parse(secondDelivery.value);
+    expect(out.usage_suspect).toBe(true);
+    expect(out.usage_suspect_reason).toContain("session_reused");
+
+    const [firstAttempt] = await world.db
+      .select()
+      .from(executionAttempt)
+      .where(eq(executionAttempt.taskId, first.id));
+    const [secondAttempt] = await world.db
+      .select()
+      .from(executionAttempt)
+      .where(eq(executionAttempt.taskId, second.id));
+
+    // Both sides of the overlap are marked, and each names the attempt it
+    // overlapped with.
+    expect(firstAttempt?.usageSuspect).toBe(true);
+    expect(firstAttempt?.usageSuspectReason).toContain(
+      `session_reused:${secondAttempt?.id}`,
+    );
+    expect(secondAttempt?.usageSuspect).toBe(true);
+    expect(secondAttempt?.usageSuspectReason).toContain(
+      `session_reused:${firstAttempt?.id}`,
+    );
   });
 
   it("persists how_to_verify on the handoff and restarts validation ticks", async () => {
