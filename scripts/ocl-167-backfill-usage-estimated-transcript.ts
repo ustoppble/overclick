@@ -29,12 +29,25 @@
  * to run." No CLI-specific parsing is reimplemented — only which lines ever
  * reach the recipe changes.
  *
+ * OCL-168 — a first pass at this script (see resolveTranscriptPath) took
+ * transcript.path too literally: a plain existsSync() missed a literal `~`
+ * the recipe never has to expand, a session that ran under one pane's own
+ * throwaway CLI home instead of the durable one, and Grok's own debug log
+ * (events.jsonl) recorded where its usage-bearing sibling (updates.jsonl)
+ * belonged. Confirmed by walking the 105 attempts left as estimates on
+ * 2026-09-01: 70 exist on this machine under one of those shapes. Every
+ * fallback there only ever resolves to a path that already exists — it
+ * tries the other places the same session is known to live, never invents
+ * one.
+ *
  * An attempt whose recipe still comes back with estimated: false is
- * rewritten. A transcript that will not open, a CLI whose recipe cannot
- * yield tokens_per_model at all (gemini-cli, generic), or a readable file
- * with no entry inside [started_at, finished_at] all fall through untouched
- * and land in the "not recovered" list with the exact reason — never a guess
- * standing in for a measurement.
+ * rewritten. A transcript that will not open under any known path shape, a
+ * CLI whose recipe cannot yield tokens_per_model at all (gemini-cli,
+ * generic), a path on another machine (Windows-style, never resolvable
+ * here), or a readable file with no entry inside [started_at, finished_at]
+ * all fall through untouched and land in the "not recovered" list with the
+ * exact reason — never a guess standing in for a measurement, and never one
+ * of those reasons quietly relabeled as another.
  *
  * This script never touches cost: usage_estimated flipping to false changes
  * what assessAttemptCost should answer, so run
@@ -49,7 +62,7 @@
 import { execFileSync, execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { bindRecipeSettings, factoryUsageRecipes, findUsageRecipe } from "../packages/db/src/domain/usage-recipe";
@@ -181,6 +194,94 @@ function executorCli(raw: string | null): string | null {
   }
 }
 
+function isWindowsPath(p: string): boolean {
+  return /^[a-zA-Z]:\\/.test(p) || p.startsWith("\\\\");
+}
+
+function expandHome(p: string): string {
+  if (p === "~") return homedir();
+  if (p.startsWith("~/")) return join(homedir(), p.slice(2));
+  return p;
+}
+
+/** Every claude-accounts/<id>/ home currently on this machine — Overclock
+ * gives each Claude account its own CLAUDE_CONFIG_DIR so concurrent panes
+ * never share a session cache, and a session's uuid.jsonl only ever lives
+ * under the one account that ran it. */
+function claudeAccountHomes(): string[] {
+  const root = join(homedir(), ".overclock-app", "claude-accounts");
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(root, entry.name));
+  } catch {
+    return [];
+  }
+}
+
+/** Confirmed by walking the 105 attempts OCL-167 left as estimates on
+ * 2026-09-01: 70 of them exist on this machine, four path shapes account for
+ * most of the ones the plain existsSync() check missed.
+ *   1. A literal `~` the recipe never expands (the recipe itself always
+ *      receives an absolute path; only this backfill's own existsSync ever
+ *      sees the shorthand).
+ *   2. A session that ran under one pane's own throwaway CLI home
+ *      (~/.overclock-app/pane-<id>-grok-home/) instead of the durable one —
+ *      that throwaway directory is gone once the pane closes, but Grok's own
+ *      session store keeps the same session id under the durable ~/.grok
+ *      home too.
+ *   3. Grok's transcript.path pointing at events.jsonl, its own debug log,
+ *      when the usage-bearing sibling in the same session directory is
+ *      updates.jsonl.
+ *   4. A Claude Code transcript recorded under the default ~/.claude/ home
+ *      when the session actually ran under one of the per-account homes
+ *      Overclock gives each Claude account (~/.overclock-app/claude-accounts/
+ *      <id>/), or vice versa — the session id is the same either way, only
+ *      the account home root differs.
+ * Every fallback here only ever returns a path that already exists — this
+ * never invents a file, it only tries the other places the same session is
+ * known to live. */
+function resolveTranscriptPath(
+  recipeCli: string,
+  rawPath: string,
+): { path: string } | { path: null; reason: "windows" | "missing" } {
+  if (isWindowsPath(rawPath)) return { path: null, reason: "windows" };
+
+  const expanded = expandHome(rawPath);
+  if (existsSync(expanded)) return { path: expanded };
+
+  const paneHome = expanded.match(/^(.*)\.overclock-app\/pane-[^/]+-home\/(sessions\/.*)$/);
+  if (paneHome && recipeCli === "grok") {
+    const canonical = join(paneHome[1], ".grok", paneHome[2]);
+    if (existsSync(canonical)) return { path: canonical };
+    if (canonical.endsWith("events.jsonl")) {
+      const swapped = canonical.replace(/events\.jsonl$/, "updates.jsonl");
+      if (existsSync(swapped)) return { path: swapped };
+    }
+  }
+
+  if (recipeCli === "grok" && expanded.endsWith("events.jsonl")) {
+    const swapped = expanded.replace(/events\.jsonl$/, "updates.jsonl");
+    if (existsSync(swapped)) return { path: swapped };
+  }
+
+  if (recipeCli === "claude-code") {
+    const claudeHomeMatch = expanded.match(/^.*\.claude\/(projects\/.*)$/);
+    const accountHomeMatch = expanded.match(/^.*\.overclock-app\/claude-accounts\/[^/]+\/(projects\/.*)$/);
+    const suffix = claudeHomeMatch?.[1] ?? accountHomeMatch?.[1];
+    if (suffix) {
+      const defaultHome = join(homedir(), ".claude", suffix);
+      if (existsSync(defaultHome)) return { path: defaultHome };
+      for (const accountHome of claudeAccountHomes()) {
+        const candidate = join(accountHome, suffix);
+        if (existsSync(candidate)) return { path: candidate };
+      }
+    }
+  }
+
+  return { path: null, reason: "missing" };
+}
+
 type Outcome =
   | { kind: "recovered"; segments: UsageSegment[]; turns: number }
   | { kind: "unrecovered"; reason: string };
@@ -287,11 +388,15 @@ function measure(attempt: AttemptRow): Outcome {
   }
   const originalPath = attempt.transcript?.path;
   if (!originalPath) return { kind: "unrecovered", reason: "transcript.path vazio" };
-  if (!existsSync(originalPath)) {
-    return { kind: "unrecovered", reason: `transcript ${originalPath} não existe nesta máquina` };
+  const resolved = resolveTranscriptPath(recipe.cli, originalPath);
+  if (resolved.path === null) {
+    if (resolved.reason === "windows") {
+      return { kind: "unrecovered", reason: `caminho de outra máquina (Windows): ${originalPath}` };
+    }
+    return { kind: "unrecovered", reason: `arquivo ausente: ${originalPath} não existe nesta máquina, em nenhum dos formatos conhecidos` };
   }
 
-  const { path: windowedPath, cleanup } = windowedTranscript(recipe.cli, attempt, originalPath);
+  const { path: windowedPath, cleanup } = windowedTranscript(recipe.cli, attempt, resolved.path);
   try {
     const settings: Record<string, string | null | undefined> = {
       claimed_at: new Date(attempt.started_at).toISOString(),
@@ -321,7 +426,10 @@ function measure(attempt: AttemptRow): Outcome {
     }
     const segments = payload.segments ?? [];
     if (segments.length === 0) {
-      return { kind: "unrecovered", reason: "receita não retornou nenhum segment" };
+      return {
+        kind: "unrecovered",
+        reason: `sem uso na janela: ${resolved.path} abriu, mas não tem nenhum turno completo entre started_at e finished_at`,
+      };
     }
     return { kind: "recovered", segments, turns: payload.turns ?? 0 };
   } finally {
