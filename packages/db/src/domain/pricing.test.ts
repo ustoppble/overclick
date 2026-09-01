@@ -7,6 +7,7 @@ import {
   findModelPrice,
   mergeCostSources,
   MODEL_PRICES_FAMILIES_SEEDED_AT,
+  MODEL_PRICES_INVENTORY_SEEDED_AT,
   MODEL_PRICES_SEEDED_AT,
   normalizeModelKey,
   resolveAttemptCost,
@@ -49,6 +50,17 @@ describe("model key normalization", () => {
     expect(normalizeModelKey("kimi")).toBe("k3");
     expect(normalizeModelKey("claude-fable-5")).toBe("fable-5");
     expect(normalizeModelKey("gpt-5-codex")).toBe("gpt-5-3-codex-spark");
+  });
+
+  it("collapses the four Kimi spellings onto k3", () => {
+    for (const name of ["k3", "kimi-for-coding", "kimi-code", "kimi-k3"]) {
+      expect(normalizeModelKey(name), name).toBe("k3");
+    }
+  });
+
+  it("treats grok-4-6-build as grok-4-6, not a separate model", () => {
+    expect(normalizeModelKey("grok-4-6-build")).toBe("grok-4-6");
+    expect(normalizeModelKey("grok-4.6-build")).toBe("grok-4-6");
   });
 });
 
@@ -192,6 +204,9 @@ describe("seeded price list", () => {
     expect(
       rows.some((row) => row.seededAt === MODEL_PRICES_FAMILIES_SEEDED_AT),
     ).toBe(true);
+    expect(
+      rows.some((row) => row.seededAt === MODEL_PRICES_INVENTORY_SEEDED_AT),
+    ).toBe(true);
   });
 
   it("covers the model families the CLI catalog actually offers", () => {
@@ -207,8 +222,18 @@ describe("seeded price list", () => {
       "3.5-flash",
       "kimi-code/k3",
       "kimi-for-coding",
+      "kimi-code",
+      "kimi-k3",
+      "kimi-k2",
+      "kimi-k2.5",
       "grok-4.6",
+      "grok-4-6-build",
+      "grok-4-fast",
       "grok-composer-2.5-fast",
+      "claude-sonnet-4-6",
+      "gpt-daybreak-blue-latest",
+      "gemini-3-7-flash-high",
+      "gemini-3.1-flash-image-preview",
     ]) {
       expect(priced(model), `${model} has no price`).toBe(true);
     }
@@ -220,6 +245,21 @@ describe("seeded price list", () => {
     // read as free work, so the row simply is not there.
     expect(findModelPrice(rows, "auto")).toBeNull();
     expect(findModelPrice(rows, "muse-spark-1.2")).toBeNull();
+    // Not models: the board never received a name, a synthetic row, or
+    // "gpt-5" — a name agents typed on claim. Local Codex rollouts never
+    // wrote it; gpt-daybreak-blue-latest did, and has its own price.
+    expect(findModelPrice(rows, "__unknown__")).toBeNull();
+    expect(findModelPrice(rows, "<synthetic>")).toBeNull();
+    expect(findModelPrice(rows, "gpt-5")).toBeNull();
+  });
+
+  it("prices the four Kimi spellings through the same k3 row", () => {
+    const rows = factoryModelPrices();
+    const k3 = findModelPrice(rows, "k3");
+    expect(k3?.model).toBe("k3");
+    for (const name of ["kimi-for-coding", "kimi-code", "kimi-k3"]) {
+      expect(findModelPrice(rows, name)?.model, name).toBe("k3");
+    }
   });
 
   it("adds GPT-5.3-Codex-Spark once it gets a published rate", () => {

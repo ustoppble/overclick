@@ -60,10 +60,22 @@ export const MODEL_KEY_ALIASES: Readonly<Record<string, string>> = {
   "claude-opus-5": "opus-5",
   "claude-fable-5": "fable-5",
   "claude-sonnet-5": "sonnet-5",
+  "claude-sonnet-4-6": "sonnet-4-6",
   "anthropic/claude-fable-5": "fable-5",
   kimi: "k3",
   "kimi-code/k3": "k3",
   "moonshot/k3": "k3",
+  // Same Kimi binary (~/.kimi-code): 155 sessions wrote "k3", 36 wrote
+  // "kimi-for-coding". kimi-code / kimi-k3 are the other two spellings
+  // of that same model on this board.
+  "kimi-for-coding": "k3",
+  "kimi-code": "k3",
+  "kimi-k3": "k3",
+  // Grok's own turn_completed writes usage.modelUsage["grok-4.6-build"].
+  "grok-4-6-build": "grok-4-6",
+  // Gemini keys in the seed drop the vendor prefix, same as Claude.
+  "gemini-3-7-flash-high": "3-7-flash-high",
+  "gemini-3-1-flash-image-preview": "3-1-flash-image-preview",
 };
 
 /**
@@ -78,6 +90,12 @@ export const MODEL_PRICES_SEEDED_AT = "2026-08-16";
  * a week old, and pretending otherwise is how a stale number hides.
  */
 export const MODEL_PRICES_FAMILIES_SEEDED_AT = "2026-08-17";
+
+/**
+ * The day the previously unpriced models on this board were read off the
+ * public lists. A third stamp so the original families stay dated 2026-08-17.
+ */
+export const MODEL_PRICES_INVENTORY_SEEDED_AT = "2026-09-01";
 
 /** Shorthand for a seeded row, so the table below reads as a table. */
 const at =
@@ -98,6 +116,7 @@ const at =
 
 const p0 = at(MODEL_PRICES_SEEDED_AT);
 const p1 = at(MODEL_PRICES_FAMILIES_SEEDED_AT);
+const p2 = at(MODEL_PRICES_INVENTORY_SEEDED_AT);
 
 /**
  * Public list prices, per million tokens, each row carrying the day it was
@@ -136,15 +155,35 @@ const SEED: SeedPrice[] = [
   p1("3-7-flash-high", 0.3, 2.5, 0.03),
   p1("3-7-flash-medium", 0.3, 2.5, 0.03),
   p1("3-7-flash-low", 0.3, 2.5, 0.03),
+  // Gemini 3.1 Flash Image (Nano Banana 2). Google publishes two output
+  // meters: $3/MTok text+thinking and $60/MTok image. This row uses the
+  // image-output rate because the model is an image generator; text-only
+  // output on the same id is cheaper and is not represented here.
+  p2("3-1-flash-image-preview", 0.5, 60, 0.05),
   // Kimi
   p1("k3", 0.6, 2.5, 0.06),
   p1("k3-256k", 1.2, 5, 0.12),
-  p1("kimi-for-coding", 0.6, 2.5, 0.06),
   p1("kimi-for-coding-highspeed", 1.2, 5, 0.12),
+  // Last published Moonshot USD list for the retired K2 / K2.5 ids this
+  // board still has attempts on. K2 series left the catalog 2026-05-25;
+  // K2.5 left 2026-08-31. Cache is the official cache-hit input rate.
+  p2("kimi-k2", 0.6, 2.5, 0.15),
+  p2("kimi-k2-5", 0.6, 3, 0.1),
   // Grok
   p1("grok-4-6", 3, 15, 0.75),
   p1("grok-4-5", 3, 15, 0.75),
   p1("grok-composer-2-5-fast", 1.5, 7.5, 0.375),
+  // grok-4-fast is gone from xAI's current models page (read 2026-09-01).
+  // Azure AI Foundry and Requesty still publish the last xAI per-million
+  // rate as $0.20 in / $0.50 out / $0.05 cache read.
+  p2("grok-4-fast", 0.2, 0.5, 0.05),
+  // Claude Sonnet 4.6, Anthropic public list 2026-09-01.
+  p2("sonnet-4-6", 3, 15, 0.3),
+  // Codex Daybreak Blue. 11 of 1350 local Codex rollouts named this
+  // model; none named "gpt-5". OpenAI's public API list currently bills
+  // the alias as gpt-5.6-sol: $4 in / $20 out / $0.40 cache (short context).
+  // Own key: it is a real Codex --model, not the generic gpt-5 agents type.
+  p2("gpt-daybreak-blue-latest", 4, 20, 0.4),
   // Free tiers. A published zero is a price, and it is not the same thing as
   // a model nobody priced: this row says the run really cost nothing.
   p1("deepseek-v4-flash-free", 0, 0, 0),

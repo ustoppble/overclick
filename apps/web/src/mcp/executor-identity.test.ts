@@ -54,14 +54,12 @@ describe("executor identity aliases", () => {
     expect(message).toContain("gpt-5.6-luna");
     expect(message).toContain("gpt-5.6-terra");
     expect(message).toContain("gpt-5.3-codex-spark");
-    expect(genericCodexModelRefusal("gpt-daybreak-blue-latest")).toContain(
-      "gpt-5.6-sol",
-    );
   });
 
   it("lets priced models and aliases through the generic Codex refusal", () => {
     expect(genericCodexModelRefusal("gpt-5.6-sol")).toBeNull();
     expect(genericCodexModelRefusal("gpt-5-codex")).toBeNull();
+    expect(genericCodexModelRefusal("gpt-daybreak-blue-latest")).toBeNull();
     expect(genericCodexModelRefusal("grok-4.6")).toBeNull();
     expect(genericCodexModelRefusal("claude-opus-5")).toBeNull();
     expect(genericCodexModelRefusal(undefined)).toBeNull();
