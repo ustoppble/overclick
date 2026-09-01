@@ -1123,7 +1123,7 @@ describe("model groups with no consumption", () => {
 
     expect(result.byModel).toHaveLength(1);
     expect(result.byModel[0]).toMatchObject({
-      label: "kimi-k3",
+      label: "k3",
       tokens: 4_000_000,
       attempts: 1,
       suspect: 1,
