@@ -1,8 +1,6 @@
 import {
-  factoryModelPrices,
-  findModelPrice,
-  MODEL_KEY_ALIASES,
   normalizeModelKey,
+  type ExecutorConfig,
   type Harness as DbHarness,
 } from "@agent-board/db";
 import { resolveCatalogCli } from "../lib/executors";
@@ -26,36 +24,7 @@ export type ResolvedClaimExecutor = ClaimExecutorInput & {
 /** The model Codex actually runs when its legacy labels carry no version. */
 export const DEFAULT_CODEX_MODEL = "gpt-5-6-sol";
 
-/** Exact Codex `--model` names listed when a generic family label is refused. */
-export const CODEX_EXACT_MODELS = [
-  "gpt-5.6-sol",
-  "gpt-5.6-luna",
-  "gpt-5.6-terra",
-  "gpt-5.3-codex-spark",
-] as const;
-
-/** Family labels Codex agents send instead of the exact `--model` flag. */
-const GENERIC_CODEX_MODELS = new Set(["gpt-5", "gpt-daybreak-blue-latest"]);
-
 const GENERIC_MODELS = new Set(["", "gpt-5", "codex", "claude", "o4-mini"]);
-
-/**
- * Error text when a claim declares a known generic Codex family instead of
- * the exact `--model`. Priced models and aliases pass: the refusal is only
- * for the names that historically landed unpriced.
- */
-export function genericCodexModelRefusal(
-  model: string | null | undefined,
-): string | null {
-  const raw = model?.trim();
-  if (!raw) return null;
-  const lowered = raw.toLowerCase();
-  if (MODEL_KEY_ALIASES[lowered] || findModelPrice(factoryModelPrices(), raw)) {
-    return null;
-  }
-  if (!GENERIC_CODEX_MODELS.has(lowered)) return null;
-  return `Codex must declare the exact model from --model, never ${lowered}. Accepted names: ${CODEX_EXACT_MODELS.join(", ")}.`;
-}
 
 /**
  * CLI names come from binaries and orchestrators, while the catalog uses one
@@ -148,4 +117,54 @@ export function isExecutorPairConfigured(
       (resolveCatalogCli(row.id) ?? normalizeClaimCli(row.id)) === resolvedCli &&
       row.models.some((candidate) => normalizeModelKey(candidate) === resolvedModel),
   );
+}
+
+/**
+ * True when the claim's cli resolves to an executor the workspace already
+ * has at least one model registered under. A cli the board has never heard
+ * of yet (or configured with zero models) has no catalog to validate
+ * against, so it stays on the old learn-from-claims path (recordSeenExecutor)
+ * instead of being blocked before the board can ever discover it.
+ */
+function isKnownClaimCli(
+  cli: string | null | undefined,
+  executors: readonly ExecutorConfig[] | undefined,
+): boolean {
+  const claimCli = normalizeClaimCli(cli ?? undefined);
+  if (!claimCli) return false;
+  const catalogCli = resolveCatalogCli(claimCli) ?? claimCli;
+  return (executors ?? []).some(
+    (item) => item.id.trim().toLowerCase() === catalogCli && item.models.length > 0,
+  );
+}
+
+/**
+ * Refuses a task_claim whose declared model matches nothing the workspace
+ * has configured, for a cli the board already knows. Replaces the OCL-148
+ * blacklist: that list only ever caught the four family names it already
+ * knew about ("", gpt-5, codex, claude, o4-mini — left alone here since
+ * resolveClaimExecutor's harness/Codex fallback already handles them), so
+ * grok-4 and grok-4-fast, never listed, landed as if they were registered
+ * models the board actually ran, splitting Insights into twin rows.
+ *
+ * A cli the workspace has not configured yet is left alone (see
+ * isKnownClaimCli): blocking it here would foreclose ever discovering a
+ * genuinely new connection through recordSeenExecutor.
+ */
+export function unregisteredClaimModelRefusal(
+  cli: string | null | undefined,
+  model: string | null | undefined,
+  executors: readonly ExecutorConfig[] | undefined,
+): string | null {
+  const raw = model?.trim();
+  if (!raw || isGenericModelLabel(raw)) return null;
+  if (!isKnownClaimCli(cli, executors)) return null;
+
+  const key = normalizeModelKey(raw);
+  const registered = [...new Set((executors ?? []).flatMap((item) => item.models))];
+  if (registered.some((candidate) => normalizeModelKey(candidate) === key)) {
+    return null;
+  }
+  const list = registered.length > 0 ? registered.join(", ") : "no models registered yet";
+  return `Model '${raw}' is not among this workspace's configured executors. Registered: ${list}. If '${raw}' is a real, legitimate model, ask a human to register it with executors_update — the agent does not register models on its own.`;
 }

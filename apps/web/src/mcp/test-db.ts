@@ -43,7 +43,7 @@ export type TestWorld = {
  * Wide enough that the shipped routing table resolves end to end, and still
  * carrying an older model so the tests that pin one keep meaning something.
  */
-const TEST_EXECUTORS: ExecutorConfig[] = [
+export const TEST_EXECUTORS: ExecutorConfig[] = [
   {
     id: "claude-code",
     label: "Claude Code",
@@ -70,7 +70,9 @@ export async function insertOrganization(
   return row.id;
 }
 
-export async function createTestWorld(): Promise<TestWorld> {
+export async function createTestWorld(options?: {
+  executors?: ExecutorConfig[];
+}): Promise<TestWorld> {
   const client = new PGlite();
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((name) => name.endsWith(".sql"))
@@ -89,7 +91,7 @@ export async function createTestWorld(): Promise<TestWorld> {
     .insert(workspace)
     .values({
       name: "OverClick Test",
-      executors: TEST_EXECUTORS,
+      executors: options?.executors ?? TEST_EXECUTORS,
     })
     .returning({ id: workspace.id });
   if (!ws) throw new Error("failed to insert workspace");

@@ -33,8 +33,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   closeTestWorld,
-  createTestWorld,
+  createTestWorld as createBaseTestWorld,
   insertOrganization,
+  TEST_EXECUTORS,
   type TestWorld,
 } from "./test-db";
 import { generateTokenSecret, hashToken } from "./token";
@@ -45,6 +46,28 @@ const origem = {
   session_id: "sess_torre",
   cli: "overclock",
 };
+
+// Many cards in this file are inserted with a raw codex/grok harness and
+// then claimed with a matching executor: since OCL-170 (unregisteredClaimModelRefusal)
+// only lets a claim through for a cli the workspace already has a catalog
+// for, those clis need real registered models here too. The narrower
+// codex-onboarding suite (executors.integration.test.ts) starts from the
+// plain TEST_EXECUTORS instead — it is testing the empty-to-configured
+// transition itself.
+function createTestWorld(): Promise<TestWorld> {
+  return createBaseTestWorld({
+    executors: [
+      ...TEST_EXECUTORS,
+      {
+        id: "codex",
+        label: "Codex",
+        enabled: true,
+        models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.3-codex-spark"],
+      },
+      { id: "grok", label: "Grok", enabled: true, models: ["grok-4.6", "grok-4.5"] },
+    ],
+  });
+}
 
 describe("MCP tool edge cases against a test db", () => {
   let world: TestWorld;
@@ -141,7 +164,7 @@ describe("MCP tool edge cases against a test db", () => {
     expect(out.task.harness?.model).toBe("opus-5");
   });
 
-  it("refuses a generic gpt-5 claim and names the exact Codex models", async () => {
+  it("uses the harness model when Codex claims with generic gpt-5", async () => {
     world = await createTestWorld();
     const [card] = await world.db
       .insert(task)
@@ -158,17 +181,54 @@ describe("MCP tool edge cases against a test db", () => {
       task_id: card.id,
       executor: { cli: "Codex CLI", model: "gpt-5" },
     });
+    expect(claimed.ok).toBe(true);
+    if (!claimed.ok) return;
+    expect(TaskClaimOutputSchema.parse(claimed.value).attempt.executor).toMatchObject({
+      cli: "codex",
+      model: "gpt-5-6-sol",
+      model_source: "harness",
+    });
+  });
+
+  it("refuses a claim naming a model outside the workspace's catalog (OCL-170)", async () => {
+    world = await createTestWorld();
+    const [card] = await world.db
+      .insert(task)
+      .values({
+        projectId: world.projectId,
+        shortId: "OC-170",
+        title: "Bogus Codex model",
+        harness: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+      })
+      .returning();
+    if (!card) throw new Error("failed to create card");
+
+    const claimed = await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "codex", model: "gpt-5.7" },
+    });
     expect(claimed.ok).toBe(false);
     if (claimed.ok) return;
     expect(claimed.error.code).toBe("INVALID_ARGUMENT");
+    expect(claimed.error.message).toContain("gpt-5.7");
     expect(claimed.error.message).toContain("gpt-5.6-sol");
-    expect(claimed.error.message).toContain("gpt-5.6-luna");
-    expect(claimed.error.message).toContain("gpt-5.6-terra");
-    expect(claimed.error.message).toContain("gpt-5.3-codex-spark");
+    expect(claimed.error.message).toContain("executors_update");
 
     const [fresh] = await world.db.select().from(task).where(eq(task.id, card.id));
     expect(fresh?.status).toBe("aberto");
     expect(fresh?.claimedByTokenId).toBeNull();
+
+    const registered = await invokeTool(world.db, { ...ctx(), canManage: true }, "executors_update", {
+      cli: "codex",
+      add_models: ["gpt-5.7"],
+    });
+    expect(registered.ok).toBe(true);
+
+    const retried = await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "codex", model: "gpt-5.7" },
+    });
+    expect(retried.ok).toBe(true);
   });
 
   it("claims normally when Codex declares gpt-5.6-sol", async () => {
@@ -395,7 +455,7 @@ describe("MCP tool edge cases against a test db", () => {
 
     await invokeTool(world.db, ctx(), "task_claim", {
       task_id: original.id,
-      executor: { cli: "codex", model: "spark" },
+      executor: { cli: "codex", model: "gpt-5.6-sol" },
     });
     const usage = await invokeTool(world.db, ctx(), "task_update", {
       task_id: original.id,
@@ -1527,16 +1587,20 @@ describe("MCP tool edge cases against a test db", () => {
     });
     expect(await seen()).toEqual([]);
 
-    // A genuinely unknown model is learned, bumped on a second claim and on deliver.
+    // A cli the workspace has not configured yet is learned, bumped on a
+    // second claim and on deliver: OCL-170 only gates a cli the board
+    // already has a catalog for (see "refuses a claim naming a model
+    // outside the workspace's catalog" above), so discovery of a genuinely
+    // new connection still goes through recordSeenExecutor.
     const b = await mkCard("Unknown pair B");
     await invokeTool(world.db, ctx(), "task_claim", {
       task_id: b.id,
-      executor: { cli: "claude", model: "claude-future-model" },
+      executor: { cli: "some-other-cli", model: "claude-future-model" },
     });
     let rows = await seen();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      cli: "claude-code",
+      cli: "some-other-cli",
       model: "future-model",
       count: 1,
     });
@@ -2861,6 +2925,8 @@ describe("MCP tool edge cases against a test db", () => {
   });
 });
 
+// Escalation here climbs into gpt-5.6-sol and needs it to stay unconfigured,
+// so this block uses the base world instead of the file's codex/grok wrapper.
 describe("a rejected delivery comes back one link down the chain", () => {
   let world: TestWorld;
 
@@ -2900,7 +2966,7 @@ describe("a rejected delivery comes back one link down the chain", () => {
   }
 
   it("climbs the chain once per rejected delivery and stops at the last link", async () => {
-    world = await createTestWorld();
+    world = await createBaseTestWorld();
     const card = await newCard("Card que volta");
 
     // bug ships as fable-5 → opus-5 → gpt-5.6-sol. Only the first two are on
@@ -2940,7 +3006,7 @@ describe("a rejected delivery comes back one link down the chain", () => {
   });
 
   it("does not escalate a pane that was merely abandoned", async () => {
-    world = await createTestWorld();
+    world = await createBaseTestWorld();
     const card = await newCard("Pane morto");
 
     await invokeTool(world.db, ctx(), "task_claim", { task_id: card.id });
@@ -2955,7 +3021,7 @@ describe("a rejected delivery comes back one link down the chain", () => {
   });
 
   it("leaves a hand-pinned harness where the human put it", async () => {
-    world = await createTestWorld();
+    world = await createBaseTestWorld();
     const card = await newCard("Fixado na mao");
     await invokeTool(world.db, ctx(), "task_update", {
       task_id: card.id,

@@ -139,7 +139,7 @@ describe("MCP end-to-end against a test db", () => {
           name: "task_claim",
           arguments: {
             task_id: created.task.id,
-            executor: { cli: "claude-code", model: "haiku-4", session_id: "sess_exec" },
+            executor: { cli: "claude-code", model: "opus-5", session_id: "sess_exec" },
           },
         }),
         TaskClaimOutputSchema,
@@ -147,7 +147,7 @@ describe("MCP end-to-end against a test db", () => {
       expect(claimed.task.status).toBe("em_execucao");
       expect(claimed.attempt.task_id).toBe(created.task.id);
       expect(claimed.attempt.finished_at).toBeNull();
-      expect(claimed.harness_divergence?.warning).toMatch(/haiku-4/i);
+      expect(claimed.harness_divergence?.warning).toMatch(/opus-5/i);
       expect(claimed.briefing_markdown).toContain("## Convenção");
 
       const handoff = parseTool(
