@@ -354,7 +354,7 @@ describe("MCP tool edge cases against a test db", () => {
     await invokeTool(world.db, ctx(), "task_deliver", {
       task_id: card.id,
       summary: "done",
-      usage: { tokens_in: 1, estimated: true },
+      usage: { tokens_in: 1, tokens_out: 1 },
     });
 
     const refused = await invokeTool(world.db, ctx(), "task_create", {
@@ -470,7 +470,10 @@ describe("MCP tool edge cases against a test db", () => {
     if (!created.ok) return;
     const card = TaskCreateOutputSchema.parse(created.value).task;
 
-    await invokeTool(world.db, ctx(), "task_claim", { task_id: card.id });
+    await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "gemini", model: "gemini-3-flash" },
+    });
     const submitted = await invokeTool(world.db, ctx(), "task_deliver", {
       task_id: card.id,
       summary: "estimado",
@@ -494,6 +497,114 @@ describe("MCP tool edge cases against a test db", () => {
       .from(executionAttempt)
       .where(eq(executionAttempt.taskId, card.id));
     expect(attempt?.usageEstimated).toBe(true);
+  });
+
+  it("refuses a grok estimate without the recipe reason and names the transcript path", async () => {
+    world = await createTestWorld();
+    const created = await invokeTool(world.db, ctx(), "task_create", {
+      project_id: world.projectId,
+      title: "Grok sem medir",
+      type: "feature",
+      o_que: "Um card.",
+      por_que: "A receita do grok mede tokens exatos.",
+      como_confirmo: [{ step: "existe", expected: "ok" }],
+      origem,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const card = TaskCreateOutputSchema.parse(created.value).task;
+
+    await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "grok", model: "grok-4.6", session_id: "sess-grok" },
+    });
+    const refused = await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: card.id,
+      summary: "chute",
+      usage: { tokens_in: 1000, tokens_out: 200, estimated: true },
+    });
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.error.code).toBe("INVALID_ARGUMENT");
+    expect(refused.error.message).toContain("grok");
+    expect(refused.error.message).toContain("tokens_per_model");
+    expect(refused.error.message).toContain(
+      "~/.grok/sessions/<cwd>/<session>/updates.jsonl",
+    );
+
+    const [fresh] = await world.db.select().from(task).where(eq(task.id, card.id));
+    expect(fresh?.status).toBe("em_execucao");
+  });
+
+  it("accepts a gemini estimate because that recipe yields no tokens", async () => {
+    world = await createTestWorld();
+    const created = await invokeTool(world.db, ctx(), "task_create", {
+      project_id: world.projectId,
+      title: "Gemini estima",
+      type: "feature",
+      o_que: "Um card.",
+      por_que: "A receita do gemini-cli não tem tokens no disco.",
+      como_confirmo: [{ step: "existe", expected: "ok" }],
+      origem,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const card = TaskCreateOutputSchema.parse(created.value).task;
+
+    await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "gemini", model: "gemini-3-flash" },
+    });
+    const submitted = await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: card.id,
+      summary: "estimado",
+      usage: { tokens_in: 1000, tokens_out: 200, estimated: true },
+    });
+    expect(submitted.ok).toBe(true);
+    if (!submitted.ok) return;
+    const delivered = TaskDeliverOutputSchema.parse(submitted.value);
+    expect(delivered.task.status).toBe("feito");
+    expect(delivered.handoff.usage?.estimated).toBe(true);
+  });
+
+  it("accepts a grok estimate when the recipe reason is attached and stores it", async () => {
+    world = await createTestWorld();
+    const created = await invokeTool(world.db, ctx(), "task_create", {
+      project_id: world.projectId,
+      title: "Grok sem transcript",
+      type: "feature",
+      o_que: "Um card.",
+      por_que: "A receita não achou o transcript.",
+      como_confirmo: [{ step: "existe", expected: "ok" }],
+      origem,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const card = TaskCreateOutputSchema.parse(created.value).task;
+
+    await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "grok", model: "grok-4.6", session_id: "sess-grok" },
+    });
+    const reason =
+      "The Grok transcript /missing/grok/updates.jsonl is missing or unreadable. Estimate usage and send estimated: true.";
+    const submitted = await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: card.id,
+      summary: "transcript ausente",
+      usage: { tokens_in: 1000, tokens_out: 200, estimated: true, reason },
+    });
+    expect(submitted.ok).toBe(true);
+    if (!submitted.ok) return;
+    const delivered = TaskDeliverOutputSchema.parse(submitted.value);
+    expect(delivered.task.status).toBe("feito");
+    expect(delivered.handoff.usage?.estimated).toBe(true);
+    expect(delivered.handoff.usage?.reason).toBe(reason);
+
+    const [row] = await world.db
+      .select()
+      .from(handoff)
+      .where(eq(handoff.taskId, card.id));
+    expect((row?.usage as { reason?: string } | null)?.reason).toBe(reason);
   });
 
   it("ends the claim briefing with the recipe for the claiming CLI", async () => {
@@ -1819,7 +1930,7 @@ describe("MCP tool edge cases against a test db", () => {
       task_id: card.id,
       summary: "done",
       resolved_in: "1.4.0",
-      usage: { tokens_in: 10, tokens_out: 5, estimated: true },
+      usage: { tokens_in: 10, tokens_out: 5 },
     });
     expect(delivered.ok).toBe(true);
     if (!delivered.ok) return;

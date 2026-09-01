@@ -443,6 +443,7 @@ export function usageFromUnknown(raw: unknown): Usage | null {
     duration_ms: num("duration_ms") ?? num("durationMs"),
     turns: num("turns"),
     estimated: typeof rec.estimated === "boolean" ? rec.estimated : undefined,
+    reason: typeof rec.reason === "string" ? rec.reason : undefined,
   };
 }
 
