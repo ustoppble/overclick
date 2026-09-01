@@ -17,6 +17,7 @@ const PRICES: ModelPrice[] = [
     inputPerMtok: 5,
     outputPerMtok: 25,
     cachePerMtok: 0.5,
+    cacheWritePerMtok: 0.5,
   },
 ];
 

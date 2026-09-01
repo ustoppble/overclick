@@ -1248,8 +1248,10 @@ export const ConfiguredExecutorSchema = z.object({
 
 /**
  * One model's price, in US dollars per million tokens. `cache_per_mtok`
- * prices the `tokens_cache` counter of the usage contract. `seeded_at` is the
- * date the public price was captured, and is null on a row a human edited.
+ * prices a cache read (the `cache_read` segment counter); `cache_write_per_mtok`
+ * prices a cache write (`cache_write`) — a different rate on every provider
+ * that bills a write at all. `seeded_at` is the date the public price was
+ * captured, and is null on a row a human edited.
  */
 export const ModelPriceSchema = z.object({
   model: z.string().min(1),
@@ -1257,6 +1259,7 @@ export const ModelPriceSchema = z.object({
   input_per_mtok: z.number().nonnegative(),
   output_per_mtok: z.number().nonnegative(),
   cache_per_mtok: z.number().nonnegative(),
+  cache_write_per_mtok: z.number().nonnegative(),
   source: z.enum(["seed", "custom"]),
   seeded_at: z.string().nullable(),
   updated_by: z.string().nullable(),

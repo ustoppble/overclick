@@ -4,7 +4,7 @@ import type { InsightAttemptRow } from "../../lib/insights";
 import { buildDailyTrend, trendValue } from "./trend";
 
 const PRICES: ModelPrice[] = [
-  { model: "opus-5", label: "opus-5", inputPerMtok: 5, outputPerMtok: 25, cachePerMtok: 0.5 },
+  { model: "opus-5", label: "opus-5", inputPerMtok: 5, outputPerMtok: 25, cachePerMtok: 0.5, cacheWritePerMtok: 0.5 },
 ];
 
 function row(over: Partial<InsightAttemptRow>): InsightAttemptRow {

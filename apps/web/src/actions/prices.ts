@@ -18,6 +18,7 @@ export type PriceInput = {
   inputPerMtok: number;
   outputPerMtok: number;
   cachePerMtok: number;
+  cacheWritePerMtok: number;
 };
 
 const SAME = (a: number, b: number) => Math.abs(a - b) < 1e-9;
@@ -45,7 +46,12 @@ export async function savePricesAction(
     const label = row.label.trim() || model;
     if (!model || seen.has(model)) continue;
     seen.add(model);
-    for (const value of [row.inputPerMtok, row.outputPerMtok, row.cachePerMtok]) {
+    for (const value of [
+      row.inputPerMtok,
+      row.outputPerMtok,
+      row.cachePerMtok,
+      row.cacheWritePerMtok,
+    ]) {
       if (!Number.isFinite(value) || value < 0) {
         return {
           ok: false,
@@ -58,7 +64,8 @@ export async function savePricesAction(
       seed != null &&
       SAME(seed.inputPerMtok, row.inputPerMtok) &&
       SAME(seed.outputPerMtok, row.outputPerMtok) &&
-      SAME(seed.cachePerMtok, row.cachePerMtok);
+      SAME(seed.cachePerMtok, row.cachePerMtok) &&
+      SAME(seed.cacheWritePerMtok, row.cacheWritePerMtok);
     if (!isFactory) custom.push({ ...row, model, label });
   }
 
@@ -84,6 +91,7 @@ export async function savePricesAction(
         inputPerMtok: String(row.inputPerMtok),
         outputPerMtok: String(row.outputPerMtok),
         cachePerMtok: String(row.cachePerMtok),
+        cacheWritePerMtok: String(row.cacheWritePerMtok),
         seededAt: null,
         updatedBy: session.email,
         updatedAt: new Date(),
@@ -95,6 +103,7 @@ export async function savePricesAction(
           inputPerMtok: String(row.inputPerMtok),
           outputPerMtok: String(row.outputPerMtok),
           cachePerMtok: String(row.cachePerMtok),
+          cacheWritePerMtok: String(row.cacheWritePerMtok),
           seededAt: null,
           updatedBy: session.email,
           updatedAt: new Date(),

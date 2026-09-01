@@ -706,7 +706,8 @@ function segmentCost(
         item.model === model &&
         item.input === counts.input &&
         item.output === counts.output &&
-        item.cache === counts.cache,
+        item.cache_read === counts.cacheRead &&
+        item.cache_write === counts.cacheWrite,
     );
     if (frozen) {
       return {
@@ -727,7 +728,8 @@ function segmentCost(
     {
       tokensIn: tokens.input,
       tokensOut: tokens.output,
-      tokensCache: tokens.cache,
+      tokensCacheRead: tokens.cacheRead,
+      tokensCacheWrite: tokens.cacheWrite,
       costUsd:
         allowReportedFallback && a.costUsd != null ? Number(a.costUsd) : null,
       usageEstimated: a.usageEstimated,

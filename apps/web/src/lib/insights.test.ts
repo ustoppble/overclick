@@ -551,7 +551,7 @@ describe("computeInsights per card", () => {
 
 describe("cost from the price table", () => {
   const prices = [
-    { model: "sonnet-5", label: "sonnet-5", inputPerMtok: 3, outputPerMtok: 15, cachePerMtok: 0.3 },
+    { model: "sonnet-5", label: "sonnet-5", inputPerMtok: 3, outputPerMtok: 15, cachePerMtok: 0.3, cacheWritePerMtok: 0.3 },
   ];
 
   it("computes the cost from tokens instead of the number the agent sent", () => {
@@ -614,7 +614,8 @@ describe("cost from the price table", () => {
             model: "sonnet-5",
             input: 1_000_000,
             output: 0,
-            cache: 0,
+            cache_read: 0,
+            cache_write: 0,
             cost_usd: 3,
             priced: true,
           },
@@ -631,8 +632,8 @@ describe("cost from the price table", () => {
 
 describe("usage in segments per model", () => {
   const prices = [
-    { model: "sonnet-5", label: "sonnet-5", inputPerMtok: 3, outputPerMtok: 15, cachePerMtok: 0.3 },
-    { model: "opus-5", label: "opus-5", inputPerMtok: 5, outputPerMtok: 25, cachePerMtok: 0.5 },
+    { model: "sonnet-5", label: "sonnet-5", inputPerMtok: 3, outputPerMtok: 15, cachePerMtok: 0.3, cacheWritePerMtok: 0.3 },
+    { model: "opus-5", label: "opus-5", inputPerMtok: 5, outputPerMtok: 25, cachePerMtok: 0.5, cacheWritePerMtok: 0.5 },
   ];
 
   const switched = () =>
@@ -939,7 +940,7 @@ describe("grouping by executor", () => {
 
 describe("a model nobody priced", () => {
   const prices = [
-    { model: "sonnet-5", label: "sonnet-5", inputPerMtok: 3, outputPerMtok: 15, cachePerMtok: 0.3 },
+    { model: "sonnet-5", label: "sonnet-5", inputPerMtok: 3, outputPerMtok: 15, cachePerMtok: 0.3, cacheWritePerMtok: 0.3 },
   ];
 
   /** One run of a model with no price row, reporting no dollars of its own. */
@@ -1005,7 +1006,7 @@ describe("a model nobody priced", () => {
   it("stops being unpriced once the price table covers the model", () => {
     const result = computeInsights([unpricedRun()], [], [
       ...prices,
-      { model: "k3", label: "k3", inputPerMtok: 0.6, outputPerMtok: 2.5, cachePerMtok: 0.06 },
+      { model: "k3", label: "k3", inputPerMtok: 0.6, outputPerMtok: 2.5, cachePerMtok: 0.06, cacheWritePerMtok: 0.06 },
     ]);
     expect(result.totals.costUsd).toBeCloseTo(0.6);
     expect(result.totals.unpricedTokens).toBe(0);

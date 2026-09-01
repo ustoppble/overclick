@@ -34,6 +34,7 @@ export async function loadModelPrices(
       inputPerMtok: Number(row.inputPerMtok),
       outputPerMtok: Number(row.outputPerMtok),
       cachePerMtok: Number(row.cachePerMtok),
+      cacheWritePerMtok: Number(row.cacheWritePerMtok),
       source: "custom",
       seededAt: row.seededAt,
       updatedBy: row.updatedBy,

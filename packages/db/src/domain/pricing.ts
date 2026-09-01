@@ -19,12 +19,17 @@ export type ModelPrice = {
   label: string;
   inputPerMtok: number;
   outputPerMtok: number;
-  /**
-   * Price applied to the `tokens_cache` counter the usage contract carries.
-   * Seeded at the cache READ rate, which is what a long agent session is
-   * mostly made of; edit the row when your provider bills you otherwise.
-   */
+  /** Price applied to the `cache_read` counter: a hit off an existing cache entry. */
   cachePerMtok: number;
+  /**
+   * Price applied to the `cache_write` counter: writing a new cache entry.
+   * A different price from cachePerMtok on every provider that bills it at
+   * all (Anthropic and GPT-5.6+: 1.25x-2x input to write, 0.1x to read a hit
+   * off it after). A provider that never separately bills a write gets this
+   * field equal to inputPerMtok, never zero: zero would read as a free write
+   * nobody published.
+   */
+  cacheWritePerMtok: number;
 };
 
 /** A seeded entry: the price plus the day that price was read off the list. */
@@ -76,6 +81,10 @@ export const MODEL_KEY_ALIASES: Readonly<Record<string, string>> = {
   // Gemini keys in the seed drop the vendor prefix, same as Claude.
   "gemini-3-7-flash-high": "3-7-flash-high",
   "gemini-3-1-flash-image-preview": "3-1-flash-image-preview",
+  // developers.openai.com/api/docs/pricing (read 2026-09-01): this Codex
+  // --model is an alias that currently points to gpt-5.6-sol, not a
+  // separately priced model.
+  "gpt-daybreak-blue-latest": "gpt-5-6-sol",
 };
 
 /**
@@ -97,6 +106,21 @@ export const MODEL_PRICES_FAMILIES_SEEDED_AT = "2026-08-17";
  */
 export const MODEL_PRICES_INVENTORY_SEEDED_AT = "2026-09-01";
 
+/**
+ * The day the board's whole pricing table got reread against the live public
+ * lists: cache write got its own price instead of sharing the read rate,
+ * sonnet-5's introductory rate was confirmed permanent instead of the
+ * cancelled increase the board had been billing, and the OpenAI GPT-5.6 and
+ * xAI Grok rows turned out to be stale on top of that — read off
+ * platform.claude.com/docs/en/about-claude/pricing,
+ * developers.openai.com/api/docs/pricing (and its prompt-caching guide), and
+ * docs.x.ai/docs/models. Used on every row whose numbers are an actual read
+ * off a provider's public list that day; every other row keeps its original
+ * stamp and, where relevant, falls back to the input rate for the write
+ * column instead, because nobody has read a public write price for it yet.
+ */
+export const MODEL_PRICES_CACHE_WRITE_SEEDED_AT = "2026-09-01";
+
 /** Shorthand for a seeded row, so the table below reads as a table. */
 const at =
   (seededAt: string) =>
@@ -105,18 +129,21 @@ const at =
     inputPerMtok: number,
     outputPerMtok: number,
     cachePerMtok: number,
+    cacheWritePerMtok: number,
   ): SeedPrice => ({
     model,
     label: model,
     inputPerMtok,
     outputPerMtok,
     cachePerMtok,
+    cacheWritePerMtok,
     seededAt,
   });
 
 const p0 = at(MODEL_PRICES_SEEDED_AT);
 const p1 = at(MODEL_PRICES_FAMILIES_SEEDED_AT);
 const p2 = at(MODEL_PRICES_INVENTORY_SEEDED_AT);
+const p3 = at(MODEL_PRICES_CACHE_WRITE_SEEDED_AT);
 
 /**
  * Public list prices, per million tokens, each row carrying the day it was
@@ -131,67 +158,97 @@ const p2 = at(MODEL_PRICES_INVENTORY_SEEDED_AT);
  * with no published rate are absent instead of guessed.
  */
 const SEED: SeedPrice[] = [
-  // Claude
-  p0("fable-5", 10, 50, 1),
-  p0("opus-5", 5, 25, 0.5),
-  p0("opus-4-8", 5, 25, 0.5),
-  p0("sonnet-5", 3, 15, 0.3),
-  p0("haiku-4-5", 1, 5, 0.1),
-  // OpenAI, as Codex runs them
-  p1("gpt-5-6-sol", 1.75, 14, 0.175),
-  p1("gpt-5-6-terra", 1.25, 10, 0.125),
-  p1("gpt-5-6-luna", 0.5, 4, 0.05),
-  p1("gpt-5-5", 1.25, 10, 0.125),
-  p1("gpt-5-4", 2.5, 15, 0.25),
-  p1("gpt-5-4-mini", 0.25, 2, 0.025),
-  // GPT-5.3-Codex-Spark is now published in the public Codex/API pricing path.
-  // Values below are per million tokens, matching the source line in the current
-  // Codex rate card: $1.75 input, $14 output, $0.175 cache read.
-  p1("gpt-5-3-codex-spark", 1.75, 14, 0.175),
-  // Gemini, and the Antigravity flash tiers that bill at the flash rate
-  p1("3-1-pro", 1.25, 10, 0.125),
-  p1("3-5-flash", 0.3, 2.5, 0.03),
-  p1("3-flash", 0.15, 0.6, 0.015),
-  p1("3-7-flash-high", 0.3, 2.5, 0.03),
-  p1("3-7-flash-medium", 0.3, 2.5, 0.03),
-  p1("3-7-flash-low", 0.3, 2.5, 0.03),
+  // Claude. Cache write confirmed 2026-09-01 against
+  // platform.claude.com/docs/en/about-claude/pricing: writing a new cache
+  // entry costs 1.25x the input rate at the default 5-minute TTL (2x at the
+  // 1-hour TTL, not represented here — the board does not track which TTL an
+  // attempt used). sonnet-5 also gets its price corrected here: the 2/10
+  // pair announced as introductory became the standing rate, and the
+  // increase to 3/15 that had been scheduled for 2026-09-01 was called off by
+  // the same page — 173 attempts had been billed the cancelled higher rate.
+  p3("fable-5", 10, 50, 1, 12.5),
+  p3("opus-5", 5, 25, 0.5, 6.25),
+  p3("opus-4-8", 5, 25, 0.5, 6.25),
+  p3("sonnet-5", 2, 10, 0.2, 2.5),
+  p3("haiku-4-5", 1, 5, 0.1, 1.25),
+  // OpenAI, as Codex runs them. Reread developers.openai.com/api/docs/pricing
+  // 2026-09-01: the board's gpt-5.6-sol/terra/luna rows were stale (sol was
+  // billing at less than half the real rate — 81 attempts, 509M tokens,
+  // undercharged $159.89 today alone). GPT-5.6+ also publishes the same
+  // write/read convention as Claude (1.25x input to write, 0.1x to read).
+  // The pre-5.6 families below have no published write rate of their own, so
+  // their write column falls back to the input rate instead of guessing —
+  // never confirmed, never zeroed.
+  p3("gpt-5-6-sol", 4, 20, 0.4, 5),
+  p3("gpt-5-6-terra", 2, 12, 0.2, 2.5),
+  p3("gpt-5-6-luna", 0.2, 1.2, 0.02, 0.25),
+  p1("gpt-5-5", 1.25, 10, 0.125, 1.25),
+  p1("gpt-5-4", 2.5, 15, 0.25, 2.5),
+  p1("gpt-5-4-mini", 0.25, 2, 0.025, 0.25),
+  // GPT-5.3-Codex-Spark: retired from developers.openai.com/api/docs/pricing
+  // as of 2026-09-01 (the page now lists a "gpt-5.3-codex" specialized model
+  // instead, at this same $1.75/$14/$0.175 rate — not renamed here since
+  // board history already keys attempts on gpt-5-3-codex-spark). Kept at its
+  // last published rate rather than dropped, so history stays priced. Not
+  // GPT-5.6+, so no published cache-write rate; write falls back to input.
+  p1("gpt-5-3-codex-spark", 1.75, 14, 0.175, 1.75),
+  // Gemini, and the Antigravity flash tiers that bill at the flash rate. No
+  // published cache-write rate for this family; write falls back to input.
+  p1("3-1-pro", 1.25, 10, 0.125, 1.25),
+  p1("3-5-flash", 0.3, 2.5, 0.03, 0.3),
+  p1("3-flash", 0.15, 0.6, 0.015, 0.15),
+  p1("3-7-flash-high", 0.3, 2.5, 0.03, 0.3),
+  p1("3-7-flash-medium", 0.3, 2.5, 0.03, 0.3),
+  p1("3-7-flash-low", 0.3, 2.5, 0.03, 0.3),
   // Gemini 3.1 Flash Image (Nano Banana 2). Google publishes two output
   // meters: $3/MTok text+thinking and $60/MTok image. This row uses the
   // image-output rate because the model is an image generator; text-only
-  // output on the same id is cheaper and is not represented here.
-  p2("3-1-flash-image-preview", 0.5, 60, 0.05),
-  // Kimi
-  p1("k3", 0.6, 2.5, 0.06),
-  p1("k3-256k", 1.2, 5, 0.12),
-  p1("kimi-for-coding-highspeed", 1.2, 5, 0.12),
+  // output on the same id is cheaper and is not represented here. No
+  // published cache-write rate; write falls back to input.
+  p2("3-1-flash-image-preview", 0.5, 60, 0.05, 0.5),
+  // Kimi. No published cache-write rate for this family; write falls back to
+  // the input rate.
+  p1("k3", 0.6, 2.5, 0.06, 0.6),
+  p1("k3-256k", 1.2, 5, 0.12, 1.2),
+  p1("kimi-for-coding-highspeed", 1.2, 5, 0.12, 1.2),
   // Last published Moonshot USD list for the retired K2 / K2.5 ids this
   // board still has attempts on. K2 series left the catalog 2026-05-25;
-  // K2.5 left 2026-08-31. Cache is the official cache-hit input rate.
-  p2("kimi-k2", 0.6, 2.5, 0.15),
-  p2("kimi-k2-5", 0.6, 3, 0.1),
-  // Grok
-  p1("grok-4-6", 3, 15, 0.75),
-  p1("grok-4-5", 3, 15, 0.75),
-  p1("grok-composer-2-5-fast", 1.5, 7.5, 0.375),
+  // K2.5 left 2026-08-31. Cache is the official cache-hit input rate; no
+  // published write rate survives for either retired id, so write falls
+  // back to input.
+  p2("kimi-k2", 0.6, 2.5, 0.15, 0.6),
+  p2("kimi-k2-5", 0.6, 3, 0.1, 0.6),
+  // Grok. docs.x.ai (read 2026-09-01) publishes grok-4.6 on two tiers by
+  // prompt size: $2/$0.50/$6 below 200k prompt tokens, $4/$1/$12 at or above
+  // it. The board does not model a context-length tier yet, so this row uses
+  // the below-200k rate, which is what most attempts actually run under; the
+  // old 3/15/0.75 row matched neither tier. No published cache-write rate for
+  // this family; write falls back to the input rate — xAI's list only ever
+  // documented the read discount.
+  p3("grok-4-6", 2, 6, 0.5, 2),
+  p1("grok-4-5", 3, 15, 0.75, 3),
+  p1("grok-composer-2-5-fast", 1.5, 7.5, 0.375, 1.5),
   // grok-4-fast is gone from xAI's current models page (read 2026-09-01).
   // Azure AI Foundry and Requesty still publish the last xAI per-million
-  // rate as $0.20 in / $0.50 out / $0.05 cache read.
-  p2("grok-4-fast", 0.2, 0.5, 0.05),
-  // Claude Sonnet 4.6, Anthropic public list 2026-09-01.
-  p2("sonnet-4-6", 3, 15, 0.3),
-  // Codex Daybreak Blue. 11 of 1350 local Codex rollouts named this
-  // model; none named "gpt-5". OpenAI's public API list currently bills
-  // the alias as gpt-5.6-sol: $4 in / $20 out / $0.40 cache (short context).
-  // Own key: it is a real Codex --model, not the generic gpt-5 agents type.
-  p2("gpt-daybreak-blue-latest", 4, 20, 0.4),
+  // rate as $0.20 in / $0.50 out / $0.05 cache read. No write rate; falls
+  // back to input.
+  p2("grok-4-fast", 0.2, 0.5, 0.05, 0.2),
+  // Claude Sonnet 4.6, Anthropic public list, cache write confirmed 2026-09-01
+  // alongside the rest of the Claude family above (1.25x input at 5-minute TTL).
+  p3("sonnet-4-6", 3, 15, 0.3, 3.75),
+  // Codex Daybreak Blue has no row of its own: developers.openai.com/api/docs/pricing
+  // (read 2026-09-01) states plainly that gpt-daybreak-blue-latest is an
+  // alias that currently points to gpt-5.6-sol, so it prices as that row via
+  // MODEL_KEY_ALIASES instead of carrying its own (previously stale) number.
   // Free tiers. A published zero is a price, and it is not the same thing as
-  // a model nobody priced: this row says the run really cost nothing.
-  p1("deepseek-v4-flash-free", 0, 0, 0),
-  p1("mimo-v2-5-free", 0, 0, 0),
-  p1("hy3-free", 0, 0, 0),
-  p1("laguna-s-2-1-free", 0, 0, 0),
-  p1("nemotron-3-ultra-free", 0, 0, 0),
-  p1("nemotron-3-5-lightning-free", 0, 0, 0),
+  // a model nobody priced: this row says the run really cost nothing,
+  // writing to cache included.
+  p1("deepseek-v4-flash-free", 0, 0, 0, 0),
+  p1("mimo-v2-5-free", 0, 0, 0, 0),
+  p1("hy3-free", 0, 0, 0, 0),
+  p1("laguna-s-2-1-free", 0, 0, 0, 0),
+  p1("nemotron-3-ultra-free", 0, 0, 0, 0),
+  p1("nemotron-3-5-lightning-free", 0, 0, 0, 0),
 ];
 
 /** The seeded price list, each row stamped with the date it was captured. */
@@ -236,7 +293,8 @@ export type CostBreakdownSegment = {
   model: string | null;
   input: number;
   output: number;
-  cache: number;
+  cache_read: number;
+  cache_write: number;
   cost_usd: number | null;
   priced: boolean;
 };
@@ -263,20 +321,32 @@ export function findModelPrice<T extends ModelPrice>(
 export type TokenCounts = {
   input?: number | null;
   output?: number | null;
-  cache?: number | null;
+  cacheRead?: number | null;
+  cacheWrite?: number | null;
 };
 
 /** Sum of the token counters, treating a missing counter as zero. */
 export function totalTokens(tokens: TokenCounts): number {
-  return (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.cache ?? 0);
+  return (
+    (tokens.input ?? 0) +
+    (tokens.output ?? 0) +
+    (tokens.cacheRead ?? 0) +
+    (tokens.cacheWrite ?? 0)
+  );
 }
 
-/** Dollars for these tokens at this price, rounded to the stored precision. */
+/**
+ * Dollars for these tokens at this price, rounded to the stored precision.
+ * Every bucket is multiplied by its own rate: a cache write is not a cache
+ * read wearing a different name, and pricing it at the read rate is the bug
+ * this function exists to not have.
+ */
 export function computeCostUsd(price: ModelPrice, tokens: TokenCounts): number {
   const cost =
     ((tokens.input ?? 0) * price.inputPerMtok +
       (tokens.output ?? 0) * price.outputPerMtok +
-      (tokens.cache ?? 0) * price.cachePerMtok) /
+      (tokens.cacheRead ?? 0) * price.cachePerMtok +
+      (tokens.cacheWrite ?? 0) * price.cacheWritePerMtok) /
     1_000_000;
   return Math.round(cost * 1e6) / 1e6;
 }
@@ -292,7 +362,8 @@ export type CostSource = "computed" | "reported" | "estimated";
 export type AttemptUsage = {
   tokensIn?: number | null;
   tokensOut?: number | null;
-  tokensCache?: number | null;
+  tokensCacheRead?: number | null;
+  tokensCacheWrite?: number | null;
   /** What the agent volunteered. Only used when the table cannot price it. */
   costUsd?: number | null;
   usageEstimated?: boolean;
@@ -344,7 +415,8 @@ export function assessAttemptCost(
       model: segment.model,
       input: counts.input,
       output: counts.output,
-      cache: counts.cache,
+      cache_read: counts.cacheRead,
+      cache_write: counts.cacheWrite,
       cost_usd: hasTokens && price ? computeCostUsd(price, counts) : null,
       priced: hasTokens && price != null,
     };
@@ -420,7 +492,8 @@ export function resolveAttemptCost(
   const tokens: TokenCounts = {
     input: attempt.tokensIn,
     output: attempt.tokensOut,
-    cache: attempt.tokensCache,
+    cacheRead: attempt.tokensCacheRead,
+    cacheWrite: attempt.tokensCacheWrite,
   };
   if (totalTokens(tokens) > 0) {
     const price = findModelPrice(prices, model);
