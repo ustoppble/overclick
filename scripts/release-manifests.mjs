@@ -67,9 +67,25 @@ export function writeVersion(manifest, version) {
 
 const [command, argument] = process.argv.slice(2);
 
+// A closed pipe (`... | head -3`) must never abort a run that is halfway
+// through rewriting eleven files: a partial bump is the exact state the
+// release guard exists to catch, and it would be caused here by the progress
+// printing rather than by anything real.
+process.stdout.on("error", (error) => {
+  if (error.code !== "EPIPE") throw error;
+});
+
+function report(line) {
+  try {
+    process.stdout.write(line);
+  } catch {
+    // Same reason: reporting is never worth failing the write for.
+  }
+}
+
 if (command === "read") {
   for (const manifest of MANIFESTS) {
-    process.stdout.write(`${manifest.path}\t${readVersion(manifest)}\n`);
+    report(`${manifest.path}\t${readVersion(manifest)}\n`);
   }
 } else if (command === "write") {
   if (!argument) {
@@ -78,7 +94,7 @@ if (command === "read") {
   }
   for (const manifest of MANIFESTS) {
     const was = writeVersion(manifest, argument);
-    process.stdout.write(`   ${manifest.path}: ${was} -> ${argument}\n`);
+    report(`   ${manifest.path}: ${was} -> ${argument}\n`);
   }
 } else if (command !== undefined) {
   process.stderr.write(`!! unknown command ${command}\n`);
