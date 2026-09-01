@@ -587,8 +587,9 @@ function attemptTokens(a: InsightUsageRow): number {
  * The models an attempt actually ran, as segments. Attempts stored before
  * segments existed fold their flat counters into one segment for the model
  * recorded at claim time; an attempt that reported no tokens at all still
- * yields one empty segment so it keeps showing up under its model instead of
- * vanishing from the per-model view.
+ * yields one empty segment so grouping can attribute the honesty counters.
+ * A group whose token total stays zero is then omitted from the published
+ * per-model list — it is a honesty-note matter, not a row of consumption.
  */
 function attemptSegments(a: InsightUsageRow): UsageSegment[] {
   const stored = a.usageSegments?.length
@@ -838,6 +839,15 @@ function sortGroups(groups: GroupInsight[]): GroupInsight[] {
       b.tokens - a.tokens ||
       b.attempts - a.attempts,
   );
+}
+
+/**
+ * A model group with no tokens is not consumption. Dropping it keeps the
+ * share bars and the by-model table from filling with empty rows; the
+ * attempts still count in the honesty note on the totals.
+ */
+function consumedModelGroups(groups: GroupInsight[]): GroupInsight[] {
+  return groups.filter((group) => group.tokens > 0);
 }
 
 function attemptResult(
@@ -1292,12 +1302,12 @@ export function computeInsights(
   const executionGroups: InsightGroupSet = {
     byProject: seal(byProject),
     byMission: seal(byMission),
-    byModel: seal(byModel),
+    byModel: consumedModelGroups(seal(byModel)),
   };
   const orchestrationGroups: InsightGroupSet = {
     byProject: seal(orchestrationByProject),
     byMission: seal(orchestrationByMission),
-    byModel: seal(orchestrationByModel),
+    byModel: consumedModelGroups(seal(orchestrationByModel)),
   };
 
   return {
@@ -1308,7 +1318,7 @@ export function computeInsights(
       totals: sealTotals(discardedTotals),
       byExecutor: seal(discardedByExecutor),
       byMission: seal(discardedByMission),
-      byModel: seal(discardedByModel),
+      byModel: consumedModelGroups(seal(discardedByModel)),
       orchestration: sealTotals(discardedOrchestrationTotals),
     },
     switchedRuns,

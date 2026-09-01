@@ -74,11 +74,14 @@ export function ShareBars({
     pricingEnabled ? r.costUsd : r.tokens;
   const fmt =
     pricingEnabled ? (v: number) => formatMoney(v, t.lang) : formatTokens;
-  const sum = rows.reduce((acc, r) => acc + (value(r) ?? 0), 0);
-  const max = rows.reduce((acc, r) => Math.max(acc, value(r) ?? 0), 0);
+  // A group that spent no tokens is not a share of consumption; it belongs
+  // in the honesty note, not as an empty bar at the bottom of the list.
+  const consumed = rows.filter((r) => r.tokens > 0);
+  const sum = consumed.reduce((acc, r) => acc + (value(r) ?? 0), 0);
+  const max = consumed.reduce((acc, r) => Math.max(acc, value(r) ?? 0), 0);
   return (
     <div className="ins-share">
-      {rows.map((r) => {
+      {consumed.map((r) => {
         const v = value(r);
         const pct = v != null && sum > 0 ? Math.round((v / sum) * 100) : 0;
         const w = v != null && max > 0 ? (v / max) * 100 : 0;

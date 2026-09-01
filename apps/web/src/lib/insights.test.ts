@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeInsights,
+  usageHonestyNote,
   type MissionAttemptInsightRow,
   type InsightAttemptRow,
   type ReopenRow,
@@ -731,7 +732,7 @@ describe("usage in segments per model", () => {
     expect(result.totals.costUsd).toBeCloseTo(3);
   });
 
-  it("keeps an attempt that reported nothing under its model", () => {
+  it("drops a model group that reported nothing, and keeps the attempt in the honesty note", () => {
     const result = computeInsights(
       [
         attempt({
@@ -747,9 +748,10 @@ describe("usage in segments per model", () => {
       [],
       prices,
     );
-    expect(result.byModel).toHaveLength(1);
-    expect(result.byModel[0]?.label).toBe("sonnet-5");
-    expect(result.byModel[0]?.missing).toBe(1);
+    expect(result.byModel).toHaveLength(0);
+    expect(result.totals.missing).toBe(1);
+    expect(result.totals.attempts).toBe(1);
+    expect(usageHonestyNote(result.totals)).toBe("1 usage not reported");
   });
 
   it("groups gpt-5.6-sol and gpt-5-6-sol as the same model", () => {
@@ -1014,5 +1016,121 @@ describe("a model nobody priced", () => {
     const result = computeInsights([unpricedRun()], [], []);
     expect(result.totals.costUsd).toBeNull();
     expect(result.totals.costComputed).toBe(0);
+  });
+});
+
+describe("model groups with no consumption", () => {
+  const missingGemini = (index: number) =>
+    attempt({
+      taskId: `gemini-${index}`,
+      taskShortId: `OC-G${index}`,
+      model: "gemini-3-7-flash-high",
+      usageSegments: null,
+      tokensIn: null,
+      tokensOut: null,
+      tokensCache: null,
+      costUsd: null,
+      durationMs: null,
+      turns: null,
+    });
+
+  it("omits gemini-3-7-flash-high and <synthetic> from the by-model list when they spent no tokens", () => {
+    const result = computeInsights(
+      [
+        attempt({ model: "sonnet-5" }),
+        missingGemini(1),
+        missingGemini(2),
+        missingGemini(3),
+        missingGemini(4),
+        attempt({
+          taskId: "synthetic-1",
+          taskShortId: "OC-SYN",
+          model: "<synthetic>",
+          usageSegments: null,
+          tokensIn: 0,
+          tokensOut: 0,
+          tokensCache: 0,
+          costUsd: null,
+          durationMs: null,
+          turns: null,
+          costStatus: "zero_usage",
+        }),
+      ],
+      [],
+    );
+
+    expect(result.byModel.map((g) => g.label)).toEqual(["sonnet-5"]);
+    expect(result.byModel.every((g) => g.tokens > 0)).toBe(true);
+    expect(result.combinedGroups.byModel.map((g) => g.label)).toEqual([
+      "sonnet-5",
+    ]);
+    expect(
+      result.byModel.find((g) => g.label === "gemini-3-7-flash-high"),
+    ).toBeUndefined();
+    expect(
+      result.byModel.find((g) => g.label === "<synthetic>"),
+    ).toBeUndefined();
+  });
+
+  it("keeps those attempts in the honesty note as missing or zero usage", () => {
+    const result = computeInsights(
+      [
+        attempt({ model: "sonnet-5" }),
+        missingGemini(1),
+        missingGemini(2),
+        missingGemini(3),
+        missingGemini(4),
+        attempt({
+          taskId: "synthetic-1",
+          taskShortId: "OC-SYN",
+          model: "<synthetic>",
+          usageSegments: null,
+          tokensIn: 0,
+          tokensOut: 0,
+          tokensCache: 0,
+          costUsd: null,
+          durationMs: null,
+          turns: null,
+          costStatus: "zero_usage",
+        }),
+      ],
+      [],
+    );
+
+    expect(result.totals.attempts).toBe(6);
+    expect(result.totals.missing).toBe(4);
+    expect(result.totals.zeroUsage).toBe(1);
+    expect(usageHonestyNote(result.totals)).toBe(
+      "4 usage not reported · 1 reported zero usage",
+    );
+  });
+
+  it("keeps a group that only had suspect tokens, such as kimi-k3", () => {
+    const result = computeInsights(
+      [
+        attempt({
+          model: "kimi-k3",
+          tokensIn: 4_000_000,
+          tokensOut: 0,
+          tokensCache: 0,
+          costUsd: "9.00",
+          durationMs: 60_000,
+          usageSuspect: true,
+        }),
+      ],
+      [],
+    );
+
+    expect(result.byModel).toHaveLength(1);
+    expect(result.byModel[0]).toMatchObject({
+      label: "kimi-k3",
+      tokens: 4_000_000,
+      attempts: 1,
+      suspect: 1,
+      suspectTokens: 4_000_000,
+    });
+    expect(result.combinedGroups.byModel).toHaveLength(1);
+    expect(result.totals.tokens).toBe(4_000_000);
+    expect(result.totals.suspect).toBe(1);
   });
 });
