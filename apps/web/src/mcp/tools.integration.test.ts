@@ -288,14 +288,14 @@ describe("MCP tool edge cases against a test db", () => {
     });
   });
 
-  it("updates the attempt model and timeline when measured segments diverge", async () => {
+  it("marks the attempt model declared, not measured, when only self-reported segments diverge (OCL-173)", async () => {
     world = await createTestWorld();
     const [card] = await world.db
       .insert(task)
       .values({
         projectId: world.projectId,
         shortId: "OC-92",
-        title: "Measured Codex model",
+        title: "Declared Codex model",
         harness: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
       })
       .returning();
@@ -305,9 +305,11 @@ describe("MCP tool edge cases against a test db", () => {
       task_id: card.id,
       executor: { cli: "codex", model: "gpt-5.6-sol" },
     });
+    // No reachable transcript is sent: the divergent model comes only from
+    // the agent's own usage.segments, so it earns "declared", not "measured".
     const delivered = await invokeTool(world.db, ctx(), "task_deliver", {
       task_id: card.id,
-      summary: "measured",
+      summary: "declared",
       usage: {
         segments: [{ model: "gpt-5.6-terra", input: 100, output: 20 }],
       },
@@ -320,7 +322,7 @@ describe("MCP tool edge cases against a test db", () => {
       .where(eq(executionAttempt.taskId, card.id));
     expect(attempt).toMatchObject({
       model: "gpt-5-6-terra",
-      modelSource: "measured",
+      modelSource: "declared",
     });
     const [note] = await world.db
       .select()
@@ -441,6 +443,146 @@ describe("MCP tool edge cases against a test db", () => {
       .from(taskComment)
       .where(eq(taskComment.taskId, card.id));
     expect(notes).toEqual([]);
+  });
+
+  it("leaves model_source as harness when delivery names no transcript and no segments (OCL-173)", async () => {
+    world = await createTestWorld();
+    const [card] = await world.db
+      .insert(task)
+      .values({
+        projectId: world.projectId,
+        shortId: "OC-173a",
+        title: "Generic Codex claim, silent deliver",
+        harness: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+      })
+      .returning();
+    if (!card) throw new Error("failed to create card");
+
+    await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "Codex CLI", model: "gpt-5" },
+    });
+    const delivered = await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: card.id,
+      summary: "sem transcript, sem segments",
+    });
+    expect(delivered.ok).toBe(true);
+
+    const [attempt] = await world.db
+      .select()
+      .from(executionAttempt)
+      .where(eq(executionAttempt.taskId, card.id));
+    expect(attempt).toMatchObject({
+      model: "gpt-5-6-sol",
+      modelSource: "harness",
+    });
+  });
+
+  it("task_update marks a self-reported model correction declared, not measured (OCL-173)", async () => {
+    world = await createTestWorld();
+    const [card] = await world.db
+      .insert(task)
+      .values({
+        projectId: world.projectId,
+        shortId: "OC-173b",
+        title: "Generic Codex claim, corrected later",
+        harness: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+      })
+      .returning();
+    if (!card) throw new Error("failed to create card");
+
+    await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
+      executor: { cli: "Codex CLI", model: "gpt-5" },
+    });
+    await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: card.id,
+      summary: "sem números na hora",
+    });
+    // No transcript was ever stored on this attempt, so a later correction
+    // through task_update can only ever be self-reported, never measured.
+    const corrected = await invokeTool(world.db, ctx(), "task_update", {
+      task_id: card.id,
+      usage: {
+        segments: [{ model: "gpt-5.6-terra", input: 100, output: 20 }],
+      },
+    });
+    expect(corrected.ok).toBe(true);
+
+    const [attempt] = await world.db
+      .select()
+      .from(executionAttempt)
+      .where(eq(executionAttempt.taskId, card.id));
+    expect(attempt).toMatchObject({
+      model: "gpt-5-6-terra",
+      modelSource: "declared",
+    });
+  });
+
+  it("task_update marks a transcript-verified model correction measured (OCL-173)", async () => {
+    world = await createTestWorld();
+    const dir = mkdtempSync(path.join(tmpdir(), "ocl-173-"));
+    const file = path.join(dir, "updates.jsonl");
+    writeFileSync(
+      file,
+      `${JSON.stringify({
+        timestamp: 2_000_000_000,
+        method: "_x.ai/session/update",
+        params: {
+          update: {
+            sessionUpdate: "turn_completed",
+            usage: {
+              modelUsage: {
+                "grok-4.5-build": { inputTokens: 80, outputTokens: 20 },
+              },
+            },
+          },
+        },
+      })}\n`,
+    );
+    try {
+      const [card] = await world.db
+        .insert(task)
+        .values({
+          projectId: world.projectId,
+          shortId: "OC-173c",
+          title: "Grok transcript arrives late",
+          harness: { cli: "grok", model: "grok-4.6", effort: "high" },
+        })
+        .returning();
+      if (!card) throw new Error("failed to create card");
+
+      await invokeTool(world.db, ctx(), "task_claim", {
+        task_id: card.id,
+        executor: { cli: "grok", model: "grok-4.6", session_id: "sess-173c" },
+      });
+      await invokeTool(world.db, ctx(), "task_deliver", {
+        task_id: card.id,
+        summary: "transcript path only",
+        transcript: { cli: "grok", path: file },
+      });
+      // The transcript path landed on the attempt at deliver time with no
+      // usage attached; task_update supplies the segments afterwards and the
+      // stored path is what earns "measured".
+      const corrected = await invokeTool(world.db, ctx(), "task_update", {
+        task_id: card.id,
+        usage: {
+          segments: [{ model: "grok-4.6", input: 80, output: 20 }],
+        },
+      });
+      expect(corrected.ok).toBe(true);
+
+      const [attempt] = await world.db
+        .select()
+        .from(executionAttempt)
+        .where(eq(executionAttempt.taskId, card.id));
+      expect(attempt).toMatchObject({
+        model: "grok-4-5",
+        modelSource: "measured",
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("atomically supersedes a running card, preserves usage and inherits its contract", async () => {

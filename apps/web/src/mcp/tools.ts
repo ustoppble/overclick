@@ -117,6 +117,7 @@ import {
   normalizeObservedExecutor,
   resolveClaimExecutor,
   unregisteredClaimModelRefusal,
+  type AttemptModelSource,
 } from "./executor-identity";
 import {
   decodeExecutor,
@@ -4069,13 +4070,11 @@ async function applyUsageToLatestAttempt(
     attempt.model,
     attempt.modelSource,
   );
-  const sessionId =
-    attempt.sessionId ??
-    readTranscriptRef(attempt.transcript, {
-      cli: executor.cli,
-      sessionId: executor.session_id,
-    })?.sessionId ??
-    null;
+  const storedTranscript = readTranscriptRef(attempt.transcript, {
+    cli: executor.cli,
+    sessionId: executor.session_id,
+  });
+  const sessionId = attempt.sessionId ?? storedTranscript?.sessionId ?? null;
   const attemptFinishedAt = attempt.finishedAt ?? new Date();
   const measuredWindowMs =
     attempt.serverDurationMs ??
@@ -4102,17 +4101,29 @@ async function applyUsageToLatestAttempt(
     ...merged,
     segments: assessment.normalizedSegments,
   };
-  const measured = measuredModelIdentity(storedUsage.segments);
+  // The file the card points at is the proof of which model ran; only that
+  // earns "measured". Whatever the agent typed into usage.segments without a
+  // readable transcript behind it is "declared" instead — see OCL-173.
+  const fromTranscript = identityFromTranscript({
+    cli: storedTranscript?.cli,
+    path: storedTranscript?.path,
+  });
+  const measured = fromTranscript ?? measuredModelIdentity(storedUsage.segments);
   const claimedModel = attempt.model
     ? canonicalTranscriptModel(attempt.model)
     : null;
   const modelChanged = Boolean(measured && measured.model !== claimedModel);
+  const newModelSource: AttemptModelSource | undefined = modelChanged
+    ? fromTranscript
+      ? "measured"
+      : "declared"
+    : undefined;
 
   await db
     .update(executionAttempt)
     .set({
-      ...(modelChanged
-        ? { model: measured?.model, modelSource: "measured" as const }
+      ...(newModelSource
+        ? { model: measured?.model, modelSource: newModelSource }
         : {}),
       usageSegments: storedUsage.segments?.length ? storedUsage.segments : null,
       tokensIn: storedUsage.tokens_in,
@@ -4548,18 +4559,26 @@ async function taskDeliver(
     const storedUsage: UsageReport | undefined = usageForCost
       ? { ...usageForCost, segments: assessment.normalizedSegments }
       : undefined;
+    // Only a transcript the server itself read off disk earns "measured";
+    // a model that came only from usage.segments is the agent's word for it,
+    // "declared" — see OCL-173.
     const measured = fromTranscript ?? measuredModelIdentity(storedUsage?.segments);
     const claimedModel = openAttempt?.model
       ? canonicalTranscriptModel(openAttempt.model)
       : null;
     const modelChanged = Boolean(measured && measured.model !== claimedModel);
+    const newModelSource: AttemptModelSource | undefined = modelChanged
+      ? fromTranscript
+        ? "measured"
+        : "declared"
+      : undefined;
 
     if (openAttempt) {
       await tx
         .update(executionAttempt)
         .set({
-          ...(modelChanged
-            ? { model: measured?.model, modelSource: "measured" as const }
+          ...(newModelSource
+            ? { model: measured?.model, modelSource: newModelSource }
             : {}),
           finishedAt,
           lastActivityAt: finishedAt,
@@ -4654,7 +4673,7 @@ async function taskDeliver(
         ? {
             ...claimExecutor,
             ...(measured ? { model: measured.model } : {}),
-            ...(modelChanged ? { model_source: "measured" as const } : {}),
+            ...(newModelSource ? { model_source: newModelSource } : {}),
           }
         : null,
       transcript,

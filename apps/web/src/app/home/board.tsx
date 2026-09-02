@@ -506,6 +506,11 @@ function Card({
             {t.detail.modelSourceHarness}
           </span>
         ) : null}
+        {card.modelSource === "declared" ? (
+          <span className="selo" title={t.detail.modelSourceDeclared}>
+            {t.detail.modelSourceDeclared}
+          </span>
+        ) : null}
         {/* The separator belongs to what comes after the harness, not to the
             harness itself: an ellipsis on the model chain would eat it. */}
         <CardMetaTail
@@ -1247,6 +1252,13 @@ function Detail({
                 <p>
                   <span className="tag feature">
                     {t.detail.modelSourceHarness}
+                  </span>
+                </p>
+              ) : null}
+              {card.modelSource === "declared" ? (
+                <p>
+                  <span className="tag feature">
+                    {t.detail.modelSourceDeclared}
                   </span>
                 </p>
               ) : null}
