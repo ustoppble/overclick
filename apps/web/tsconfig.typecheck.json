@@ -1,0 +1,16 @@
+{
+  // `tsc --noEmit` do app, e so isso. Existe separado do tsconfig.json porque o Next
+  // le tsconfig.json e transforma `paths` em alias do bundler: apontar
+  // @agent-board/mcp-core para o src la faria o `next build` resolver o pacote pelo
+  // codigo-fonte e quebrar nos imports com extensao .js do Node16.
+  // Aqui o path so vale para o typecheck, que assim roda em clone limpo, antes de
+  // qualquer `pnpm build` ter gerado packages/mcp-core/dist.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "paths": {
+      "@/*": ["./src/*"],
+      "@agent-board/mcp-core": ["../../packages/mcp-core/src/index.ts"]
+    }
+  }
+}
