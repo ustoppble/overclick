@@ -28,6 +28,30 @@ describe("usage collection recipes", () => {
     expect(recipes.every((r) => r.source === "seed")).toBe(true);
   });
 
+  it("counts a Claude Code model call once however many lines it was written on", () => {
+    // Claude Code writes one transcript line per content block (thinking,
+    // text, tool_use), each repeating the whole call's usage under the same
+    // message id. Summing lines counted every call two or three times.
+    const claude = findUsageRecipe(recipes, "claude-code");
+    const transcript = fileURLToPath(
+      new URL("./fixtures/claude-transcript-split.jsonl", import.meta.url),
+    );
+    const output = JSON.parse(
+      execFileSync("bash", ["-c", bindRecipeSettings(claude!.command, { transcript })], {
+        encoding: "utf8",
+      }),
+    );
+    expect(output).toMatchObject({
+      turns: 3,
+      estimated: false,
+      segments: expect.arrayContaining([
+        { model: "claude-opus-5", input: 130, output: 50, cache_read: 260, cache_write: 8 },
+        { model: "claude-haiku-4-5", input: 20, output: 7, cache_read: 40, cache_write: 1 },
+      ]),
+    });
+    expect(output.segments).toHaveLength(2);
+  });
+
   it("gives Claude Code a command that reads its own session transcript", () => {
     const claude = findUsageRecipe(recipes, "claude-code");
     expect(claude?.yields).toBe("tokens_per_model");

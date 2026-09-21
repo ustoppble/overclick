@@ -235,17 +235,30 @@ if (exists(file) === false) {
   unavailable('The Claude Code transcript ' + file + ' is missing or unreadable.');
 }
 
+// Claude Code writes one line per content block of a reply (thinking, text,
+// each tool_use), and every one of those lines repeats the whole call's usage
+// under the same message id. Summing lines counted each call two or three
+// times, so a call is keyed by its message id (the request id when the id is
+// missing) and counted once, with the last usage written for it. A line with
+// neither stands for a call of its own.
 const keep = claimWindow();
-const seg = {};
-let turns = 0;
+const calls = new Map();
+let anonymous = 0;
 for (const line of readLines(file)) {
   const entry = parse(line);
   if (entry === null || keep(entry) === false) continue;
   const message = entry.message || {};
   const usage = message.usage;
   if (usage === undefined || usage === null) continue;
+  const key = message.id || entry.requestId || 'line:' + (anonymous += 1);
+  calls.set(key, { model: message.model, usage: usage });
+}
+const seg = {};
+let turns = 0;
+for (const call of calls.values()) {
+  const usage = call.usage;
   turns += 1;
-  bump(seg, message.model, {
+  bump(seg, call.model, {
     input: usage.input_tokens,
     output: usage.output_tokens,
     cache_read: usage.cache_read_input_tokens,
