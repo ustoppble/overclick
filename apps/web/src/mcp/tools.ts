@@ -102,6 +102,7 @@ import { manageDenialMessage } from "../lib/manage-capability";
 import { loadModelPrices, type PricesDb } from "../lib/prices";
 import {
   bindUsageRecipe,
+  citeUsageRecipe,
   loadUsageRecipes,
   recipeForCli,
   type RecipesDb,
@@ -1148,14 +1149,49 @@ async function projectGet(
       `Project ${input.project_id} not found in this workspace. ${PROJECT_HINT}`,
     );
   }
-  const cards = await projectCardCounts(db, row.id);
+  const dossier = contextReadRequested(input);
+  const current = dossier ? await freshDossier(db, ctx, row) : row;
+  const cards = await projectCardCounts(db, current.id);
   const names = await organizationNames(db, ctx.workspaceId);
-  const orgName = organizationNameOf(names, row.organizationId);
+  const orgName = organizationNameOf(names, current.organizationId);
   return {
-    project: contextReadRequested(input)
-      ? mapProjectDetail(row, orgName, cards)
-      : mapProject(row, orgName, cards),
+    project: dossier
+      ? mapProjectDetail(current, orgName, cards)
+      : mapProject(current, orgName, cards),
   };
+}
+
+/** Last time project_get pulled a project's sources, by project id. */
+const dossierCheckedAt = new Map<string, number>();
+const DOSSIER_RECHECK_MS = 5 * 60_000;
+
+/**
+ * The dossier as its GitHub sources say it is now. current_version used to
+ * advance only on the release webhook or the daily pass, so a board that
+ * missed a webhook kept announcing 1.3.7 with the repository on 1.3.24. The
+ * dossier is no longer in every claim, only asked for on purpose, so pulling
+ * the sources at that moment is cheap; a recheck window keeps a burst of
+ * reads from hitting GitHub more than once. A source that cannot be reached
+ * leaves the stored dossier as it was.
+ */
+async function freshDossier(
+  db: McpDatabase,
+  ctx: AuthContext,
+  row: ProjectRow,
+): Promise<ProjectRow> {
+  if (!row.contextSource) return row;
+  const now = Date.now();
+  const last = dossierCheckedAt.get(row.id);
+  if (last !== undefined && now - last < DOSSIER_RECHECK_MS) return row;
+  dossierCheckedAt.set(row.id, now);
+  try {
+    const refreshed = await refreshProjectContext(db, ctx.workspaceId, row.id, {
+      actor: ctx.tokenLabel || "mcp",
+    });
+    return refreshed?.project ?? row;
+  } catch {
+    return row;
+  }
 }
 
 async function projectCreate(
@@ -2949,7 +2985,66 @@ async function taskSearch(
   };
 }
 
+type ClaimExecutorInput = {
+  cli?: string;
+  model?: string;
+  effort?: string;
+  agent?: string;
+  session_id?: string;
+};
+
+/**
+ * task_create, optionally claiming the card in the same call. Measured on a
+ * live executor: in 14 of 15 claims the session taking the card was the one
+ * that had just written it, and got its own contract back at ~14k tokens a
+ * time. With claim, the author gets only what it lacks — the short id, the
+ * branch, the commit prefix and the measuring line.
+ */
 async function taskCreate(
+  db: McpDatabase,
+  ctx: AuthContext,
+  input: Parameters<typeof insertTask>[2] & {
+    claim?: { executor?: ClaimExecutorInput; transcript?: TranscriptRefWire };
+  },
+) {
+  const { claim, ...card } = input;
+  if (!claim) return insertTask(db, ctx, card);
+
+  // Refuse an unregistered model before the insert, not after it: otherwise
+  // the refusal leaves an open card nobody asked to keep.
+  const refused = await claimModelRefusal(db, ctx, claim.executor);
+  if (refused) return refused;
+
+  const created = await insertTask(db, ctx, { ...card, return: "ack" });
+  if (!created || !("short_id" in created)) return created;
+
+  const claimed = await taskClaim(db, ctx, {
+    task_id: created.short_id,
+    executor: claim.executor,
+    transcript: claim.transcript,
+  });
+  if (!claimed || !("branch" in claimed)) {
+    const failure = claimed && "error" in claimed ? claimed.error : null;
+    const reason = failure?.message ?? "unknown error.";
+    return err(
+      failure?.code ?? "INTERNAL",
+      `Card ${created.short_id} was created but could not be claimed: ${reason} It stays open; call task_claim to take it.`,
+    );
+  }
+  return {
+    short_id: claimed.short_id,
+    status: claimed.status,
+    branch: claimed.branch,
+    commit_prefix: claimed.commit_prefix,
+    claimed_at: claimed.claimed_at,
+    measure: claimed.measure,
+    ...(claimed.harness_divergence
+      ? { harness_divergence: { warning: claimed.harness_divergence.warning } }
+      : {}),
+  };
+}
+
+async function insertTask(
   db: McpDatabase,
   ctx: AuthContext,
   input: {
@@ -3177,22 +3272,17 @@ async function taskCreate(
   });
 }
 
-async function taskClaim(
+/**
+ * Refuses a claim whose declared model is not registered for the workspace,
+ * before anything is written. task_create { claim } runs it too, ahead of the
+ * insert, so a refused model never leaves a card behind.
+ */
+async function claimModelRefusal(
   db: McpDatabase,
   ctx: AuthContext,
-  input: {
-    task_id: string;
-    force?: boolean;
-    executor?: {
-      cli?: string;
-      model?: string;
-      effort?: string;
-      agent?: string;
-      session_id?: string;
-    };
-    transcript?: TranscriptRefWire;
-  },
+  executor: { cli?: string; model?: string } | undefined,
 ) {
+  const input = { executor };
   const declaredModel = input.executor?.model?.trim();
   if (declaredModel) {
     const [claimWs] = await db
@@ -3224,6 +3314,28 @@ async function taskClaim(
       return err("INVALID_ARGUMENT", refusal);
     }
   }
+  return null;
+}
+
+async function taskClaim(
+  db: McpDatabase,
+  ctx: AuthContext,
+  input: {
+    task_id: string;
+    force?: boolean;
+    executor?: {
+      cli?: string;
+      model?: string;
+      effort?: string;
+      agent?: string;
+      session_id?: string;
+    };
+    transcript?: TranscriptRefWire;
+    return?: "compact" | "full";
+  },
+) {
+  const refused = await claimModelRefusal(db, ctx, input.executor);
+  if (refused) return refused;
 
   const claimed = await db.transaction(async (tx) => {
     const found = await findTask(tx, ctx.workspaceId, input.task_id, true);
@@ -3420,6 +3532,36 @@ async function taskClaim(
     model: claimed.value.executor.model,
   });
 
+  const divergence = harnessDivergence(
+    harnessFromDb(claimed.value.updated.harness),
+    claimed.value.executor,
+  );
+  if (divergence) {
+    // The swap survives the session: the card timeline records planned vs
+    // actual automatically, whoever reads the board later sees what ran.
+    const { recommended, actual } = divergence;
+    const planned = [
+      recommended.cli ? `${recommended.cli} · ` : "",
+      recommended.model,
+      ` · ${recommended.effort}`,
+    ].join("");
+    const cameWith = [
+      actual.cli ? `${actual.cli} · ` : "",
+      actual.model,
+      actual.effort ? ` · ${actual.effort}` : "",
+    ].join("");
+    await db.insert(taskComment).values({
+      taskId: claimed.value.updated.id,
+      authorAgentRef: ctx.tokenLabel,
+      kind: "executor_swap",
+      body: `planned ${planned}, actual ${cameWith}`,
+    });
+  }
+
+  if (input.return !== "full") {
+    return compactClaimPayload(db, claimed.value, divergence);
+  }
+
   const payload = await assembleTaskPayload(
     db,
     claimed.value.updated,
@@ -3435,60 +3577,6 @@ async function taskClaim(
   );
   if (!payload || ("ok" in payload && payload.ok === false)) return payload;
 
-  const recommended = payload.task.harness;
-  const actual = claimed.value.executor;
-  const modelDiverges = Boolean(
-    recommended &&
-      actual.model &&
-      normalizeModelKey(actual.model) !== normalizeModelKey(recommended.model),
-  );
-  const effortDiverges = Boolean(
-    recommended &&
-      actual.effort &&
-      actual.effort.trim().toLowerCase() !== recommended.effort.trim().toLowerCase(),
-  );
-  const divergence =
-    recommended &&
-    (modelDiverges || effortDiverges)
-      ? {
-          recommended,
-          actual: {
-            ...(actual.cli ? { cli: actual.cli } : {}),
-            ...(actual.model ? { model: actual.model } : {}),
-            ...(actual.effort ? { effort: actual.effort } : {}),
-          },
-          warning: `Executor differs from the card harness: the card plans ${
-            recommended.model
-          } · ${recommended.effort}, the claim came with ${[
-            actual.model,
-            actual.effort,
-          ]
-            .filter(Boolean)
-            .join(" · ")}.`,
-        }
-      : undefined;
-
-  if (divergence) {
-    // The swap survives the session: the card timeline records planned vs
-    // actual automatically, whoever reads the board later sees what ran.
-    const planned = [
-      recommended?.cli ? `${recommended.cli} · ` : "",
-      recommended?.model,
-      ` · ${recommended?.effort}`,
-    ].join("");
-    const cameWith = [
-      actual.cli ? `${actual.cli} · ` : "",
-      actual.model,
-      actual.effort ? ` · ${actual.effort}` : "",
-    ].join("");
-    await db.insert(taskComment).values({
-      taskId: claimed.value.updated.id,
-      authorAgentRef: ctx.tokenLabel,
-      kind: "executor_swap",
-      body: `planned ${planned}, actual ${cameWith}`,
-    });
-  }
-
   return {
     task: payload.task,
     attempt: mapExecutionAttempt(claimed.value.attempt),
@@ -3499,6 +3587,125 @@ async function taskClaim(
     ...(divergence ? { harness_divergence: divergence } : {}),
   };
 }
+
+/** Planned harness against what the claim declared; undefined when they agree. */
+function harnessDivergence(
+  recommended: Harness | null,
+  actual: { cli?: string | null; model?: string | null; effort?: string | null },
+) {
+  if (!recommended) return undefined;
+  const modelDiverges = Boolean(
+    actual.model &&
+      normalizeModelKey(actual.model) !== normalizeModelKey(recommended.model),
+  );
+  const effortDiverges = Boolean(
+    actual.effort &&
+      actual.effort.trim().toLowerCase() !== recommended.effort.trim().toLowerCase(),
+  );
+  if (!modelDiverges && !effortDiverges) return undefined;
+  return {
+    recommended,
+    actual: {
+      ...(actual.cli ? { cli: actual.cli } : {}),
+      ...(actual.model ? { model: actual.model } : {}),
+      ...(actual.effort ? { effort: actual.effort } : {}),
+    },
+    warning: `Executor differs from the card harness: the card plans ${
+      recommended.model
+    } · ${recommended.effort}, the claim came with ${[actual.model, actual.effort]
+      .filter(Boolean)
+      .join(" · ")}.`,
+  };
+}
+
+/**
+ * The default claim answer (OCL-183). The old one carried the card twice
+ * (fields and a markdown copy), the organization and project dossier whole,
+ * and the usage recipe pasted twice — ~14k tokens an executor then re-read on
+ * every later turn, most of it text it already had. This one carries the
+ * contract once, as fields; the dossier stays behind project_get; the recipe
+ * is cited by one command line. When the claiming session is the one that
+ * wrote the card, even the contract is left out: it already holds it.
+ */
+async function compactClaimPayload(
+  db: McpDatabase,
+  claimed: {
+    updated: TaskRow;
+    proj: ProjectRow;
+    attempt: typeof executionAttempt.$inferSelect;
+    reopenComment: string | null;
+    reclaimedStale: boolean;
+    executor: {
+      cli?: string | null;
+      model?: string | null;
+      session_id?: string | null;
+    };
+  },
+  divergence: ReturnType<typeof harnessDivergence>,
+) {
+  const { updated: row, proj, attempt, executor } = claimed;
+  const mapped = mapTask(row, proj, { reopenComment: claimed.reopenComment });
+  const convention = branchConvention(mapped.short_id, mapped.title);
+  const authoredHere = Boolean(
+    executor.session_id &&
+      mapped.origem.session_id &&
+      executor.session_id === mapped.origem.session_id,
+  );
+
+  const policy = await loadPolicy(db, proj.workspaceId);
+  const chain = policyChain(lookupCardapioPolicy(policy, row.tipo));
+  const comments = await listTaskComments(db, row.id);
+  const missionRow = row.missionId
+    ? await findMission(db, proj.workspaceId, row.missionId)
+    : null;
+  const recipes = await loadUsageRecipes(db as RecipesDb, proj.workspaceId);
+  const measure = citeUsageRecipe(
+    recipeForCli(recipes, executor.cli ?? row.claimedByExecutor ?? row.harness?.cli ?? null),
+    {
+      sessionId: executor.session_id ?? attempt.sessionId,
+      model: executor.model ?? attempt.model ?? mapped.harness?.model,
+      claimedAt: attempt.startedAt,
+    },
+  );
+
+  return {
+    short_id: mapped.short_id,
+    title: mapped.title,
+    type: mapped.type,
+    priority: mapped.priority,
+    status: mapped.status,
+    project_id: mapped.project_id,
+    ...(authoredHere
+      ? { authored_here: true }
+      : {
+          o_que: mapped.o_que,
+          por_que: mapped.por_que,
+          como_confirmo: mapped.como_confirmo,
+        }),
+    ...(mapped.harness ? { harness: mapped.harness } : {}),
+    ...(chain.length > 1 ? { chain: [...chain] } : {}),
+    ...(missionRow ? { mission: { id: missionRow.id, title: missionRow.title } } : {}),
+    ...(comments.length ? { comments } : {}),
+    ...(claimed.reopenComment ? { reopen_comment: claimed.reopenComment } : {}),
+    branch: convention.branch,
+    commit_prefix: convention.commit_prefix,
+    attempt_id: attempt.id,
+    claimed_at: iso(attempt.startedAt),
+    measure,
+    deliver: CLAIM_DELIVER_NOTE,
+    ...(divergence ? { harness_divergence: divergence } : {}),
+    ...(claimed.reclaimedStale ? { reclaimed_stale: true } : {}),
+  };
+}
+
+/**
+ * The executor contract in the three sentences a worker needs at the end of a
+ * run. The project and mission dossiers are named, not sent.
+ */
+const CLAIM_DELIVER_NOTE =
+  "Commit and push, run measure.command, then task_deliver with summary, evidence, commit, branch, usage (the segments it prints) and transcript.path. " +
+  "Dies or hits its model limit: task_create { supersedes: this card, inherit: true }. " +
+  "Project dossier on demand: project_get { project_id, view: \"briefing\" }; mission context: mission_get.";
 
 /**
  * Turns an open claim back into queue work. The attempt is closed rather than

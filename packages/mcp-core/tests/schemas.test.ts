@@ -147,8 +147,13 @@ describe("MCP tool contracts", () => {
         return: "ack",
       }).return,
     ).toBe("ack");
+    // task_claim answers compact by default (OCL-183); full is the legacy
+    // markdown briefing, and the write-style "ack" means nothing here.
     expect(
       TaskClaimInputSchema.safeParse({ task_id: "OC-1", return: "full" }).success,
+    ).toBe(true);
+    expect(
+      TaskClaimInputSchema.safeParse({ task_id: "OC-1", return: "ack" }).success,
     ).toBe(false);
 
     const ack = TaskCreateOutputSchema.parse({

@@ -20,13 +20,17 @@ bugs, features, refactors, and deployments.
    returned CLI, model, and effort on the card rather than copying a fixed
    policy into prompts or documentation.
 4. Call `task_claim` before touching the work. Declare the real CLI, exact
-   model, and current session identifier. The returned briefing is the
-   self-contained execution contract.
+   model, and current session identifier. The answer carries the contract once
+   (o_que, por_que, como_confirmo, harness, branch, commit prefix) and a
+   one-line `measure.command`; the project dossier is not in it — ask
+   `project_get { view: "briefing" }` when the work needs it. Creating a card
+   you will execute yourself? Pass `claim` to `task_create`: one call, and the
+   answer is only the short id, branch, commit prefix and measuring line.
 5. Follow the card's confirmation steps. Register the prescribed branch with
    `branch_register` before editing when the work lives in Git.
 6. Commit and push the branch before `task_deliver`. Cite the full commit ID in
    delivery evidence so the remote-check hook can confirm it.
-7. Run the usage recipe from the claim briefing and send the measured usage in
+7. Run `measure.command` from the claim and send the measured usage in
    `task_deliver`, together with a truthful summary, evidence, branch, and the
    first verification command or location.
 8. Stop at `feito`. Only a human marks the work `validado`.
@@ -219,8 +223,9 @@ When another executor receives a card, send only:
 Execute card <ID> on the OverClick board.
 ```
 
-The claim briefing already carries the contract, mission context, branch
-convention, harness, and usage recipe. Put any newly discovered run-wide rule
+The claim already carries the contract, branch convention, harness, and the
+measuring line; the mission and project dossiers are one `mission_get` /
+`project_get` away. Put any newly discovered run-wide rule
 on the card or mission before dispatching instead of duplicating it in the
 prompt.
 

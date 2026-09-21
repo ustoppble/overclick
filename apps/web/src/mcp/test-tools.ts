@@ -11,6 +11,9 @@ const FULL_RESPONSE_WRITES = new Set<McpToolName>([
   "project_update",
   "mission_update",
   "task_create",
+  // task_claim answers compact by default (OCL-183); the scenarios written
+  // against the markdown briefing ask for it explicitly.
+  "task_claim",
   "task_release",
   "task_heartbeat",
   "task_update",

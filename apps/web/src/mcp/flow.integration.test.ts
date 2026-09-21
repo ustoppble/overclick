@@ -3,7 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import {
   TaskDeliverFullOutputSchema as TaskDeliverOutputSchema,
   MCP_TOOL_NAMES,
-  TaskClaimOutputSchema,
+  TaskClaimCompactOutputSchema,
   TaskCreateFullOutputSchema as TaskCreateOutputSchema,
   TaskGetOutputSchema,
   TaskListOutputSchema,
@@ -142,13 +142,15 @@ describe("MCP end-to-end against a test db", () => {
             executor: { cli: "claude-code", model: "opus-5", session_id: "sess_exec" },
           },
         }),
-        TaskClaimOutputSchema,
+        TaskClaimCompactOutputSchema,
       );
-      expect(claimed.task.status).toBe("em_execucao");
-      expect(claimed.attempt.task_id).toBe(created.task.id);
-      expect(claimed.attempt.finished_at).toBeNull();
+      // The default claim is compact (OCL-183): contract once, no briefing.
+      expect(claimed.status).toBe("em_execucao");
+      expect(claimed.short_id).toBe(created.task.short_id);
+      expect(claimed.o_que).toBe(created.task.o_que);
+      expect(claimed.branch).toBe(got.branch_convention.branch);
       expect(claimed.harness_divergence?.warning).toMatch(/opus-5/i);
-      expect(claimed.briefing_markdown).toContain("## Convenção");
+      expect(claimed).not.toHaveProperty("briefing_markdown");
 
       const handoff = parseTool(
         await client.callTool({

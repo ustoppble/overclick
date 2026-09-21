@@ -105,7 +105,9 @@ describe("MCP tool edge cases against a test db", () => {
     if (!created.ok) return;
 
     const ack = TaskCreateAckOutputSchema.parse(created.value);
-    if ("task" in ack) throw new Error("expected the compact task_create acknowledgement");
+    if ("task" in ack || !("changed" in ack)) {
+      throw new Error("expected the compact task_create acknowledgement");
+    }
     expect(ack.short_id).toBe("OC-1");
     expect(ack.changed).toMatchObject({ project_id: world.projectId, mode: "solo" });
     expect(created.value).not.toHaveProperty("task");

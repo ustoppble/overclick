@@ -3,6 +3,7 @@ import {
   bindRecipeSettings,
   factoryUsageRecipes,
   findUsageRecipe,
+  pluginMeasureCommand,
   usageRecipe,
   type Database,
   type RecipeYield,
@@ -63,6 +64,24 @@ function shellValue(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
+type RecipeExecutor = {
+  sessionId?: string | null;
+  model?: string | null;
+  claimedAt?: Date | string | null;
+};
+
+/** The `key=value` settings a shipped recipe reads for this attempt. */
+function recipeSettings(recipe: UsageRecipeRow, executor: RecipeExecutor) {
+  const isCodex = recipe.cli === "codex";
+  return {
+    claimed_at: executor.claimedAt
+      ? new Date(executor.claimedAt).toISOString()
+      : null,
+    codex_session: isCodex ? executor.sessionId : null,
+    codex_model: isCodex ? executor.model : null,
+  };
+}
+
 /**
  * Binds a recipe to this attempt's claim window. Every transcript-reading
  * shipped recipe understands claimed_at; Codex additionally gets the exact
@@ -84,16 +103,9 @@ export function bindUsageRecipe(
 ): UsageRecipeRow | null {
   if (!recipe) return recipe;
 
-  const claimedAt = executor.claimedAt
-    ? new Date(executor.claimedAt).toISOString()
-    : null;
-
+  const settings = recipeSettings(recipe, executor);
+  const claimedAt = settings.claimed_at;
   const isCodex = recipe.cli === "codex";
-  const settings = {
-    claimed_at: claimedAt,
-    codex_session: isCodex ? executor.sessionId : null,
-    codex_model: isCodex ? executor.model : null,
-  };
 
   const environment = [
     claimedAt ? `OVERCLICK_CLAIMED_AT=${shellValue(claimedAt)}` : null,
@@ -121,5 +133,41 @@ export function bindUsageRecipe(
           ? `${environment.join(" ")} ${recipe.command}`
           : recipe.command
         : bindRecipeSettings(recipe.command, settings),
+  };
+}
+
+export type RecipeCitation = {
+  yields: RecipeYield;
+  command?: string;
+  note?: string;
+};
+
+/**
+ * The recipe cited by one line instead of pasted: a claim used to carry the
+ * whole script twice (in the briefing and in usage_recipe), several thousand
+ * tokens every executor re-read on every later turn. The line runs the same
+ * shipped recipe from the plugin's local bin/measure.cjs, with the claim
+ * window as `key=value` settings — no board address, no download.
+ *
+ * A recipe the workspace rewrote is not in the plugin, so it points at
+ * task_get instead: the full command is one call away, not pasted.
+ */
+export function citeUsageRecipe(
+  recipe: UsageRecipeRow | null,
+  executor: RecipeExecutor,
+): RecipeCitation | null {
+  if (!recipe) return null;
+  if (!recipe.command) {
+    return { yields: recipe.yields, note: recipe.instructions };
+  }
+  if (recipe.source !== "seed") {
+    return {
+      yields: recipe.yields,
+      note: 'This workspace rewrote the recipe: run usage_recipe.command from task_get {task_id, include: ["usage_recipe"]}.',
+    };
+  }
+  return {
+    yields: recipe.yields,
+    command: pluginMeasureCommand(recipe.cli, recipeSettings(recipe, executor)),
   };
 }

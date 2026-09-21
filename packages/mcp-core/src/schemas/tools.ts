@@ -778,6 +778,20 @@ export const TaskSearchOutputSchema = z.object({
   tasks: z.array(TaskSearchHitSchema),
 });
 
+/** Who is running the card, as task_claim and task_create { claim } take it. */
+export const ClaimExecutorSchema = z.object({
+  executor: z
+    .object({
+      cli: z.string().optional(),
+      model: z.string().optional(),
+      effort: EffortSchema.optional(),
+      agent: z.string().optional(),
+      session_id: z.string().optional(),
+    })
+    .optional(),
+  transcript: TranscriptRefSchema.optional(),
+}).strict();
+
 /**
  * Canonical task_create input (§4.1).
  * Workspace is resolved from the MCP bearer token — never sent in the body.
@@ -806,10 +820,23 @@ export const TaskCreateInputSchema = z
     devolve_para: ReviewerSchema.optional(),
     harness: HarnessSchema.optional(),
     origem: OrigemSchema,
+    /**
+     * Claim the new card in the same call. The author already holds the
+     * contract it just wrote, so the answer is only what it lacks: the id,
+     * the branch, the commit prefix and the measuring line.
+     */
+    claim: ClaimExecutorSchema.optional(),
     /** Mutations are compact by default; request the complete card explicitly. */
     return: WriteReturnSchema.optional(),
   }).strict()
   .superRefine((value, ctx) => {
+    if (value.claim && value.mode === "team") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["claim"],
+        message: "claim takes a solo card; a team card is executed through its subtasks",
+      });
+    }
     if (value.inherit && !value.supersedes) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -847,35 +874,98 @@ export const TaskCreateFullOutputSchema = z.object({
   subtasks: z.array(TaskSchema),
 });
 
+/**
+ * How the executor measures its run, cited instead of pasted: a one-line
+ * command that fetches the board's recipe, or, when the CLI has nothing to
+ * run, the one sentence that says what to report instead.
+ */
+export const ClaimMeasureSchema = z.object({
+  yields: z.enum(["tokens_per_model", "no_tokens"]),
+  command: z.string().min(1).optional(),
+  note: z.string().min(1).optional(),
+});
+
+/** task_create { claim }: the only things the author does not already hold. */
+export const TaskCreateClaimedOutputSchema = z.object({
+  short_id: z.string().min(1),
+  status: CardStatusSchema,
+  branch: z.string().min(1),
+  commit_prefix: z.string().min(1),
+  claimed_at: IsoDateTimeSchema,
+  measure: ClaimMeasureSchema.nullable(),
+  harness_divergence: z
+    .object({ warning: z.string().min(1) })
+    .optional(),
+});
+
 export const TaskCreateOutputSchema = z.union([
+  TaskCreateClaimedOutputSchema,
   TaskWriteAckSchema,
   TaskCreateFullOutputSchema,
 ]);
 
+/** compact: the contract once, no dossier; full: the legacy briefing. */
+export const ClaimReturnSchema = z.enum(["compact", "full"]);
+
 export const TaskClaimInputSchema = z.object({
   task_id: TaskIdSchema,
   force: z.boolean().optional(),
-  executor: z
-    .object({
-      cli: z.string().optional(),
-      model: z.string().optional(),
-      effort: EffortSchema.optional(),
-      agent: z.string().optional(),
-      session_id: z.string().optional(),
-    })
-    .optional(),
+  executor: ClaimExecutorSchema.shape.executor,
   /**
    * Pointer to this run's transcript. Omit it and the board still builds one
    * from the executor's cli and session_id; send the path at deliver time,
    * when the usage recipe has printed it.
    */
   transcript: TranscriptRefSchema.optional(),
+  /**
+   * compact (default) answers with the contract once, the branch and a
+   * one-line measuring command; full adds the markdown briefing with the
+   * organization and project dossier and the pasted recipe.
+   */
+  return: ClaimReturnSchema.optional(),
 }).strict();
 
 export const HarnessDivergenceSchema = z.object({
   recommended: HarnessSchema,
   actual: HarnessSchema.partial(),
   warning: z.string().min(1),
+});
+
+/**
+ * The default claim answer. The contract comes once, as fields; the project
+ * dossier is left to project_get and the recipe to a one-line command. When
+ * the claiming session is the one that wrote the card, the contract it
+ * already holds is left out too (authored_here).
+ */
+export const TaskClaimCompactOutputSchema = z.object({
+  short_id: z.string().min(1),
+  title: z.string().min(1),
+  type: TaskTypeSchema,
+  priority: PrioritySchema,
+  status: CardStatusSchema,
+  project_id: z.string().min(1),
+  authored_here: z.boolean().optional(),
+  o_que: z.string().optional(),
+  por_que: z.string().optional(),
+  como_confirmo: z.array(ConfirmationStepSchema).optional(),
+  harness: HarnessSchema.optional(),
+  /** Line of succession when the planned model cannot finish. */
+  chain: z.array(z.string().min(1)).optional(),
+  mission: z
+    .object({ id: z.string().min(1), title: z.string().min(1) })
+    .optional(),
+  /** Prose corrections to the contract, oldest first; the latest wins. */
+  comments: z.array(TaskCommentSchema).optional(),
+  reopen_comment: z.string().min(1).optional(),
+  branch: z.string().min(1),
+  commit_prefix: z.string().min(1),
+  attempt_id: z.string().min(1),
+  claimed_at: IsoDateTimeSchema,
+  measure: ClaimMeasureSchema.nullable(),
+  /** What to do at the end, and where the dossier is when it is needed. */
+  deliver: z.string().min(1),
+  harness_divergence: HarnessDivergenceSchema.optional(),
+  reclaimed_stale: z.boolean().optional(),
 });
 
 export const TaskClaimOutputSchema = z.object({
@@ -889,6 +979,12 @@ export const TaskClaimOutputSchema = z.object({
   /** True when this claim replaced an expired lease rather than an open card. */
   reclaimed_stale: z.boolean().optional(),
 });
+
+/** Legacy full briefing first: it is the stricter shape of the two. */
+export const TaskClaimResponseSchema = z.union([
+  TaskClaimOutputSchema,
+  TaskClaimCompactOutputSchema,
+]);
 
 /** Releases an open claim without losing its attempt telemetry. */
 export const TaskReleaseInputSchema = z.object({
@@ -1731,7 +1827,7 @@ export const toolContracts = {
   },
   task_claim: {
     input: TaskClaimInputSchema,
-    output: TaskClaimOutputSchema,
+    output: TaskClaimResponseSchema,
   },
   task_release: {
     input: TaskReleaseInputSchema,
@@ -1787,6 +1883,8 @@ export type TaskCreateInput = z.infer<typeof TaskCreateInputSchema>;
 export type TaskCreateOutput = z.infer<typeof TaskCreateOutputSchema>;
 export type TaskClaimInput = z.infer<typeof TaskClaimInputSchema>;
 export type TaskClaimOutput = z.infer<typeof TaskClaimOutputSchema>;
+export type TaskClaimCompactOutput = z.infer<typeof TaskClaimCompactOutputSchema>;
+export type TaskCreateClaimedOutput = z.infer<typeof TaskCreateClaimedOutputSchema>;
 export type TaskReleaseInput = z.infer<typeof TaskReleaseInputSchema>;
 export type TaskReleaseOutput = z.infer<typeof TaskReleaseOutputSchema>;
 export type TaskHeartbeatInput = z.infer<typeof TaskHeartbeatInputSchema>;

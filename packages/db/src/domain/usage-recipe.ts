@@ -617,3 +617,80 @@ export function findUsageRecipe<T extends UsageRecipe>(
     exact ?? recipes.find((recipe) => recipe.cli === GENERIC_RECIPE_CLI) ?? null
   );
 }
+
+/**
+ * Where the plugin keeps the measuring script, under the config root
+ * install.sh writes the plugin into ($XDG_CONFIG_HOME or ~/.config).
+ */
+export const PLUGIN_MEASURE_SEGMENTS = [
+  "overclick",
+  "plugin",
+  "bin",
+  "measure.cjs",
+] as const;
+
+/**
+ * plugin/bin/measure.cjs: every shipped recipe, in one local file the claim
+ * cites by name. A claim used to paste the whole recipe (twice), several
+ * thousand tokens re-read on every later turn; fetching it from the board
+ * instead would make a download-and-run the way in and break on a machine
+ * without network. The file is generated from the recipes above, and a test
+ * fails when the committed copy drifts from them.
+ */
+export function pluginMeasureScript(): string {
+  const cases = SEED.filter((recipe) => recipe.command)
+    .map((recipe) => {
+      const body = recipe.command.slice('node -e "'.length, -1);
+      return `  ${JSON.stringify(recipe.cli)}: function () {\n${body}\n  },`;
+    })
+    .join("\n");
+  return [
+    "// Generated from packages/db/src/domain/usage-recipe.ts — do not edit.",
+    "// Regenerate: WRITE_PLUGIN_MEASURE=1 pnpm --filter @agent-board/db test usage-recipe-plugin",
+    "//",
+    "// Measures this run from the CLI's own transcript and prints the usage",
+    "// task_deliver takes. Run it through the line a claim gives you:",
+    "// node -e \"...measure.cjs...\" cli=<cli> claimed_at=<claim time>",
+    "const recipes = {",
+    cases,
+    "};",
+    "let cli = '';",
+    "for (const item of process.argv.slice(1)) {",
+    "  if (item.startsWith('cli=')) cli = decodeURIComponent(item.slice(4));",
+    "}",
+    "const run = recipes[cli];",
+    "if (run === undefined) {",
+    "  process.stdout.write(JSON.stringify({",
+    "    segments: [],",
+    "    turns: 0,",
+    "    estimated: true,",
+    "    reason: 'This plugin has no usage recipe for ' + (cli || 'an unnamed CLI') + '. Estimate usage and send estimated: true.',",
+    "  }, null, 2) + String.fromCharCode(10));",
+    "} else {",
+    "  run();",
+    "}",
+    "",
+  ].join("\n");
+}
+
+/**
+ * The one line a claim cites: load the plugin's local measure.cjs and run the
+ * recipe for `cli`. No board address and no download — only the config root
+ * the installer already uses. Like the recipes, the line carries no double
+ * quote, dollar sign, backtick or backslash, so bash, zsh and PowerShell pass
+ * it through; when the plugin is missing it prints an estimate request
+ * instead of a stack trace.
+ */
+export function pluginMeasureCommand(
+  cli: string,
+  settings: Readonly<Record<string, string | null | undefined>>,
+): string {
+  const segments = PLUGIN_MEASURE_SEGMENTS.map((part) => `'${part}'`).join(",");
+  const line =
+    `node -e "const p=require('path');` +
+    `const root=process.env.XDG_CONFIG_HOME||p.join(require('os').homedir(),'.config');` +
+    `const file=p.join(root,${segments});` +
+    `if(require('fs').existsSync(file)){require(file)}else{console.log(JSON.stringify({segments:[],turns:0,estimated:true,` +
+    `reason:'The OverClick plugin is not installed here ('+file+' is missing). Reinstall it, or estimate usage and send estimated: true.'}))}"`;
+  return bindRecipeSettings(line, { cli, ...settings });
+}
