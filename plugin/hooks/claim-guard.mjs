@@ -1,5 +1,6 @@
 import {
   block,
+  claimFile,
   claimMarker,
   claimMarkerValid,
   clearClaimMarker,
@@ -11,7 +12,8 @@ import {
   hookCwd,
   hookSession,
   hookTool,
-  sessionClaims,
+  isOverclickInstallDir,
+  sessionClaimsProbe,
   parseJson,
   readStdin,
   writeClaimMarker,
@@ -36,6 +38,17 @@ const WRITE_TOOL =
 const READ_TOOL =
   /^(read|view|glob|grep|ls|notebookread|todowrite|todoread|task|agent|webfetch|websearch|exitplanmode)$/i;
 
+// S2 door 4 / AC 18: a Write or Edit landing here needs no claim — the spec
+// preparation flow (tlc-spec-lean) writes and publishes without one by
+// design. Anything else a WRITE_TOOL targets still needs a claim.
+const PLANNING_WRITE_PATH = /(^|[\\/])\.specs[\\/]|(^|[\\/])docs[\\/]plano[\\/]aprovacoes[\\/]/;
+
+// AC 21: while the board is unreachable, only this exact recovery shape is
+// exempt — the command that restarts the board itself, and only inside the
+// board's own install directory. Nothing wider: a compose project of some
+// other kind is an ordinary mutation.
+const DOCKER_COMPOSE_RECOVERY = /^docker\s+compose\s+(ps|up|restart)(\s|$)/;
+
 // A shell by any name. Used only as a floor: if a tool that looks like a shell
 // arrives with no command the guard can read, it is not proven read-only.
 const SHELL_TOOL =
@@ -54,7 +67,7 @@ failOpen(async () => {
   }
 
   if (RELEASE.test(toolName)) {
-    clearClaimMarker(cwd);
+    clearClaimMarker(cwd, hookSession(hookInput));
     return;
   }
 
@@ -66,18 +79,37 @@ failOpen(async () => {
   // here: only what is PROVEN not to mutate returns early.
   if (!mutationSuspected(hookInput, toolName)) return;
 
-  if (claimMarkerValid(cwd, hookSession(hookInput))) return;
+  const session = hookSession(hookInput);
+  if (claimMarkerValid(cwd, session)) return;
 
-  // A missing marker can be recovered only from this session's claim.
-  const claims = await sessionClaims(hookInput, 2);
-  if (claims && countTasks(claims) > 0) return;
+  // A missing marker can be recovered only from this session's claim — but
+  // only when the board actually answered. AC 20-21: when it did not, the
+  // recovery path is a fixed, narrow surface, never "assume no claims".
+  const probe = await sessionClaimsProbe(hookInput, 2);
+  if (probe.reachable) {
+    if (countTasks(probe.raw) > 0) return;
+    block("claima um card no board antes: task_claim {id}");
+    return;
+  }
 
-  block("claima um card no board antes: task_claim {id}");
+  if (boardUnreachableRecoveryAllowed(hookInput, cwd)) return;
+
+  block(
+    `board inacessível e nenhum marcador de claim local em ${claimFile(cwd, session)}; ` +
+      "religue o board (ou restaure o marcador) antes de mutar",
+  );
 });
+
+function boardUnreachableRecoveryAllowed(hookInput, cwd) {
+  const command = hookCommand(hookInput);
+  if (!command) return false;
+  if (!DOCKER_COMPOSE_RECOVERY.test(command.trim())) return false;
+  return isOverclickInstallDir(cwd);
+}
 
 function mutationSuspected(hookInput, toolName) {
   if (BOARD_TOOL.test(toolName)) return false;
-  if (WRITE_TOOL.test(toolName)) return true;
+  if (WRITE_TOOL.test(toolName)) return !planningWritePath(hookInput);
 
   // Whatever the tool is called, a command is judged on its own merits: proven
   // read-only passes, everything else — unknown verb, unknown dialect,
@@ -93,4 +125,15 @@ function mutationSuspected(hookInput, toolName) {
   // nor a file body is not evidence of a mutation, and gating every MCP call
   // would block the board itself. See plugin/OVERCLICK.md.
   return false;
+}
+
+function planningWritePath(hookInput) {
+  const input = hookInput?.tool_input ?? {};
+  const candidates = [
+    input.path, input.file_path, input.filePath, input.file,
+    input.target, input.destination, input.notebook_path,
+  ];
+  return candidates.some(
+    (candidate) => typeof candidate === "string" && PLANNING_WRITE_PATH.test(candidate),
+  );
 }
