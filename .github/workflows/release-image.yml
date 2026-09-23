@@ -71,18 +71,23 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - id: notes
-        # The body of the release commit is the changelog, written once by
-        # scripts/release.sh. `%b` is the body alone, without the subject.
-        run: |
-          {
-            echo 'body<<RELEASE_NOTES_EOF'
-            git log -1 --pretty=%b "${GITHUB_REF_NAME}"
-            echo 'RELEASE_NOTES_EOF'
-          } >> "$GITHUB_OUTPUT"
+      # The body of the release commit is the changelog, written once by
+      # scripts/release.sh. `%b` is the body alone, without the subject.
+      #
+      # OCL-207: the notes go from git to a file and from the file to gh, and
+      # never through a `${{ }}` expression. Expressions are expanded into the
+      # script text before bash runs it, so the old
+      # `--notes "${{ steps.notes.outputs.body }}"` pasted the changelog into
+      # the script itself: every backtick ran as command substitution on a
+      # runner holding GH_TOKEN, and every double quote ended the argument.
+      # v0.3.19 got a Release with each backticked word erased; v0.3.20 got
+      # none. A file is inert data, and it also drops the step output's
+      # heredoc delimiter, which a changelog line could have closed early.
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          notes="${RUNNER_TEMP}/release-notes.md"
+          git log -1 --pretty=%b "${GITHUB_REF_NAME}" > "$notes"
           gh release create "${GITHUB_REF_NAME}" \
             --title "OverClick ${GITHUB_REF_NAME#v}" \
-            --notes "${{ steps.notes.outputs.body }}"
+            --notes-file "$notes"
