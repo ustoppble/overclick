@@ -11,6 +11,8 @@ services:
   app:
     # The proxy reaches the container over the shared network, so no host port.
     ports: !override []
+    environment:
+      OVERCLICK_TRUSTED_PROXY: "1"
     networks:
       - overclick
       - proxy

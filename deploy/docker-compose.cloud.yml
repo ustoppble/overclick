@@ -40,13 +40,11 @@ services:
       # command (that mismatch is what took the board down in OCL-43).
       OVERCLICK_DEPLOY_MODE: hosted
       # GHSA-hccf: the pairing endpoint charges guesses to the caller's
-      # origin, and the only way it learns one is from the proxy in front.
-      # Set here because every hosted deploy has one; it requires a proxy
-      # that APPENDS the peer to x-forwarded-for (traefik, nginx's
-      # $proxy_add_x_forwarded_for, caddy all do) rather than passing a
-      # client-supplied header through. Never set it on an instance that
-      # takes connections directly: the caller would be naming itself.
-      OVERCLICK_TRUSTED_PROXY: "1"
+      # origin. Only a proxy that APPENDS the peer to x-forwarded-for
+      # (Traefik, nginx's $proxy_add_x_forwarded_for, Caddy) can supply a
+      # trustworthy origin. Direct/diagnostic mode is always untrusted; only
+      # the proxy overlay may replace this with 1.
+      OVERCLICK_TRUSTED_PROXY: "0"
     volumes:
       - update-trigger:/update-trigger
     # Bound to loopback: the reverse proxy is the only way in from outside.
@@ -117,5 +115,6 @@ volumes:
   update-trigger:
 
 networks:
+  # Keep the instance network scoped to this Compose project. A fixed global
+  # name lets a disposable clone join the active instance's network.
   overclick:
-    name: overclick
