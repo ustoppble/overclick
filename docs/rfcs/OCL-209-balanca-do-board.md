@@ -7,6 +7,11 @@
 
 ## Resposta curta
 
+0. **O único atraso que derruba o trabalho é a subida da sessão, não uma chamada.** Isto responde ao comentário de 15:40 e está detalhado na seção "Subida da sessão".
+   - **Quando funciona, a subida é rápida:** `tools/list` leva 66 ms (p50) medido direto no servidor real, e 207 ms numa onda de 8 subidas simultâneas.
+   - **Às vezes a listagem nunca volta:** em **109 de 3.466 sessões (3,1%)** ela estoura o limite de **30 s**. A sessão nasce sem as ferramentas do board e não tenta de novo.
+   - **Hoje foi pior: 23 de 381 sessões (6,0%)**, incluindo o worker de 15:35:46 em dev-1324.
+   - **É o primeiro alvo pela gravidade.** O tamanho médio da resposta não explica essas falhas; o que as explica é a requisição que se perde.
 1. **O tempo vai quase todo no modelo escrevendo.** Nos 497 registros de card medidos desde 09/09, o agente passa 23,4 s (p50) em turnos de board, e 22,9 s disso é o modelo gerando a chamada. O servidor responde em 0,2 s. Nas 503 execuções medidas, os turnos de board somam 29,1 s: 27,9 s de escrita e 0,7 s de servidor. Ler a resposta (prefill) custa de 0,04 a 0,07 s por 1.000 tokens, enquanto escrever custa de 8 a 12 s por 1.000 tokens. Por token, escrever é **150 a 250 vezes mais caro** que ler.
 2. **O card completo, registrar + executar, custa ≈ 52 s de board** (soma das medianas). De 96% a 98% desse tempo é escrita.
 3. **Três pontos concentram o tempo:**
@@ -254,9 +259,107 @@ O conteúdo do contrato é o_que/por_que/como_confirmo no create e resumo/evidê
   - `task_claim`, 4%: modelo fora do enum em 10 casos, ALREADY_CLAIMED em 9;
   - `task_update`, 4%: chaves desconhecidas.
 
+## Subida da sessão: o atraso que derruba o trabalho (adendo ao comentário de 15:40)
+
+O comentário pediu três coisas: medir o `tools/list` na abertura da sessão, pesar as descrições e verificar o timeout. As fontes são três.
+
+### Logs MCP do próprio Claude Code
+
+- **Onde:** `~/Library/Caches/claude-cli-nodejs/<cwd>/mcp-logs-overclick/*.jsonl`, um arquivo por conexão.
+- **Amostra:** 3.466 sessões com o board de produção, de 19/08 a 23/09.
+- **Script:** `scripts/ocl-209/mcp-logs.mjs`.
+
+**Tempo para conectar (`initialize`):**
+
+| p50 | p90 | p99 | máximo |
+|---|---|---|---|
+| 345 ms | 1,5 s | 4,6 s | 26,3 s |
+
+**A listagem que não volta.** Em **109 sessões (3,1%)**, a conexão fecha em 0,2–2 s e o `tools/list` fica sem resposta até estourar em **exatos 30,0 s** (p50 30,002 s depois de conectar). Depois disso, a sessão **nunca** chama o board: não há nova tentativa.
+
+| Dia | Sessões | Estouros | Taxa |
+|---|---|---|---|
+| 23/08 | 106 | 10 | 9,4% |
+| 27/08 | 70 | 6 | 8,6% |
+| 10/09 | 62 | 5 | 8,1% |
+| 09/09 | 219 | 15 | 6,8% |
+| 23/09 | 381 | 23 | 6,0% |
+
+**Correlação com ondas de subida:**
+- As sessões que falharam tinham **11 subidas simultâneas** em ±30 s (mediana); as que funcionaram tinham 6.
+- De 00:49 a 01:09 de 23/09, com 30 a 64 sessões subindo em ±2 min, caíram 19 das 23 falhas do dia.
+- Às 15:35:16, 7 sessões subiram juntas e 2 falharam: as do dev-1324, que é o worker do comentário.
+
+**Depois da falha**, o log registra "HTTP connection dropped" e "socket connection was closed unexpectedly". A requisição ficou pendurada numa conexão que morreu. O servidor estava de pé: tinha acabado de responder o `initialize`.
+
+### Probe direto no servidor real (`scripts/ocl-209/handshake-probe.mjs`, 23/09)
+
+O script lê o endpoint de `~/.claude.json` e não imprime URL nem cabeçalhos.
+
+| Cenário | `initialize` p50 | `tools/list` p50 | `tools/list` máx |
+|---|---|---|---|
+| 10 subidas em sequência | 123 ms | 66 ms | 695 ms |
+| onda de 4 simultâneas | — | 146 ms | — |
+| onda de 8 simultâneas | — | 207 ms | — |
+
+Quando a listagem volta, ela é rápida.
+
+### O que a rota faz por requisição (bench PGlite, código v0.3.20)
+
+- **Tudo é refeito a cada requisição.** A rota HTTP roda sem sessão (`sessionIdGenerator: undefined`). Por isso `initialize`, `tools/list` e **cada chamada** reconstroem o servidor MCP inteiro:
+  - lê **todos os projetos com o contexto completo**;
+  - monta as instruções;
+  - registra 32 ferramentas e 1 recurso por projeto documentado.
+- **Em CPU isso custa ~1 ms** (p50; 14 ms no pior caso). Sozinho, não explica os 30 s, mas multiplica leituras de banco por requisição.
+
+### Peso da listagem, pago por todo pane na abertura, use ele o board ou não
+
+- **`tools/list` real:** 44.966 chars para 32 ferramentas. São 11.551 chars de descrições e ~33k de schemas.
+- **Instruções do servidor:**
+
+  | Data | Chars |
+  |---|---|
+  | 19/08 | 2.823 |
+  | 23/09 | 18.079 |
+
+  Crescem ~450 chars por dia, à medida que projetos ganham contexto. O Claude Code corta em 2.048, então ~16k são lidos do banco e montados a cada requisição sem que o Claude leia nada disso.
+- **Como cada cliente carrega as definições:** no Claude Code elas vêm sob demanda (ToolSearch). No Codex, todas entram no contexto na abertura.
+
+### Timeout
+
+**Configuração de hoje:**
+
+| Limite | Valor | Fonte |
+|---|---|---|
+| Conexão | 30.000 ms | log "Starting connection with timeout of 30000ms", nas 3.609 conexões |
+| Listagem de ferramentas | 30.000 ms | os estouros acontecem em 30,0 s |
+| Requisição HTTP | 60.000 ms (`timeoutMs`) | log das conexões |
+
+- **Origem:** o limite é do cliente Claude Code, não do board.
+- **Configurável:** sim. No binário do Claude Code 2.1.280:
+  - `MCP_TIMEOUT` cai para 30000 quando ausente (`return n&&n>0?…:30000`);
+  - `MCP_CONNECT_TIMEOUT_MS` cai para 5000.
+
+  Nenhuma das duas está definida no ambiente dos panes, então valem os padrões.
+- **Prazo concreto para a dieta:** a listagem precisa voltar muito antes de 30 s mesmo na pior onda. O problema não é o tamanho médio, que fica em 0,07–0,2 s, e sim a requisição que se perde.
+
 ## Candidatos a corte
 
 A regra do dono: quando um corte de escrita e um de leitura disputam prioridade, **o de escrita vence**. Cada linha diz o que cortar, por que é seguro e o que se perde.
+
+A subida vem antes de todos, porque é o único atraso que **derruba** o trabalho em vez de só atrasar:
+
+- **0a. [SUBIDA] Não perder a listagem.**
+  - **O quê:** investigar a requisição que fica pendurada 30 s depois de um `initialize` que deu certo, com os logs do servidor nos horários medidos (23/09 das 00:49 às 01:09 e às 15:35:46). A suspeita é uma conexão keep-alive derrubada no caminho.
+  - **Ganho:** some a perda de 3,1% das sessões (6% hoje).
+  - **Perde-se:** nada.
+- **0b. [SUBIDA] Rota com menos trabalho por requisição.**
+  - **O quê:** não ler o contexto de todos os projetos em cada requisição. Usar cache por workspace ou instruções sem os trechos de projeto, que o Claude já corta em 2.048.
+  - **Seguro porque:** o contexto completo continua em `project_get`.
+- **0c. [SUBIDA, app] O app Overclock reconecta o MCP do board quando o pane nasce sem `task_claim`**, em vez de perder o pane, e/ou sobe `MCP_TIMEOUT` no ambiente do pane.
+  - **Card:** este é do app, não do board.
+  - **Ganho:** o pane deixa de ser relançado do zero.
+  - **Perde-se:** nada.
 
 **Escrita e turnos (ganham tempo)**
 

@@ -90,13 +90,30 @@ describe.skipIf(!OUT)("OCL-209 payload bench", () => {
      * MCP handshake against the same server factory the route uses.
      */
     async function handshake(regime: string) {
+      // The HTTP route is stateless (sessionIdGenerator: undefined): EVERY
+      // request — initialize, tools/list and each tools/call — rebuilds the
+      // server first. Time that rebuild alone, then the handshake over it.
+      const builds: number[] = [];
+      for (let i = 0; i < 20; i++) {
+        const b0 = performance.now();
+        const built = await createOverclickMcpServer({ db: world.db, ctx });
+        builds.push(performance.now() - b0);
+        await built.close();
+      }
+      builds.sort((a, b) => a - b);
+      appendFileSync(OUT!, `${JSON.stringify({ regime, label: "server_build_ms", tool: "(handshake)", ok: true, chars: 0, p50_ms: Number(builds[10]!.toFixed(2)), max_ms: Number(builds[19]!.toFixed(2)) })}\n`);
       const server = await createOverclickMcpServer({ db: world.db, ctx });
       const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
       const client = new Client({ name: "ocl209-bench", version: "0" });
+      const c0 = performance.now();
       await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+      const connectMs = performance.now() - c0;
       const instructions = client.getInstructions() ?? "";
       appendFileSync(OUT!, `${JSON.stringify({ regime, label: "instructions", tool: "(handshake)", ok: true, chars: instructions.length })}\n`);
+      const l0 = performance.now();
       const { tools } = await client.listTools();
+      const listMs = performance.now() - l0;
+      appendFileSync(OUT!, `${JSON.stringify({ regime, label: "handshake_ms", tool: "(handshake)", ok: true, chars: 0, connect_ms: Number(connectMs.toFixed(2)), list_ms: Number(listMs.toFixed(2)) })}\n`);
       let total = 0;
       for (const tool of tools) {
         const chars = JSON.stringify({ name: tool.name, description: tool.description, input_schema: tool.inputSchema }).length;
