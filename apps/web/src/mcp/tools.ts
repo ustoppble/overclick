@@ -2814,8 +2814,12 @@ async function taskList(
     offset,
     order,
     next_offset: truncated ? offset + limit : null,
-    tasks: selected.map((row) => {
-      const mapped = mapTaskForRead(mapTask(row.task, row.project));
+    tasks: (await withVisibleLinks(
+      db,
+      ctx,
+      selected.map((row) => row.task),
+    )).map((visible, index) => {
+      const mapped = mapTaskForRead(mapTask(visible, selected[index].project));
       const costUsd = latestCostByTask.get(mapped.id);
       return {
         short_id: mapped.short_id,
@@ -3746,7 +3750,7 @@ async function taskRelease(
 
     if (input.return === "full") {
       return {
-        task: mapTask(updated, found.proj, {
+        task: mapTask(await visibleLinks(db, ctx, updated), found.proj, {
           executor: cardExecutorFromAttempt(abandoned),
         }),
         attempt: mapExecutionAttempt(abandoned),
@@ -3985,7 +3989,7 @@ async function taskUpdate(
     }
     const latestUsageGuard = await latestUsageGuardForTask(db, updated.id);
     return {
-      task: mapTask(updated, found.proj, {
+      task: mapTask(await visibleLinks(db, ctx, updated), found.proj, {
         reopenComment: await latestReopenComment(db, updated),
         reportsCount: await countReports(db, updated),
         executor: await cardExecutorFor(db, updated.id),
@@ -4349,7 +4353,7 @@ async function taskUpdate(
   }
 
   return {
-    task: mapTask(nextRow, proj, {
+    task: mapTask(await visibleLinks(db, ctx, nextRow), proj, {
       reopenComment: await latestReopenComment(db, nextRow),
       reportsCount: await countReports(db, nextRow),
       executor: await cardExecutorFor(db, nextRow.id),
@@ -4935,9 +4939,11 @@ async function taskDeliver(
   }
 
   return {
-    task: mapTask(persisted.value.updated, persisted.value.proj, {
-      executor: await cardExecutorFor(db, persisted.value.updated.id),
-    }),
+    task: mapTask(
+      await visibleLinks(db, ctx, persisted.value.updated),
+      persisted.value.proj,
+      { executor: await cardExecutorFor(db, persisted.value.updated.id) },
+    ),
     handoff: {
       id: persisted.value.saved.id,
       task_id: persisted.value.saved.taskId,
@@ -5054,7 +5060,7 @@ async function branchRegister(
     .where(eq(task.id, found.row.id))
     .returning();
   return {
-    task: mapTask(updated ?? found.row, found.proj, {
+    task: mapTask(await visibleLinks(db, ctx, updated ?? found.row), found.proj, {
       reopenComment: await latestReopenComment(db, found.row),
       executor: await cardExecutorFor(db, found.row.id),
     }),
@@ -5344,6 +5350,68 @@ function canTakeOverClaim(ctx: AuthContext): boolean {
   return ctx.canManage === true && canManageWorkspace(principalFromAuth(ctx));
 }
 
+type TaskLinks = Pick<
+  TaskRow,
+  "missionId" | "parentId" | "supersedesId" | "supersededById"
+>;
+
+/**
+ * The cards as the caller may read them (OCL-231): a link to a mission or a
+ * card out of their scope reads as absent, like the row it points at. An admin
+ * may put a member's card in their mission or continue it with a card of
+ * their own; the member reads neither id.
+ */
+async function withVisibleLinks<R extends TaskLinks>(
+  db: Pick<McpDatabase, "select">,
+  ctx: AuthContext,
+  rows: R[],
+): Promise<R[]> {
+  const principal = principalFromAuth(ctx);
+  if (isAdmin(principal)) return rows;
+  const missionIds = [
+    ...new Set(rows.flatMap((row) => (row.missionId ? [row.missionId] : []))),
+  ];
+  const taskIds = [
+    ...new Set(
+      rows.flatMap((row) =>
+        [row.parentId, row.supersedesId, row.supersededById].filter(
+          (id): id is string => Boolean(id),
+        ),
+      ),
+    ),
+  ];
+  const missions = missionIds.length
+    ? await db
+        .select({ id: mission.id })
+        .from(mission)
+        .where(and(inArray(mission.id, missionIds), missionScope(principal)))
+    : [];
+  const tasks = taskIds.length
+    ? await db
+        .select({ id: task.id })
+        .from(task)
+        .where(and(inArray(task.id, taskIds), taskScope(principal)))
+    : [];
+  const seen = new Set([...missions, ...tasks].map((row) => row.id));
+  const keep = (id: string | null) => (id && seen.has(id) ? id : null);
+  return rows.map((row) => ({
+    ...row,
+    missionId: keep(row.missionId),
+    parentId: keep(row.parentId),
+    supersedesId: keep(row.supersedesId),
+    supersededById: keep(row.supersededById),
+  }));
+}
+
+async function visibleLinks<R extends TaskLinks>(
+  db: Pick<McpDatabase, "select">,
+  ctx: AuthContext,
+  row: R,
+): Promise<R> {
+  const [visible] = await withVisibleLinks(db, ctx, [row]);
+  return visible;
+}
+
 /**
  * Whether the caller may end a claim another token holds, by forcing a claim
  * over it, reclaiming it once stale, or delivering on it (OCL-231). An admin
@@ -5468,7 +5536,7 @@ async function assembleTaskPayload(
     .where(eq(executionAttempt.taskId, row.id))
     .orderBy(desc(executionAttempt.startedAt))
     .limit(1);
-  const mapped = mapTask(row, proj, {
+  const mapped = mapTask(await visibleLinks(db, ctx, row), proj, {
     reopenComment: comment,
     reportsCount: count,
     executor: cardExecutorFromAttempt(latestAttempt),

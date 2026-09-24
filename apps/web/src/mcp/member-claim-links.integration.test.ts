@@ -181,4 +181,49 @@ describe("a member cannot end the admin's claim nor read the admin's ids", () =>
     value(await call(admin, "task_claim", { task_id: own.id, force: true, executor }));
     value(await call(admin, "task_deliver", { task_id: own.id, summary: "s", usage }));
   });
+
+  it("step 4: task_get of the member's card leaves out the admin's mission and continuation ids", async () => {
+    value(await call(admin, "task_update", { task_id: memberCard.id, mission_id: world.missionId }));
+    // Only a card in execution can be continued.
+    value(await call(member, "task_claim", { task_id: memberCard.id, executor }));
+    const continuation = created(
+      await call(admin, "task_create", card("continua o do member", {
+        project_id: world.projectId,
+        supersedes: memberCard.id,
+      })),
+    );
+    // The link the member must not read is really there.
+    const stored = await row(memberCard.id);
+    expect(stored.missionId).toBe(world.missionId);
+    expect(stored.supersededById).toBe(continuation.id);
+
+    const forMember = value<{ task: Record<string, unknown> }>(
+      await call(member, "task_get", { task_id: memberCard.id, view: "full" }),
+    );
+    expect(forMember.task.mission_id ?? null).toBeNull();
+    expect(forMember.task.superseded_by ?? null).toBeNull();
+    const listed = await call(member, "task_list", { include: ["refs", "ids"] });
+    for (const text of [JSON.stringify(forMember), JSON.stringify(listed)]) {
+      expect(text).not.toContain(world.missionId);
+      expect(text).not.toContain(continuation.id);
+    }
+
+    // The admin still reads both links.
+    const forAdmin = value<{ task: Record<string, unknown> }>(
+      await call(admin, "task_get", { task_id: memberCard.id }),
+    );
+    expect(forAdmin.task.mission_id).toBe(world.missionId);
+    expect(forAdmin.task.superseded_by).toBe(continuation.id);
+  });
+
+  it("step 4: the member's own mission still shows on their card", async () => {
+    const mine = value<{ mission: { id: string } }>(
+      await call(member, "mission_create", { title: "missao do member", objective: "a do member" }),
+    );
+    value(await call(member, "task_update", { task_id: memberCard.id, mission_id: mine.mission.id }));
+    const forMember = value<{ task: Record<string, unknown> }>(
+      await call(member, "task_get", { task_id: memberCard.id }),
+    );
+    expect(forMember.task.mission_id).toBe(mine.mission.id);
+  });
 });
