@@ -12,14 +12,17 @@ import { getSession } from "../lib/cookies";
 import { db } from "../lib/db";
 import { isAdmin, taskScope } from "../lib/scope";
 import { sessionPrincipal } from "../lib/web-scope";
-import { parseComoConfirmo } from "../mcp/map";
+import { looksLikeUuid, parseComoConfirmo } from "../mcp/map";
 import type { ActionResult } from "../lib/action-result";
 
 /**
  * The card, only when this session may see it. Out of scope reads exactly like
  * a card that does not exist, so a member cannot tell theirs from the admin's.
+ * An id that is not a uuid matches nothing either (OCL-231): handed to the
+ * query it would fail the uuid cast and surface as a 500.
  */
 async function findScopedTask(session: { userId: string }, taskId: string) {
+  if (!looksLikeUuid(taskId)) return undefined;
   const principal = await sessionPrincipal(session);
   if (!principal) return undefined;
   return db().query.task.findFirst({

@@ -47,7 +47,13 @@ const { createPairingCodeAction, pollPairingAction } = await import("./tokens");
 const { releaseClaimAction } = await import("./claims");
 const { discardTaskAction } = await import("./discard");
 const { deleteEmptyMissionAction } = await import("./missions");
-const { validateTaskAction, unvalidateTaskAction } = await import("./review");
+const {
+  answerOpenTaskAction,
+  reopenTaskAction,
+  tickValidationStepAction,
+  validateTaskAction,
+  unvalidateTaskAction,
+} = await import("./review");
 
 const ADMIN_IP = "198.51.100.4";
 const GUESSER_IP = "203.0.113.9";
@@ -232,6 +238,20 @@ describe("web review fixes: a member session reaches nothing of the admin's", ()
     sessionUserId = world.adminUserId;
     expect(await releaseClaimAction(adminCardId)).toEqual({ ok: true });
     expect(await discardTaskAction(adminCardId, "fora")).toEqual({ ok: true });
+  });
+
+  it("OCL-231: the review actions answer a non-uuid id as not found, not with a 500", async () => {
+    const notFound = { ok: false, error: "Card not found." };
+    for (const who of [memberId, world.adminUserId]) {
+      sessionUserId = who;
+      for (const id of ["OC-1", "not-a-uuid", "", "' or 1=1 --"]) {
+        expect(await answerOpenTaskAction(id, "resposta")).toEqual(notFound);
+        expect(await reopenTaskAction(id, "falta")).toEqual(notFound);
+        expect(await tickValidationStepAction(id, 0, true)).toEqual(notFound);
+        expect(await validateTaskAction(id)).toEqual(notFound);
+        expect(await unvalidateTaskAction(id)).toEqual(notFound);
+      }
+    }
   });
 
   it("R1: deleteEmptyMissionAction neither counts nor refuses over a card of the admin's", async () => {
