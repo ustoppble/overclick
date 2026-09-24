@@ -8,6 +8,7 @@ import {
   handoff,
   isValidPrefix,
   isClaimStale,
+  mcpToken,
   mergeTranscriptRef,
   mission,
   missionAttempt,
@@ -3466,9 +3467,21 @@ async function taskClaim(
       .limit(1);
     const lastActivity =
       previousAttempt?.lastActivityAt ?? found.row.claimedAt ?? null;
+    // A claim the caller may not end (OCL-231): the admin's claim on a
+    // member's card is the admin's to end, forced or gone stale.
+    const mayEnd =
+      found.row.status !== "em_execucao" ||
+      (await mayEndClaim(tx, ctx, found.row.claimedByTokenId));
+    if (input.force && !mayEnd) {
+      return err(
+        "PERMISSION_DENIED",
+        "Only the person who owns this claim, or an admin, may force a claim over it. Call task_get to see its current status.",
+      );
+    }
     const reclaimedStale = Boolean(
       found.row.status === "em_execucao" &&
         !input.force &&
+        mayEnd &&
         lastActivity &&
         isClaimStale(lastActivity, ws.claimTimeoutMinutes),
     );
@@ -4608,6 +4621,17 @@ async function taskDeliver(
       `Task ${input.task_id} not found in this workspace. Call task_list to see the available cards.`,
     );
     }
+    // Delivering ends the open claim, so it takes the same right as forcing
+    // one (OCL-231).
+    if (
+      found.row.status === "em_execucao" &&
+      !(await mayEndClaim(tx, ctx, found.row.claimedByTokenId))
+    ) {
+      return err(
+        "PERMISSION_DENIED",
+        "This card is in execution under someone else's claim. Only the person who owns that claim, or an admin, may deliver it.",
+      );
+    }
 
     const transition = applyTransition(
       {
@@ -5318,6 +5342,29 @@ function requireStructure(ctx: AuthContext, tool: string): Result<never> | null 
  */
 function canTakeOverClaim(ctx: AuthContext): boolean {
   return ctx.canManage === true && canManageWorkspace(principalFromAuth(ctx));
+}
+
+/**
+ * Whether the caller may end a claim another token holds, by forcing a claim
+ * over it, reclaiming it once stale, or delivering on it (OCL-231). An admin
+ * may, with any token, as before. A member may end only a claim one of their
+ * own tokens holds (an earlier installation that died mid-card), never the
+ * admin's claim on one of their cards.
+ */
+async function mayEndClaim(
+  db: Pick<McpDatabase, "select">,
+  ctx: AuthContext,
+  holderTokenId: string | null,
+): Promise<boolean> {
+  if (!holderTokenId || holderTokenId === ctx.tokenId) return true;
+  if (isAdmin(principalFromAuth(ctx))) return true;
+  if (!ctx.userId) return false;
+  const [holder] = await db
+    .select({ ownerUserId: mcpToken.ownerUserId })
+    .from(mcpToken)
+    .where(eq(mcpToken.id, holderTokenId))
+    .limit(1);
+  return holder?.ownerUserId === ctx.userId;
 }
 
 /**
