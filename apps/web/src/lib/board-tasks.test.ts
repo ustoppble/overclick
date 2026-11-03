@@ -83,11 +83,10 @@ describe("board window", () => {
     return { userId: row.id, role: "member", organizationId: world.organizationId };
   }
 
-  it("always loads open, running and done cards, however old", async () => {
+  it("always loads open and running cards, however old", async () => {
     world = await createTestWorld();
     await card("open and ancient", "aberto", 120);
     await card("running for weeks", "em_execucao", 40);
-    await card("done, waiting review", "feito", 30);
 
     const rows = await loadBoardTasks(
       database(),
@@ -96,10 +95,90 @@ describe("board window", () => {
       { now: NOW },
     );
     expect(rows.map((row) => row.title).sort()).toEqual([
-      "done, waiting review",
       "open and ancient",
       "running for weeks",
     ]);
+  });
+
+  it("keeps done cards only from the last 7 days, like validated and discarded", async () => {
+    world = await createTestWorld();
+    await card("done today", "feito", 0);
+    await card("done 6 days ago", "feito", 6);
+    await card("done a month ago", "feito", 30);
+    await card("done a year ago", "feito", 365);
+
+    const rows = await loadBoardTasks(
+      database(),
+      [world.projectId],
+      adminPrincipal(world),
+      { now: NOW },
+    );
+    expect(rows.map((row) => row.title).sort()).toEqual([
+      "done 6 days ago",
+      "done today",
+    ]);
+  });
+
+  it("hands older done cards out 50 at a time, and counts the whole column", async () => {
+    world = await createTestWorld();
+    await card("done yesterday", "feito", 1);
+    for (let i = 0; i < BOARD_PAGE_SIZE + 3; i += 1) {
+      await card(`stale ${i}`, "feito", 10 + i);
+    }
+
+    const first = await loadOlderBoardTasks(
+      database(),
+      projects(),
+      adminPrincipal(world),
+      { status: "feito", filter: ALL, before: null },
+    );
+    expect(first.tasks).toHaveLength(BOARD_PAGE_SIZE);
+    expect(first.hasMore).toBe(true);
+    expect(first.tasks.every((row) => row.status === "feito")).toBe(true);
+
+    const last = first.tasks.at(-1)!;
+    const second = await loadOlderBoardTasks(
+      database(),
+      projects(),
+      adminPrincipal(world),
+      {
+        status: "feito",
+        filter: ALL,
+        before: { updatedAt: last.updatedAt.toISOString(), id: last.id },
+      },
+    );
+    expect(second.tasks).toHaveLength(BOARD_PAGE_SIZE + 4 - BOARD_PAGE_SIZE);
+    expect(second.hasMore).toBe(false);
+
+    // The head still shows the real total, not the 1 card the window holds.
+    const counts = await countBoardColumns(
+      database(),
+      projects(),
+      adminPrincipal(world),
+      ALL,
+    );
+    expect(counts.feito).toBe(BOARD_PAGE_SIZE + 4);
+  });
+
+  it("finds an old done card through the search and the short id link", async () => {
+    world = await createTestWorld();
+    const old = await card("Review queue stuck forever", "feito", 200);
+    await card("Unrelated", "feito", 200);
+
+    const hits = await searchBoardTaskIds(
+      database(),
+      world.workspaceId,
+      adminPrincipal(world),
+      "stuck forever",
+    );
+    expect(hits).toEqual([old.id]);
+    const linked = await findBoardTaskByShortId(
+      database(),
+      [world.projectId],
+      adminPrincipal(world),
+      old.shortId,
+    );
+    expect(linked?.id).toBe(old.id);
   });
 
   it("keeps validated and discarded cards only from the last 7 days", async () => {
@@ -277,6 +356,8 @@ describe("board window", () => {
     const adminOld = await card("admin secret black", "validado", 30);
     await card("member open", "aberto", 1, member.userId);
     const memberOld = await card("member black", "validado", 30, member.userId);
+    const adminDone = await card("admin done stale", "feito", 30);
+    const memberDone = await card("member done stale", "feito", 30, member.userId);
 
     const window = await loadBoardTasks(database(), [world.projectId], member, { now: NOW });
     expect(window.map((row) => row.title)).toEqual(["member open"]);
@@ -291,6 +372,17 @@ describe("board window", () => {
     const counts = await countBoardColumns(database(), projects(), member, ALL);
     expect(counts.aberto).toBe(1);
     expect(counts.validado).toBe(1);
+    expect(counts.feito).toBe(1);
+
+    const olderDone = await loadOlderBoardTasks(database(), projects(), member, {
+      status: "feito",
+      filter: ALL,
+      before: null,
+    });
+    expect(olderDone.tasks.map((row) => row.id)).toEqual([memberDone.id]);
+    expect(
+      await findBoardTaskByShortId(database(), [world.projectId], member, adminDone.shortId),
+    ).toBeNull();
 
     const hits = await searchBoardTaskIds(database(), world.workspaceId, member, "black");
     expect(hits).toEqual([memberOld.id]);

@@ -28,12 +28,17 @@ import {
   toggleProject,
   type BoardFilter,
 } from "../../lib/board-filter";
-import type { ColumnCounts, ColumnStatus } from "../../lib/board-columns";
+import {
+  countByStatus,
+  type ColumnCounts,
+  type ColumnStatus,
+} from "../../lib/board-columns";
 import { subscribeToBoardRefresh } from "../../lib/board-refresh";
 import { createBoardSearchRunner } from "../../lib/board-search-runner";
 import {
   addExtraCards,
   mergeBoardCards,
+  olderLeft,
   pageCursor,
   windowCursor,
   type OlderCursor,
@@ -326,18 +331,13 @@ export function HomeShell({
   const searchActive = debouncedSearchQuery.trim().length > 0;
   const columnTotals =
     !searchActive && counts.key === filterKey ? counts.counts : null;
-  const olderLeft = useMemo(() => {
-    const left: Partial<Record<ColumnStatus, number>> = {};
-    if (!columnTotals) return left;
-    for (const status of ["validado", "descartado"] as const) {
-      const loaded = inFilter.filter((card) => card.status === status).length;
-      const remaining = columnTotals[status] - loaded;
-      if (remaining > 0 && !exhausted.has(`${filterKey}|${status}`)) {
-        left[status] = remaining;
-      }
-    }
-    return left;
-  }, [columnTotals, inFilter, exhausted, filterKey]);
+  const olderLeftByColumn = useMemo(
+    () =>
+      olderLeft(columnTotals, countByStatus(inFilter), (status) =>
+        exhausted.has(`${filterKey}|${status}`),
+      ),
+    [columnTotals, inFilter, exhausted, filterKey],
+  );
   // Only the first render opens it: the link is an arrival, not a pin.
   const [openCard] = useState(() =>
     openCardId ? (windowCards.find((card) => card.id === openCardId) ?? null) : null,
@@ -728,7 +728,7 @@ export function HomeShell({
         onToggleSelect={toggleSelect}
         onMissionSelect={(missionId) => apply({ ...filter, missionId })}
         columnTotals={columnTotals}
-        olderLeft={olderLeft}
+        olderLeft={olderLeftByColumn}
         loadingOlder={loadingOlder}
         onShowOlder={showOlder}
         initialOpen={openCard}

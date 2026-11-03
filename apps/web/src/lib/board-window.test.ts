@@ -4,6 +4,7 @@ import {
   columnTotal,
   findLinkedCard,
   mergeBoardCards,
+  olderLeft,
   pageCursor,
   searchWithServerHits,
   windowCursor,
@@ -118,5 +119,25 @@ describe("board window, client side", () => {
     expect(columnTotal(12, 3009)).toBe(3009);
     expect(columnTotal(5, undefined)).toBe(5);
     expect(columnTotal(6, 5)).toBe(6);
+  });
+
+  it("offers show-older on the done column too, with what is left of the real total", () => {
+    const counts = { aberto: 5, em_execucao: 2, feito: 2672, validado: 50, descartado: 71 };
+    const loaded = { aberto: 5, em_execucao: 2, feito: 12, validado: 3, descartado: 71 };
+    expect(olderLeft(counts, loaded, () => false)).toEqual({
+      feito: 2660,
+      validado: 47,
+    });
+  });
+
+  it("drops a column the server said is exhausted", () => {
+    const counts = { aberto: 0, em_execucao: 0, feito: 90, validado: 0, descartado: 0 };
+    const loaded = { aberto: 0, em_execucao: 0, feito: 40, validado: 0, descartado: 0 };
+    expect(olderLeft(counts, loaded, (status) => status === "feito")).toEqual({});
+  });
+
+  it("offers nothing while the counts are not the ones of this filter", () => {
+    const loaded = { aberto: 0, em_execucao: 0, feito: 40, validado: 0, descartado: 0 };
+    expect(olderLeft(null, loaded, () => false)).toEqual({});
   });
 });

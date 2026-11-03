@@ -1,5 +1,9 @@
 import { searchBoardCards, type SearchableBoardCard } from "./board-filter";
-import type { ColumnStatus } from "./board-columns";
+import {
+  PAGED_STATUSES,
+  type ColumnCounts,
+  type ColumnStatus,
+} from "./board-columns";
 
 /**
  * The client half of the board's window. The page hands over the window
@@ -128,4 +132,23 @@ export function columnTotal(
   serverCount: number | undefined,
 ): number {
   return serverCount === undefined ? loaded : Math.max(loaded, serverCount);
+}
+
+/**
+ * What each paged column still has to show: the server's count of the column
+ * less what is loaded. Null counts (a filter the server has not answered yet)
+ * and a column the last page emptied offer nothing.
+ */
+export function olderLeft(
+  counts: ColumnCounts | null,
+  loaded: ColumnCounts,
+  isExhausted: (status: ColumnStatus) => boolean,
+): Partial<Record<ColumnStatus, number>> {
+  const left: Partial<Record<ColumnStatus, number>> = {};
+  if (!counts) return left;
+  for (const status of PAGED_STATUSES) {
+    const remaining = counts[status] - loaded[status];
+    if (remaining > 0 && !isExhausted(status)) left[status] = remaining;
+  }
+  return left;
 }

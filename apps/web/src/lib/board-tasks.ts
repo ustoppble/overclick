@@ -19,7 +19,7 @@ import {
   projectsInOrganizations,
   type BoardFilter,
 } from "./board-filter";
-import { COLUMN_STATUSES, type ColumnCounts } from "./board-columns";
+import { COLUMN_STATUSES, PAGED_STATUSES, type ColumnCounts } from "./board-columns";
 import { BOARD_PAGE_SIZE, type OlderCursor } from "./board-window";
 import {
   canSeeMission,
@@ -33,17 +33,19 @@ import { invokeTool } from "../mcp/tools";
 
 /**
  * How far back the board reaches for finished cards on its own. Live work
- * (open, running, done and waiting review) is always on the board, whatever
- * its age: a card that sat open for a month is exactly the one that must not
- * disappear. Validated and discarded cards are history, and the board keeps
- * only the ones that changed this week; the rest come in by column, a page at
- * a time, or through the search.
+ * (open and running) is always on the board, whatever its age: a card that sat
+ * open for a month is exactly the one that must not disappear. Done, validated
+ * and discarded cards are history, and the board keeps only the ones that
+ * changed this week; the rest come in by column, a page at a time, or through
+ * the search. Done is in that group because in production it is where cards
+ * pile up unreviewed (2.672 of 3.580, none touched in 30 days), and a window
+ * that always carried them was 97% of the board.
  */
 export const BOARD_WINDOW_DAYS = 7;
 export { BOARD_PAGE_SIZE };
 
-export const LIVE_STATUSES = ["aberto", "em_execucao", "feito"] as const;
-export const ARCHIVED_STATUSES = ["validado", "descartado"] as const;
+export const LIVE_STATUSES = ["aberto", "em_execucao"] as const;
+export const ARCHIVED_STATUSES = PAGED_STATUSES;
 export type ArchivedStatus = (typeof ARCHIVED_STATUSES)[number];
 
 export function isArchivedStatus(value: string): value is ArchivedStatus {
@@ -119,7 +121,8 @@ export type BoardTaskRow = Awaited<ReturnType<typeof queryBoardTasks>>[number];
 
 /**
  * The board's cards with everything the card line and detail panel read:
- * every live card, and the finished ones that changed inside the window.
+ * every live card, and the done, validated and discarded ones that changed
+ * inside the window.
  */
 export async function loadBoardTasks(
   database: Database,

@@ -68,7 +68,7 @@ async function asCards(
   });
 }
 
-/** One "show older" click on a validated or discarded column. */
+/** One "show older" click on a done, validated or discarded column. */
 export async function loadOlderBoardCardsAction(input: {
   status: string;
   filter: BoardFilter;

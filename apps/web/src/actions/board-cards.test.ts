@@ -1,3 +1,4 @@
+import { task } from "@agent-board/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { boardSearchLimiter } from "../lib/board-search-guard";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
@@ -144,6 +145,21 @@ describe("board actions, malformed input", () => {
     expect(await older({ filter: { ...base, priorities: ["asap"] } })).toEqual(none);
     expect(await older({ filter: null })).toEqual(none);
     expect(await older({ filter: { ...base, types: "bug" } })).toEqual(none);
+  });
+
+  it("takes a done column in a page request, since the window no longer holds it all", async () => {
+    await world.db.insert(task).values({
+      projectId: world.projectId,
+      shortId: "OC-900",
+      title: "done long ago",
+      status: "feito",
+      createdByUserId: world.adminUserId,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+    });
+    const page = await older({ status: "feito" });
+    expect(page.cards.map((card) => card.title)).toEqual(["done long ago"]);
+    expect(page.hasMore).toBe(false);
   });
 
   it("answers null to bad filters for the column counts", async () => {
