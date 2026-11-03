@@ -16,6 +16,17 @@ export default async function EmergencyLoginPage() {
       <NebulaAtmosphere />
       <div className="stage">
         <div className="auth-shell">
+          <aside className="auth-aside">
+            <p className="auth-mark">
+              over<span>click</span>
+            </p>
+            <p className="auth-lead">{t.auth.asideLead}</p>
+            <ul className="auth-facts">
+              <li>{t.auth.factHosted}</li>
+              <li>{t.auth.factOpen}</li>
+              <li>{t.auth.factAgents}</li>
+            </ul>
+          </aside>
           <div className="panel auth-card nebula-glass">
             <p className="brand">{t.auth.brand}</p>
             <h1>{t.auth.emergencyTitle}</h1>
