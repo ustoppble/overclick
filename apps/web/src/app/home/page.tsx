@@ -10,6 +10,7 @@ import {
   resolveBoardFilter,
 } from "../../lib/board-filter";
 import { toBoardCards } from "../../lib/board-card";
+import { findLinkedCard } from "../../lib/board-window";
 import {
   boardWindowStart,
   countBoardColumns,
@@ -240,11 +241,8 @@ export default async function HomePage({
   const params = await searchParams;
   const linked = typeof params.card === "string" ? params.card : null;
   const linkedRow = linked
-    ? (rows.find(
-        (row) =>
-          row.shortId.toUpperCase() === linked.toUpperCase() ||
-          row.previousShortIds.includes(linked.toUpperCase()),
-      ) ?? (await findBoardTaskByShortId(db(), projectIds, principal, linked)))
+    ? (findLinkedCard(rows, linked) ??
+      (await findBoardTaskByShortId(db(), projectIds, principal, linked)))
     : null;
   if (linkedRow && !rows.some((row) => row.id === linkedRow.id)) {
     rows.push(linkedRow);

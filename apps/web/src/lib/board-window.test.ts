@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addExtraCards,
   columnTotal,
+  findLinkedCard,
   mergeBoardCards,
   pageCursor,
   searchWithServerHits,
@@ -87,6 +88,19 @@ describe("board window, client side", () => {
       id: "p3",
     });
     expect(pageCursor([])).toBeNull();
+  });
+
+  it("opens the current owner of a short id before the card that once had it", () => {
+    const former = {
+      ...card("former", "validado", 3),
+      shortId: "OC-9",
+      previousShortIds: [] as string[],
+    };
+    const old = { ...former, id: "old", shortId: "OC-4", previousShortIds: ["OC-9"] };
+    const owner = { ...former, id: "owner" };
+    expect(findLinkedCard([old, owner], "oc-9")?.id).toBe("owner");
+    expect(findLinkedCard([old], "OC-9")?.id).toBe("old");
+    expect(findLinkedCard([old, owner], "OC-404")).toBeNull();
   });
 
   it("shows a server search hit the local words did not match", () => {

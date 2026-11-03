@@ -90,6 +90,24 @@ function oldestChange(cards: readonly WindowCard[]): OlderCursor | null {
 }
 
 /**
+ * The card a link (?card=OCL-12) points at among the cards held. A short id
+ * can be recycled: the card that owns it now wins over one that only had it
+ * once (previousShortIds), which is how an old link still finds a card that
+ * moved projects.
+ */
+export function findLinkedCard<
+  T extends { shortId: string; previousShortIds: readonly string[] },
+>(cards: readonly T[], linked: string): T | null {
+  const wanted = linked.trim().toUpperCase();
+  if (!wanted) return null;
+  return (
+    cards.find((card) => card.shortId.toUpperCase() === wanted) ??
+    cards.find((card) => card.previousShortIds.includes(wanted)) ??
+    null
+  );
+}
+
+/**
  * The board search over what the board holds, widened by what the server
  * search found for the same words: its full-text match reads comments too,
  * which the cards on the client do not carry.

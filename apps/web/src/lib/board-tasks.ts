@@ -166,19 +166,21 @@ export async function findBoardTaskByShortId(
 ) {
   const wanted = shortId.trim().toUpperCase();
   if (projectIds.length === 0 || !wanted) return null;
-  const [row] = await queryBoardTasks(
-    database,
-    principal,
-    and(
-      inArray(task.projectId, projectIds),
-      or(
-        sql`upper(${task.shortId}) = ${wanted}`,
-        sql`${task.previousShortIds} @> ${JSON.stringify([wanted])}::jsonb`,
-      ),
-    ),
-    { limit: 1 },
-  );
-  return row ?? null;
+  // The card that owns the short id now comes first; a card that only had it
+  // once answers an old link when nobody owns it.
+  for (const match of [
+    sql`upper(${task.shortId}) = ${wanted}`,
+    sql`${task.previousShortIds} @> ${JSON.stringify([wanted])}::jsonb`,
+  ]) {
+    const [row] = await queryBoardTasks(
+      database,
+      principal,
+      and(inArray(task.projectId, projectIds), match),
+      { limit: 1 },
+    );
+    if (row) return row;
+  }
+  return null;
 }
 
 /**

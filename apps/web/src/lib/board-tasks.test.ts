@@ -232,6 +232,44 @@ describe("board window", () => {
     expect(found?.id).toBe(old.id);
   });
 
+  it("opens the current owner of a recycled short id, not the card that once had it", async () => {
+    world = await createTestWorld();
+    // The former holder is inserted first, so a bare limit 1 would pick it.
+    const former = await card("moved away", "validado", 90, world.adminUserId, {
+      previousShortIds: ["ZZ-1"],
+    });
+    const owner = await card("owns it now", "validado", 90, world.adminUserId, {
+      shortId: "ZZ-1",
+    });
+
+    const found = await findBoardTaskByShortId(
+      database(),
+      [world.projectId],
+      adminPrincipal(world),
+      "zz-1",
+    );
+    expect(found?.id).toBe(owner.id);
+    expect(found?.id).not.toBe(former.id);
+    // With no current owner, the old link still lands on the card that moved.
+    const onlyFormer = await findBoardTaskByShortId(
+      database(),
+      [world.projectId],
+      adminPrincipal(world),
+      "OLD-7",
+    );
+    expect(onlyFormer).toBeNull();
+    const moved = await card("renumbered", "validado", 90, world.adminUserId, {
+      previousShortIds: ["OLD-7"],
+    });
+    const viaOld = await findBoardTaskByShortId(
+      database(),
+      [world.projectId],
+      adminPrincipal(world),
+      "old-7",
+    );
+    expect(viaOld?.id).toBe(moved.id);
+  });
+
   it("never shows a member the admin's cards: window, older pages, counts, search, link", async () => {
     world = await createTestWorld();
     const member = await memberPrincipal();
