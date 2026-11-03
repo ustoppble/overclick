@@ -82,9 +82,11 @@ by a new ask. Ten wrong codes in 24 hours, however many codes they were
 spread over, shut code sign-in for that account for 24 hours; the password
 keeps working. Passwords and codes have separate failed-attempt budgets, so
 running one out never locks the other. Each budget is 8 failures in 15 minutes
-per address typed and, behind the trusted proxy, per origin; the origin is
-charged only for a sign-in that fails, so people who sign in correctly are
-never counted against it. Switching a member off deletes the codes they were
+per address typed and, behind the trusted proxy, per origin. The origin is
+charged before the password or code is checked, in one step, so a burst of
+parallel guesses cannot slip past it together; the charge is given back when
+the sign-in works, so people who sign in correctly are never counted against
+it. Switching a member off deletes the codes they were
 sent.
 
 The whole instance also sends at most 60 code emails an hour, whoever asks;
@@ -102,8 +104,8 @@ the owner's call; until then the limits above are all there is.
 
 ### Behind a proxy: which address counts as the origin
 
-The per-origin limit (and the failed-attempt budget by origin, which only
-failed sign-ins spend) reads the **last**
+The per-origin limit (and the failed-attempt budget by origin, which
+sign-ins that work give back) reads the **last**
 hop of `X-Forwarded-For`, and only when `OVERCLICK_TRUSTED_PROXY=1`. That is
 right for one proxy that **appends** the address it saw (Caddy, Traefik,
 nginx with `$proxy_add_x_forwarded_for`). Two things to know:

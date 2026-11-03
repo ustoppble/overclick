@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import {
   budgetExhausted,
   clearBudget,
+  refundBudget,
   spendBudget,
   spendBudgetStatement,
 } from "./attempt-budget";
@@ -75,11 +76,11 @@ export async function loginOrigin(): Promise<string | null> {
 }
 
 /**
- * Lets a password attempt proceed to `verifyPassword`, or not. The origin's
- * bucket is only read here — it is charged by `chargeLoginOriginFailure`
- * once the attempt has failed — and the email's is charged now, as
+ * Lets a password attempt proceed to `verifyPassword`, or not. Both buckets
+ * are charged now, before anything is verified, and the email's as
  * submitted. Neither looks at whether the account exists, so which one
- * refuses says nothing about it.
+ * refuses says nothing about it. The origin's charge is given back by
+ * `refundLoginOrigin` if the attempt turns out to be a sign-in that works.
  */
 export async function withinLoginBudget(
   db: McpDatabase,
@@ -110,12 +111,16 @@ async function spendLoginBuckets(
   origin: string | null,
 ): Promise<boolean> {
   // The origin first, and a refusal stops here: an origin that has used its
-  // allowance gets no new per-address row for whatever it makes up next. Only
-  // read: behind a NAT or an edge proxy the origin is shared by everyone, and
-  // charging it for sign-ins that work would lock out the people it serves.
+  // allowance gets no new per-address row for whatever it makes up next.
+  // Charged before the guess is checked, in one statement: reading the count
+  // and charging it after the check let a burst of parallel guesses, one
+  // address each, all read an untouched origin and pass together. The charge
+  // is given back on success (`refundLoginOrigin`), because behind a NAT or
+  // an edge proxy the origin is shared by everyone, and sign-ins that work
+  // must not lock out the people it serves.
   if (
     origin &&
-    (await budgetExhausted(
+    !(await spendBudget(
       db,
       loginFailure,
       loginFailureScope(flow, "origin", origin),
@@ -125,46 +130,50 @@ async function spendLoginBuckets(
   ) {
     return false;
   }
-  return spendBudget(
+  const emailOk = await spendBudget(
     db,
     loginFailure,
     loginFailureScope(flow, "email", email),
     MAX_LOGIN_FAILURES,
     LOGIN_ATTEMPT_WINDOW_MS,
   );
+  // Turned away before any guess was checked: nothing to count against the
+  // origin, so a stranger hammering one address cannot use up the allowance
+  // of the people sharing its origin.
+  if (!emailOk) await refundOriginCharge(db, flow, origin);
+  return emailOk;
 }
 
 /**
- * Charges the origin for a password attempt that did not get in. Called
- * whichever way it failed — no such account, switched off, wrong password —
- * so what is charged says nothing about the account either.
+ * Gives back the origin's charge for a password sign-in that worked. The
+ * charge stays for every way an attempt can fail — no such account, switched
+ * off, wrong password — so what is kept says nothing about the account.
  */
-export async function chargeLoginOriginFailure(
+export async function refundLoginOrigin(
   db: McpDatabase,
   origin: string | null,
 ): Promise<void> {
-  await chargeOriginFailure(db, "login", origin);
+  await refundOriginCharge(db, "login", origin);
 }
 
-/** Same as `chargeLoginOriginFailure`, for a code that did not get in. */
-export async function chargeCodeLoginOriginFailure(
+/** Same as `refundLoginOrigin`, for a code sign-in that worked. */
+export async function refundCodeLoginOrigin(
   db: McpDatabase,
   origin: string | null,
 ): Promise<void> {
-  await chargeOriginFailure(db, "logincode", origin);
+  await refundOriginCharge(db, "logincode", origin);
 }
 
-async function chargeOriginFailure(
+async function refundOriginCharge(
   db: McpDatabase,
   flow: "login" | "logincode",
   origin: string | null,
 ): Promise<void> {
   if (!origin) return;
-  await spendBudget(
+  await refundBudget(
     db,
     loginFailure,
     loginFailureScope(flow, "origin", origin),
-    MAX_LOGIN_FAILURES,
     LOGIN_ATTEMPT_WINDOW_MS,
   );
 }
@@ -173,8 +182,8 @@ async function chargeOriginFailure(
  * A successful login clears the email's budget, nobody there was guessing.
  * It never clears the origin's: that bucket is shared by everyone behind the
  * address, so anyone with an account of their own could otherwise wipe it
- * between rounds of guessing at somebody else's. The origin is only charged
- * for failures, so a success has nothing there to clear.
+ * between rounds of guessing at somebody else's. A success gives back only
+ * its own charge (`refundLoginOrigin`), never what other attempts spent.
  */
 export async function clearLoginBudget(db: McpDatabase, email: string): Promise<void> {
   await clearBudget(db, loginFailure, loginFailureScope("login", "email", email));

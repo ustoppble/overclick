@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql, type SQL } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import type { McpDatabase } from "../mcp/types";
 
@@ -24,6 +24,11 @@ type UntypedInsert = {
       returning(columns: Record<string, PgColumn>): UntypedInsertResult;
     };
   };
+};
+
+/** The same looseness for `db.update(table)`, for the same reason as `UntypedInsert`. */
+type UntypedUpdate = {
+  set(values: Record<string, unknown>): { where(condition: SQL | undefined): Promise<unknown> };
 };
 
 /** A drizzle query: awaits to rows, and `.toSQL()` inspects it unexecuted (see `pairing.integration.test.ts`). */
@@ -89,6 +94,35 @@ export async function spendBudget<T extends BudgetTable>(
 ): Promise<boolean> {
   const [row] = await spendBudgetStatement(db, table, scope, new Date(), windowMs);
   return (row?.count ?? 1) <= maxAttempts;
+}
+
+/**
+ * Gives back one attempt `spendBudget` took from `scope`, for a caller that
+ * spends first and learns afterwards that the attempt was not one to count.
+ * One statement, so it cannot undercount a burst either; a window that has
+ * already run its course has nothing to give back, and the count never goes
+ * below zero.
+ */
+export async function refundBudget<T extends BudgetTable>(
+  db: McpDatabase,
+  table: T,
+  scope: string,
+  windowMs: number,
+  now: Date = new Date(),
+): Promise<void> {
+  const floor = new Date(now.getTime() - windowMs);
+  await (db.update(table) as UntypedUpdate)
+    .set({ count: sql`greatest(${table.count} - 1, 0)` })
+    .where(
+      and(
+        eq(table.id, scope),
+        gte(table.windowStartedAt, sql`${floor.toISOString()}::timestamptz`),
+      ),
+    );
+  // A bucket given back down to nothing is no bucket: drop the row rather
+  // than leave one per origin that only ever signed in correctly. Judged by
+  // the database at delete time, so a spend that lands in between keeps it.
+  await db.delete(table).where(and(eq(table.id, scope), lte(table.count, 0)));
 }
 
 /** A success clears the budget: nobody there was guessing. */

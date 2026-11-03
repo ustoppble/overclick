@@ -22,11 +22,11 @@ import {
   redeemLoginCode,
 } from "../lib/login-code";
 import {
-  chargeCodeLoginOriginFailure,
-  chargeLoginOriginFailure,
   clearCodeLoginBudget,
   clearLoginBudget,
   loginOrigin,
+  refundCodeLoginOrigin,
+  refundLoginOrigin,
   withinCodeLoginBudget,
   withinCodeRequestBudget,
   withinLoginBudget,
@@ -116,9 +116,10 @@ export async function loginAction(
   // become a second oracle for account existence on top of the one OCL-99
   // closed. Over budget, the answer is the exact same generic message and
   // skips verifyPassword entirely — that is the point: a drained budget
-  // must not pay for scrypt either. The origin is only read here and is
-  // charged below, when the attempt fails: it is shared by everyone behind
-  // one NAT or edge proxy, so sign-ins that work must not drain it.
+  // must not pay for scrypt either. The origin is charged here too, before
+  // the check and atomically, so parallel guesses cannot all slip past it;
+  // it is shared by everyone behind one NAT or edge proxy, so a sign-in
+  // that works gives its charge back below.
   const origin = await loginOrigin();
   if (!(await withinLoginBudget(db(), email, origin))) {
     return { error: (await authCopy()).errCredentials };
@@ -139,10 +140,10 @@ export async function loginAction(
     found?.passwordHash ?? ABSENT_USER_HASH,
   );
   if (!found || !found.active || !passwordOk) {
-    await chargeLoginOriginFailure(db(), origin);
     return { error: (await authCopy()).errCredentials };
   }
 
+  await refundLoginOrigin(db(), origin);
   await clearLoginBudget(db(), email);
   await setSession({
     userId: found.id,
@@ -225,10 +226,10 @@ export async function loginWithCodeAction(
     ? await db().select().from(user).where(eq(user.id, redeemed.userId)).limit(1)
     : [];
   if (!found || !found.active) {
-    await chargeCodeLoginOriginFailure(db(), origin);
     return { error: (await authCopy()).errCode };
   }
 
+  await refundCodeLoginOrigin(db(), origin);
   await clearCodeLoginBudget(db(), email);
   await setSession({
     userId: found.id,
