@@ -70,10 +70,9 @@ export async function loginOrigin(): Promise<string | null> {
 }
 
 /**
- * Charges one attempt to both buckets and reports whether the login may
- * proceed to `verifyPassword`. Both are always spent — never short-circuited
- * on the first bucket's answer — so which bucket trips first cannot become a
- * second timing signal.
+ * Charges one attempt to the origin's bucket and then the email's, and
+ * reports whether the login may proceed to `verifyPassword`. Neither looks at
+ * whether the account exists, so which one refuses says nothing about it.
  */
 export async function withinLoginBudget(
   db: McpDatabase,
@@ -103,23 +102,25 @@ async function spendLoginBuckets(
   email: string,
   origin: string | null,
 ): Promise<boolean> {
-  const emailOk = await spendBudget(
+  // The origin first, and a refusal stops here: an origin that has used its
+  // allowance gets no new per-address row for whatever it makes up next.
+  if (origin) {
+    const originOk = await spendBudget(
+      db,
+      loginFailure,
+      loginFailureScope(flow, "origin", origin),
+      MAX_LOGIN_FAILURES,
+      LOGIN_ATTEMPT_WINDOW_MS,
+    );
+    if (!originOk) return false;
+  }
+  return spendBudget(
     db,
     loginFailure,
     loginFailureScope(flow, "email", email),
     MAX_LOGIN_FAILURES,
     LOGIN_ATTEMPT_WINDOW_MS,
   );
-  const originOk = origin
-    ? await spendBudget(
-        db,
-        loginFailure,
-        loginFailureScope(flow, "origin", origin),
-        MAX_LOGIN_FAILURES,
-        LOGIN_ATTEMPT_WINDOW_MS,
-      )
-    : true;
-  return emailOk && originOk;
 }
 
 /**

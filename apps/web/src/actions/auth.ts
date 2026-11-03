@@ -13,6 +13,7 @@ import { db } from "../lib/db";
 import { emailConfigured, sendEmail } from "../lib/email";
 import { dict } from "../lib/i18n";
 import { countUsers, ensureWorkspace } from "../lib/instance";
+import { sweepLoginRows } from "../lib/login-housekeeping";
 import {
   LOGIN_CODE_PATTERN,
   issueLoginCode,
@@ -168,6 +169,7 @@ export async function requestLoginCodeAction(
     return { error: (await authCopy()).errCodeUnavailable };
   }
 
+  await sweepLoginRows(db());
   const origin = await loginOrigin();
   if (await withinCodeRequestBudget(db(), email, origin)) {
     const issued = await issueLoginCode(db(), email);
@@ -197,6 +199,7 @@ export async function loginWithCodeAction(
     return { error: (await authCopy()).errCode };
   }
 
+  await sweepLoginRows(db());
   const origin = await loginOrigin();
   if (!(await withinCodeLoginBudget(db(), email, origin))) {
     return { error: (await authCopy()).errCode };

@@ -1,4 +1,4 @@
-import { loginCode, loginFailure, user } from "@agent-board/db";
+import { loginCode, loginCodeRequest, loginFailure, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -380,6 +380,78 @@ describe("signing in with a code sent by email", () => {
       const answer = await loginWithCodeAction(null, codeForm(EMAIL, code));
       expect(answer?.error).toBeTruthy();
       expect(requestState.cookieSet).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("what a stranger can make the database keep", () => {
+    const LONG = `${"a".repeat(300)}@local.test`;
+
+    it("creates no row at all for an address over 254 characters, asking or entering", async () => {
+      const asked = await requestLoginCodeAction(null, emailForm(LONG));
+      const entered = await loginWithCodeAction(null, codeForm(LONG, "123456"));
+
+      expect(asked && "error" in asked ? asked.error : "").toBeTruthy();
+      expect(entered?.error).toBeTruthy();
+      expect(await world.db.select().from(loginCodeRequest)).toHaveLength(0);
+      expect(await world.db.select().from(loginFailure)).toHaveLength(0);
+      expect(emailState.sendEmail).not.toHaveBeenCalled();
+    });
+
+    it("stops creating per-address rows for asks from an origin that is over its own limit", async () => {
+      process.env.OVERCLICK_TRUSTED_PROXY = "1";
+      requestState.headers = { "x-forwarded-for": "198.51.100.7" };
+      for (let i = 0; i < CODE_REQUESTS_PER_ORIGIN_HOUR; i++) {
+        await requestLoginCodeAction(null, emailForm(`spent${i}@local.test`));
+      }
+      const rowsBefore = (await world.db.select().from(loginCodeRequest)).length;
+
+      for (let i = 0; i < 10; i++) {
+        await requestLoginCodeAction(null, emailForm(`flood${i}@local.test`));
+      }
+
+      expect(await world.db.select().from(loginCodeRequest)).toHaveLength(rowsBefore);
+    });
+
+    it("stops creating per-address rows for sign-ins from an origin that is over its own limit", async () => {
+      process.env.OVERCLICK_TRUSTED_PROXY = "1";
+      requestState.headers = { "x-forwarded-for": "198.51.100.7" };
+      for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
+        await loginWithCodeAction(null, codeForm(`spent${i}@local.test`, "123456"));
+      }
+      const rowsBefore = (await world.db.select().from(loginFailure)).length;
+
+      for (let i = 0; i < 10; i++) {
+        await loginWithCodeAction(null, codeForm(`flood${i}@local.test`, "123456"));
+      }
+
+      expect(await world.db.select().from(loginFailure)).toHaveLength(rowsBefore);
+    });
+
+    it("sweeps expired budget rows and used or expired codes as a side effect of an ask", async () => {
+      const old = new Date(T0.getTime() - 25 * 60 * MINUTE);
+      await world.db.insert(loginCodeRequest).values({
+        id: "code-hour-email:old@local.test",
+        count: 3,
+        windowStartedAt: old,
+      });
+      await world.db.insert(loginFailure).values({
+        id: "login-email:old@local.test",
+        count: 3,
+        windowStartedAt: old,
+      });
+      await world.db.insert(loginCode).values({
+        userId,
+        codeHash: "0".repeat(64),
+        expiresAt: new Date(T0.getTime() - MINUTE),
+      });
+
+      await requestLoginCodeAction(null, emailForm("other@local.test"));
+
+      const requests = await world.db.select().from(loginCodeRequest);
+      expect(requests.map((row) => row.id)).not.toContain("code-hour-email:old@local.test");
+      const failures = await world.db.select().from(loginFailure);
+      expect(failures.map((row) => row.id)).not.toContain("login-email:old@local.test");
+      expect(await world.db.select().from(loginCode)).toHaveLength(0);
     });
   });
 
