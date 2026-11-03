@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { project, workspace } from "@agent-board/db";
 import type { BoardCard } from "../app/home/board";
 import { toBoardCards } from "../lib/board-card";
+import { boardSearchLimiter, normalizeBoardSearch } from "../lib/board-search-guard";
 import type { BoardFilter } from "../lib/board-filter";
 import type { ColumnCounts } from "../lib/board-columns";
 import {
@@ -88,16 +89,24 @@ export async function loadOlderBoardCardsAction(input: {
 export async function searchBoardCardsAction(
   query: string,
 ): Promise<{ query: string; cards: BoardCard[] }> {
+  const wanted = normalizeBoardSearch(query);
   const reader = await boardReader();
-  if (!reader || !query.trim()) return { query, cards: [] };
-  const ids = await searchBoardTaskIds(db(), reader.ws.id, reader.principal, query);
-  const rows = await loadBoardTasksByIds(
-    db(),
-    reader.projects.map((item) => item.id),
-    reader.principal,
-    ids,
-  );
-  return { query, cards: await asCards(reader, rows) };
+  if (!reader || !wanted) return { query, cards: [] };
+  // One search at a time and a few a minute per person; past that, nothing.
+  const release = boardSearchLimiter.acquire(reader.session.userId);
+  if (!release) return { query, cards: [] };
+  try {
+    const ids = await searchBoardTaskIds(db(), reader.ws.id, reader.principal, wanted);
+    const rows = await loadBoardTasksByIds(
+      db(),
+      reader.projects.map((item) => item.id),
+      reader.principal,
+      ids,
+    );
+    return { query, cards: await asCards(reader, rows) };
+  } finally {
+    release();
+  }
 }
 
 /** How many cards each column holds under a filter the client just picked. */
