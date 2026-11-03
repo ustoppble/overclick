@@ -2,6 +2,7 @@ import { loginCode, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
+import { MAX_CODE_USER_FAILURES } from "./login-rate-limit";
 import {
   LOGIN_CODE_TTL_MS,
   MAX_LOGIN_CODE_ATTEMPTS,
@@ -179,5 +180,77 @@ describe("login codes", () => {
 
     expect(await issueLoginCode(world.db, EMAIL, T0)).toBeNull();
     expect(await world.db.select().from(loginCode)).toHaveLength(0);
+  });
+
+  describe("wrong guesses across new codes", () => {
+    const MINUTE = 60 * 1000;
+    const HOUR = 60 * MINUTE;
+
+    /** Issues a fresh code at `when` and burns `wrongs` guesses on it. */
+    async function guess(when: number, wrongs: number) {
+      const issued = await issueLoginCode(world.db, EMAIL, at(when));
+      for (let i = 0; i < wrongs; i++) {
+        await redeemLoginCode(world.db, EMAIL, wrongCode(issued!.code), at(when + 1000));
+      }
+      return issued;
+    }
+
+    it("locks code sign-in for the account after ten wrong guesses in a day, even for the right code", async () => {
+      await guess(0, 5);
+      await guess(2 * MINUTE, MAX_CODE_USER_FAILURES - 5);
+      const fresh = await issueLoginCode(world.db, EMAIL, at(4 * MINUTE));
+
+      expect(await redeemLoginCode(world.db, EMAIL, fresh!.code, at(4 * MINUTE + 1000))).toBeNull();
+    });
+
+    it("does not lock at nine wrong guesses", async () => {
+      await guess(0, 5);
+      await guess(2 * MINUTE, MAX_CODE_USER_FAILURES - 6);
+      const fresh = await issueLoginCode(world.db, EMAIL, at(4 * MINUTE));
+
+      expect(await redeemLoginCode(world.db, EMAIL, fresh!.code, at(4 * MINUTE + 1000))).toEqual({
+        userId,
+      });
+    });
+
+    it("keeps counting when a new code is issued instead of starting over", async () => {
+      // Two guesses per code, a new code each time: never five on one code.
+      for (let i = 0; i < MAX_CODE_USER_FAILURES / 2; i++) {
+        await guess(i * 2 * MINUTE, 2);
+      }
+      const fresh = await issueLoginCode(world.db, EMAIL, at(HOUR));
+
+      expect(await redeemLoginCode(world.db, EMAIL, fresh!.code, at(HOUR + 1000))).toBeNull();
+    });
+
+    it("stays locked for a day from the tenth guess, then opens", async () => {
+      await guess(0, 5);
+      await guess(2 * MINUTE, 5);
+
+      // A day after the FIRST guess is still inside a day after the tenth.
+      const early = await issueLoginCode(world.db, EMAIL, at(24 * HOUR + MINUTE));
+      expect(
+        await redeemLoginCode(world.db, EMAIL, early!.code, at(24 * HOUR + MINUTE + 1000)),
+      ).toBeNull();
+
+      const later = await issueLoginCode(world.db, EMAIL, at(24 * HOUR + 5 * MINUTE));
+      expect(
+        await redeemLoginCode(world.db, EMAIL, later!.code, at(24 * HOUR + 5 * MINUTE + 1000)),
+      ).toEqual({ userId });
+    });
+
+    it("is per account: another account's codes still work", async () => {
+      await guess(0, 5);
+      await guess(2 * MINUTE, 5);
+      const [other] = await world.db
+        .insert(user)
+        .values({ email: "other@local.test", passwordHash: "x" })
+        .returning({ id: user.id });
+      const issued = await issueLoginCode(world.db, "other@local.test", at(4 * MINUTE));
+
+      expect(
+        await redeemLoginCode(world.db, "other@local.test", issued!.code, at(4 * MINUTE + 1000)),
+      ).toEqual({ userId: other!.id });
+    });
   });
 });

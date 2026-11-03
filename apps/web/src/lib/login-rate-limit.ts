@@ -1,4 +1,5 @@
 import { loginCodeRequest, loginFailure } from "@agent-board/db";
+import { eq, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { clearBudget, spendBudget, spendBudgetStatement } from "./attempt-budget";
 import type { McpDatabase } from "../mcp/types";
@@ -212,4 +213,67 @@ export async function withinCodeRequestBudget(
     return false;
   }
   return true;
+}
+
+/**
+ * Wrong sign-in codes one account may collect in a day, across every code it
+ * is sent. A code only survives 5 guesses, but asking for a new one is cheap,
+ * so without a count that outlives the code a guesser's allowance is 5 per
+ * request, every request — about 25 an hour for any address they know. This
+ * bucket belongs to the account (by id, not by the email as typed) and is not
+ * reset when a new code goes out: at 10 wrong guesses in 24 hours code
+ * sign-in for that account is shut for 24 hours from the tenth. The password
+ * keeps working, and the refusal is the same generic one as any wrong code.
+ */
+export const CODE_USER_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const MAX_CODE_USER_FAILURES = 10;
+
+function codeUserScope(userId: string): string {
+  return `logincode-user:${userId}`;
+}
+
+/** Whether code sign-in is shut for this account right now. */
+export async function codeLoginLocked(
+  db: McpDatabase,
+  userId: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const [row] = await db
+    .select({ count: loginFailure.count, windowStartedAt: loginFailure.windowStartedAt })
+    .from(loginFailure)
+    .where(eq(loginFailure.id, codeUserScope(userId)));
+  if (!row) return false;
+  return (
+    row.count >= MAX_CODE_USER_FAILURES &&
+    row.windowStartedAt.getTime() >= now.getTime() - CODE_USER_FAILURE_WINDOW_MS
+  );
+}
+
+/**
+ * Counts one wrong guess against the account. The window restarts at the
+ * guess that reaches the cap, so the lock lasts a full day from then rather
+ * than from whenever the first guess of the day happened.
+ */
+export async function chargeCodeFailure(
+  db: McpDatabase,
+  userId: string,
+  now: Date = new Date(),
+): Promise<void> {
+  const floor = new Date(now.getTime() - CODE_USER_FAILURE_WINDOW_MS);
+  const floorParam = sql`${floor.toISOString()}::timestamptz`;
+  const nowParam = sql`${now.toISOString()}::timestamptz`;
+  await db
+    .insert(loginFailure)
+    .values({ id: codeUserScope(userId), count: 1, windowStartedAt: now })
+    .onConflictDoUpdate({
+      target: loginFailure.id,
+      set: {
+        count: sql`case when ${loginFailure.windowStartedAt} < ${floorParam}
+          then 1 else ${loginFailure.count} + 1 end`,
+        windowStartedAt: sql`case when ${loginFailure.windowStartedAt} < ${floorParam}
+          then ${nowParam}
+          when ${loginFailure.count} + 1 >= ${MAX_CODE_USER_FAILURES}
+          then ${nowParam} else ${loginFailure.windowStartedAt} end`,
+      },
+    });
 }

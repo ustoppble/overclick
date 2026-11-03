@@ -2,6 +2,7 @@ import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { loginCode, user } from "@agent-board/db";
 import { and, eq, gt, inArray, isNull, lt, not, sql } from "drizzle-orm";
 import type { McpDatabase } from "../mcp/types";
+import { chargeCodeFailure, codeLoginLocked } from "./login-rate-limit";
 import { secretKey } from "./session";
 
 /**
@@ -33,6 +34,9 @@ export function hashLoginCode(email: string, code: string): string {
     .update(`ovk-login-code:${email}:${code}`, "utf8")
     .digest("hex");
 }
+
+/** Stands in for the account when there is none to charge or look up. */
+const NO_ACCOUNT = "00000000-0000-0000-0000-000000000000";
 
 /** Compared against when there is no live code, so a miss costs a compare too. */
 const ABSENT_CODE_HASH = "0".repeat(64);
@@ -111,12 +115,22 @@ export async function redeemLoginCode(
   if (!LOGIN_CODE_PATTERN.test(code)) return null;
   const submitted = Buffer.from(hashLoginCode(email, code), "hex");
 
+  // Every miss runs the same four statements — find the account, read its
+  // lock, try to spend an attempt, count a failure — whether the address has
+  // an account, the account is locked or there is no live code, so none of
+  // those shows as a shorter round trip. A statement with nothing to do is
+  // pointed at NO_ACCOUNT and matches no row.
+  const [account] = await accountId(db, email);
+  const accountKey = account?.id ?? NO_ACCOUNT;
+  const locked = await codeLoginLocked(db, accountKey, now);
+  const mayGuess = account !== undefined && !locked;
+
   const live = await db
     .update(loginCode)
     .set({ attempts: sql`${loginCode.attempts} + 1` })
     .where(
       and(
-        inArray(loginCode.userId, accountId(db, email)),
+        eq(loginCode.userId, mayGuess ? accountKey : NO_ACCOUNT),
         isNull(loginCode.consumedAt),
         gt(loginCode.expiresAt, now),
         lt(loginCode.attempts, MAX_LOGIN_CODE_ATTEMPTS),
@@ -131,7 +145,12 @@ export async function redeemLoginCode(
       matchId = row.id;
     }
   }
-  if (!matchId) return null;
+  if (!matchId) {
+    // Only a guess that spent an attempt on a live code counts against the
+    // account; any other miss is booked on the sink nobody reads.
+    await chargeCodeFailure(db, live.length > 0 ? accountKey : NO_ACCOUNT, now);
+    return null;
+  }
 
   // Conditional on still being unconsumed: of two requests carrying the
   // right code at once, exactly one gets the account.

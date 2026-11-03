@@ -382,6 +382,30 @@ describe("signing in with a code sent by email", () => {
     });
   });
 
+  it("keeps the password sign-in working while code sign-in is locked for the account, and answers the code the same generic way", async () => {
+    const { redeemLoginCode, issueLoginCode } = await import("../lib/login-code");
+    const { MAX_CODE_USER_FAILURES } = await import("../lib/login-rate-limit");
+    const wrong = "000000";
+    for (let round = 0; round < MAX_CODE_USER_FAILURES / 5; round++) {
+      at(round * 2 * MINUTE);
+      const issued = await issueLoginCode(world.db, EMAIL);
+      const guess = issued!.code === wrong ? "111111" : wrong;
+      for (let i = 0; i < 5; i++) await redeemLoginCode(world.db, EMAIL, guess);
+    }
+
+    at(5 * MINUTE);
+    await requestLoginCodeAction(null, emailForm(EMAIL));
+    const refused = await loginWithCodeAction(null, codeForm(EMAIL, lastSentCode()));
+    const wrongCodeAnswer = await loginWithCodeAction(null, codeForm("ghost@local.test", wrong));
+    expect(refused?.error).toBeTruthy();
+    expect(refused).toEqual(wrongCodeAnswer);
+    expect(requestState.cookieSet).not.toHaveBeenCalled();
+
+    await loginAction(null, passwordForm(EMAIL, PASSWORD));
+    expect(redirectSpy).toHaveBeenCalledWith("/home");
+    expect(requestState.cookieSet).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the password sign-in working", async () => {
     const wrong = await loginAction(null, passwordForm(EMAIL, "not-the-password"));
     expect(wrong?.error).toBeTruthy();
