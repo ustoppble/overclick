@@ -25,7 +25,8 @@ import {
   type ColumnCounts,
   type ColumnStatus,
 } from "../../lib/board-columns";
-import { BOARD_PAGE_SIZE, columnTotal } from "../../lib/board-window";
+import { BOARD_PAGE_SIZE, periodTotal } from "../../lib/board-window";
+import type { BoardPeriod } from "../../lib/board-filter";
 import { pickRowNumber, typeInitial } from "../../lib/board-row";
 import { dict, type Dict } from "../../lib/i18n";
 import { CliMark } from "../../components/cli-mark";
@@ -1497,6 +1498,8 @@ export function Board({
   onToggleSelect,
   onMissionSelect,
   columnTotals = null,
+  period = "all",
+  windowSince = "",
   olderLeft = {},
   loadingOlder = null,
   onShowOlder,
@@ -1516,7 +1519,11 @@ export function Board({
    * while a search narrows the board: then the column is what it shows.
    */
   columnTotals?: ColumnCounts | null;
-  /** How many older cards each finished column still holds back. */
+  /** How far back the board reaches; a column head counts inside it. */
+  period?: BoardPeriod;
+  /** Where the period starts: cards changed since then are inside it. */
+  windowSince?: string;
+  /** How many older cards each column still holds back past the board. */
   olderLeft?: Partial<Record<ColumnStatus, number>>;
   loadingOlder?: ColumnStatus | null;
   onShowOlder?: (status: ColumnStatus) => void;
@@ -1562,8 +1569,19 @@ export function Board({
     />
   );
 
-  // The window keeps finished columns to this week; the rest is one click
-  // away, a page at a time, above the cards already there.
+  // The number on a column head: the column inside the period, so the older
+  // cards a reader pulled in do not inflate it. The cards past the period are
+  // said apart, right beside it, and come in a page at a time.
+  const headCount = (status: ColumnStatus, list: BoardCard[]) =>
+    periodTotal(
+      period,
+      list.filter((card) => card.updatedAt >= windowSince).length,
+      list.length,
+      columnTotals?.[status],
+    );
+
+  // The window keeps the board to the period; the rest is one click away, a
+  // page at a time, above the cards already there.
   const renderMore = (status: ColumnStatus) => {
     const left = olderLeft[status];
     if (!left || !onShowOlder) return null;
@@ -1614,9 +1632,12 @@ export function Board({
                   className="col-mark"
                 />
                 {colLabel[status]}{" "}
-                <span className="count">
-                  {columnTotal(list.length, columnTotals?.[status])}
-                </span>
+                <span className="count">{headCount(status, list)}</span>
+                {period !== "all" && olderLeft[status] ? (
+                  <span className="older-hint">
+                    {t.board.olderBeyondPeriod(olderLeft[status])}
+                  </span>
+                ) : null}
               </div>
               <div className="col">
                 {/* The column reads oldest first, so the older cards land on
@@ -1640,7 +1661,7 @@ export function Board({
         renderRow={renderRow}
         renderEmpty={(status) => <EmptyState status={status} t={t} />}
         renderMore={renderMore}
-        columnTotals={columnTotals}
+        headCount={headCount}
         t={t}
       />
       {open && detailLoading ? <DetailSkeleton /> : null}

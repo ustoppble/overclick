@@ -12,9 +12,9 @@ import {
   type BoardSearchRefusal,
 } from "../lib/board-search-guard";
 import type { BoardFilter } from "../lib/board-filter";
-import type { ColumnCounts } from "../lib/board-columns";
 import {
   countBoardColumns,
+  type BoardColumnCounts,
   loadBoardTasksByIds,
   loadOlderBoardTasks,
   searchBoardTaskIds,
@@ -69,7 +69,7 @@ async function asCards(
   });
 }
 
-/** One "show older" click on a done, validated or discarded column. */
+/** One "show older" click on a column: the cards past what the board shows. */
 export async function loadOlderBoardCardsAction(input: {
   status: string;
   filter: BoardFilter;
@@ -115,10 +115,13 @@ export async function searchBoardCardsAction(
   }
 }
 
-/** How many cards each column holds under a filter the client just picked. */
+/**
+ * How many cards each column holds under a filter the client just picked,
+ * inside its period and past it.
+ */
 export async function boardColumnCountsAction(
   filter: BoardFilter,
-): Promise<ColumnCounts | null> {
+): Promise<BoardColumnCounts | null> {
   const wanted = parseBoardFilter(filter);
   const reader = await boardReader();
   if (!reader || !wanted) return null;

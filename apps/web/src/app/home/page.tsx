@@ -213,6 +213,7 @@ export default async function HomePage({
       boardTaskTypes: user.boardTaskTypes,
       boardPriorities: user.boardPriorities,
       boardResolvedIn: user.boardResolvedIn,
+      boardPeriod: user.boardPeriod,
     })
     .from(user)
     .where(eq(user.id, session.userId))
@@ -233,13 +234,33 @@ export default async function HomePage({
   // when there is a banner to draw.
   const updater = release ? await readUpdaterState() : null;
   const projectIds = projects.map((item) => item.id);
-  // The window, not the whole history (OCL): every live card, and the
-  // finished ones that changed this week. The rest come in on demand.
+  // The period is part of the filter, and the window is built from it.
+  const initialFilter = resolveBoardFilter(
+    {
+      organizationId: me?.boardOrganizationId ?? null,
+      projectId: me?.boardProjectId ?? null,
+      missionId: me?.boardMissionId ?? null,
+      types: me?.boardTaskTypes ?? null,
+      priorities: me?.boardPriorities ?? null,
+      resolvedIn: me?.boardResolvedIn ?? null,
+      period: me?.boardPeriod ?? null,
+    },
+    projects,
+    missions,
+    releases,
+    organizations,
+  );
+  // The window, not the whole history: the cards that changed inside the
+  // period (last 7 days unless the reader chose otherwise). The rest come in
+  // on demand, a page at a time, or through the search or a link.
   const windowNow = new Date();
   // Read before the cards, so a write landing in between makes the poll
   // refresh once more instead of hiding behind a fingerprint newer than the page.
   const boardSignature = await loadBoardSignature(db(), ws.id, projectIds, principal);
-  const rows = await loadBoardTasks(db(), projectIds, principal, { now: windowNow });
+  const rows = await loadBoardTasks(db(), projectIds, principal, {
+    now: windowNow,
+    period: initialFilter.period,
+  });
   // A link to one card (?card=OCL-12) opens it even when the window left it
   // out. Out of scope reads as no card, the same as an id that matches none.
   const params = await searchParams;
@@ -263,20 +284,6 @@ export default async function HomePage({
     viewerId: session.userId,
     claimTimeoutMinutes: ws.claimTimeoutMinutes,
   });
-  const initialFilter = resolveBoardFilter(
-    {
-      organizationId: me?.boardOrganizationId ?? null,
-      projectId: me?.boardProjectId ?? null,
-      missionId: me?.boardMissionId ?? null,
-      types: me?.boardTaskTypes ?? null,
-      priorities: me?.boardPriorities ?? null,
-      resolvedIn: me?.boardResolvedIn ?? null,
-    },
-    projects,
-    missions,
-    releases,
-    organizations,
-  );
   // The topbar total, aggregated by the same code the Insights page runs so
   // the board and the page can only report the same numbers for one filter.
   const initialTotals = await loadBoardTotals(
@@ -293,6 +300,7 @@ export default async function HomePage({
     projects,
     principal,
     initialFilter,
+    { now: windowNow },
   );
 
   return (
@@ -326,7 +334,7 @@ export default async function HomePage({
         initialTotals={initialTotals}
         columnCounts={columnCounts}
         openCardId={linkedRow?.id ?? null}
-        windowSince={boardWindowStart(windowNow).toISOString()}
+        windowSince={boardWindowStart(windowNow, initialFilter.period).toISOString()}
         boardSignature={boardSignature}
       />
 

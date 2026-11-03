@@ -5,6 +5,9 @@ import {
   NO_MISSION,
   boardFilterFromQuery,
   boardFilterToQuery,
+  boardViewKey,
+  DEFAULT_BOARD_PERIOD,
+  periodDays,
   countLooseCards,
   encodeFacetSelection,
   encodeProjectSelection,
@@ -97,6 +100,7 @@ function boardFilter(overrides: Partial<BoardFilter> = {}): BoardFilter {
     missionId: null,
     types: [],
     priorities: [],
+    period: "7d",
     ...overrides,
   };
 }
@@ -109,6 +113,7 @@ describe("board filters", () => {
       missionId: null,
       types: [],
       priorities: [],
+      period: "7d",
     });
   });
 
@@ -318,6 +323,7 @@ describe("several projects at once", () => {
       missionId: null,
       types: [],
       priorities: [],
+      period: "7d",
     });
     expect(
       boardFilterFromQuery({ projects: "all", mission: NO_MISSION }, projects, missions),
@@ -582,6 +588,7 @@ describe("the release filter only offers releases", () => {
       missionId: null,
       types: [],
       priorities: [],
+      period: "7d",
     });
   });
 
@@ -612,5 +619,53 @@ describe("the release filter only offers releases", () => {
         organizations,
       ).organizationIds,
     ).toEqual(["o2"]);
+  });
+});
+
+describe("the period filter", () => {
+  const none = { projectId: null, missionId: null };
+
+  it("defaults to the last 7 days", () => {
+    expect(DEFAULT_BOARD_PERIOD).toBe("7d");
+    expect(resolveBoardFilter(none, projects, missions).period).toBe("7d");
+    expect(resolveBoardFilter({ ...none, period: null }, projects, missions).period).toBe("7d");
+  });
+
+  it("keeps the four periods the board offers", () => {
+    for (const period of ["7d", "14d", "30d", "all"] as const) {
+      expect(resolveBoardFilter({ ...none, period }, projects, missions).period).toBe(period);
+    }
+  });
+
+  it("falls back to 7 days for a stored value it does not know, 90 days included", () => {
+    expect(resolveBoardFilter({ ...none, period: "90d" }, projects, missions).period).toBe("7d");
+    expect(resolveBoardFilter({ ...none, period: "forever" }, projects, missions).period).toBe("7d");
+  });
+
+  it("counts the days of each period, and none for all time", () => {
+    expect(periodDays("7d")).toBe(7);
+    expect(periodDays("14d")).toBe(14);
+    expect(periodDays("30d")).toBe(30);
+    expect(periodDays("all")).toBeNull();
+  });
+
+  it("is part of the key a view of the board is told apart by, but not of the shared query", () => {
+    const base = resolveBoardFilter(none, projects, missions);
+    const wider = { ...base, period: "30d" as const };
+    expect(boardViewKey(base)).not.toBe(boardViewKey(wider));
+    expect(boardFilterToQuery(base)).toBe(boardFilterToQuery(wider));
+  });
+
+  it("does not hide a card by its age on the client: the server window decides that", () => {
+    const card = {
+      organizationId: "o",
+      projectId: projects[0]!.id,
+      missionId: null,
+      tipo: "bug" as const,
+      priority: "media" as const,
+      resolvedIn: null,
+    };
+    const filter = resolveBoardFilter({ ...none, period: "7d" }, projects, missions);
+    expect(filterBoardCards([card], filter)).toHaveLength(1);
   });
 });

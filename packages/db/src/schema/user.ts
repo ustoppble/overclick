@@ -48,6 +48,8 @@ export const user = pgTable("user", {
   boardPriorities: text("board_priorities"),
   /** Exact release tag, or the board filter's no-release sentinel. Null = all. */
   boardResolvedIn: text("board_resolved_in"),
+  /** How far back the board reaches by last activity: "7d", "14d", "30d" or "all". Null = the default, 7 days. */
+  boardPeriod: text("board_period"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

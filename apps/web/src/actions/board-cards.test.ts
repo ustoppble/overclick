@@ -144,7 +144,8 @@ describe("board actions, malformed input", () => {
   it("answers empty to a cursor, status, type or priority out of shape", async () => {
     expect(await older({ before: { updatedAt: "yesterday", id: ID } })).toEqual(none);
     expect(await older({ before: { id: ID } })).toEqual(none);
-    expect(await older({ status: "aberto" })).toEqual(none);
+    expect(await older({ status: "archived" })).toEqual(none);
+    expect(await older({ filter: { ...base, period: "90d" } })).toEqual(none);
     expect(await older({ status: { $ne: 1 } })).toEqual(none);
     expect(await older({ filter: { ...base, types: ["epic"] } })).toEqual(none);
     expect(await older({ filter: { ...base, priorities: ["asap"] } })).toEqual(none);

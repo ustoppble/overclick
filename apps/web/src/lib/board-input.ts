@@ -1,12 +1,13 @@
 import type { TaskPriority, TaskType } from "@agent-board/db";
 import { z } from "zod";
 import {
+  BOARD_PERIODS,
   isTaskPriority,
   isTaskType,
   NO_MISSION,
   type BoardFilter,
 } from "./board-filter";
-import { isArchivedStatus, type ArchivedStatus, type OlderCursor } from "./board-tasks";
+import { isColumnStatus, type ColumnStatus, type OlderCursor } from "./board-tasks";
 
 /**
  * The shape the board's server actions accept. A server action is a public
@@ -32,6 +33,7 @@ const boardFilterShape: z.ZodType<BoardFilter, z.ZodTypeDef, unknown> = z.object
       z.custom<TaskPriority>((value) => typeof value === "string" && isTaskPriority(value)),
     )
     .max(20),
+  period: z.enum(BOARD_PERIODS).optional(),
 });
 
 const olderCursorShape: z.ZodType<OlderCursor, z.ZodTypeDef, unknown> = z.object({
@@ -48,20 +50,20 @@ export function parseBoardFilter(input: unknown): BoardFilter | null {
 
 /** One "show older" request, or null when any part of it is off the shape. */
 export function parseOlderRequest(input: unknown): {
-  status: ArchivedStatus;
+  status: ColumnStatus;
   filter: BoardFilter;
   before: OlderCursor | null;
 } | null {
   const parsed = z
     .object({
-      status: z.string().refine(isArchivedStatus),
+      status: z.string().refine(isColumnStatus),
       filter: boardFilterShape,
       before: olderCursorShape.nullable(),
     })
     .safeParse(input);
   if (!parsed.success) return null;
   return {
-    status: parsed.data.status as ArchivedStatus,
+    status: parsed.data.status as ColumnStatus,
     filter: parsed.data.filter,
     before: parsed.data.before,
   };
