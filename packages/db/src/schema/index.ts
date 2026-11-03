@@ -27,6 +27,7 @@ export { pairingFailure } from "./pairing-failure";
 export { loginFailure } from "./login-failure";
 export { loginCode } from "./login-code";
 export { loginCodeRequest } from "./login-code-request";
+export { signupCode } from "./signup-code";
 export { cardapioEntry } from "./cardapio-entry";
 export { modelPrice } from "./model-price";
 export { usageRecipe } from "./usage-recipe";

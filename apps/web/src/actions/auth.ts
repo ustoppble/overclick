@@ -1,11 +1,6 @@
 "use server";
 
-import {
-  canCreateFirstAdmin,
-  isValidEmail,
-  isValidPassword,
-  user,
-} from "@agent-board/db";
+import { canCreateFirstAdmin, isValidEmail, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
@@ -30,7 +25,12 @@ import {
   withinCodeLoginBudget,
   withinCodeRequestBudget,
 } from "../lib/login-rate-limit";
-import { hashPassword } from "../lib/password";
+import {
+  issueSignupCode,
+  redeemSignupCode,
+  setupScope,
+  signupCodeEmail,
+} from "../lib/signup-code";
 
 export type AuthState = { error: string } | null;
 
@@ -51,33 +51,82 @@ async function authCopy() {
   return dict(ws?.language).auth;
 }
 
+/**
+ * Setup, step one: emails a code to the address that is to become the first
+ * admin. Nothing is created yet; the code is what creates the account
+ * (`signupAction`). Only while the instance has no account at all.
+ */
+export async function requestSetupCodeAction(
+  _prev: CodeRequestState,
+  formData: FormData,
+): Promise<CodeRequestState> {
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  if (!isValidEmail(email)) {
+    return { error: (await authCopy()).errEmail };
+  }
+  if (!emailConfigured()) {
+    console.error(
+      "[login-code] RESEND_API_KEY or EMAIL_FROM is not set; setup by code is unavailable",
+    );
+    return { error: (await authCopy()).errCodeUnavailable };
+  }
+  if (!canCreateFirstAdmin(await countUsers())) {
+    return { error: (await authCopy()).errAdminExists };
+  }
+
+  await sweepLoginRows(db());
+  const origin = await loginOrigin();
+  // The same buckets and the same global cap as a sign-in code: setup is no
+  // side door into the email provider's quota.
+  if (await withinCodeRequestBudget(db(), email, origin)) {
+    after(async () => {
+      try {
+        const issued = await issueSignupCode(db(), setupScope(email), email);
+        if (issued) await sendEmail(signupCodeEmail("setup", email, issued.code));
+      } catch (err) {
+        console.error(
+          `[login-code] issuing or sending a setup code failed (${err instanceof Error ? err.name : "unknown"})`,
+        );
+      }
+    });
+  }
+  return { sent: true };
+}
+
+/**
+ * Setup, step two: the code sent to the address creates the first admin,
+ * with no password, and signs them in. A password in the form is ignored.
+ */
 export async function signupAction(
   _prev: AuthState,
   formData: FormData,
 ): Promise<AuthState> {
   const email = normalizeEmail(String(formData.get("email") ?? ""));
-  const password = String(formData.get("password") ?? "");
-  const confirm = String(formData.get("confirm") ?? "");
+  const code = String(formData.get("code") ?? "").replace(/\s+/g, "");
 
   if (!isValidEmail(email)) {
     return { error: (await authCopy()).errEmail };
   }
-  if (!isValidPassword(password)) {
-    return { error: (await authCopy()).errPassword };
+  if (!LOGIN_CODE_PATTERN.test(code)) {
+    return { error: (await authCopy()).errCode };
   }
-  if (password !== confirm) {
-    return { error: (await authCopy()).errMismatch };
-  }
-
-  const existing = await countUsers();
-  if (!canCreateFirstAdmin(existing)) {
+  if (!canCreateFirstAdmin(await countUsers())) {
     return { error: (await authCopy()).errAdminExists };
   }
 
-  const passwordHash = await hashPassword(password);
+  const origin = await loginOrigin();
+  const charge = await withinCodeLoginBudget(db(), email, origin);
+  if (!charge.ok || !(await redeemSignupCode(db(), setupScope(email), email, code))) {
+    return { error: (await authCopy()).errCode };
+  }
+  // Read again: someone else may have finished setup while this code was typed.
+  if (!canCreateFirstAdmin(await countUsers())) {
+    return { error: (await authCopy()).errAdminExists };
+  }
+
   const [created] = await db()
     .insert(user)
-    .values({ email, passwordHash, role: "admin" })
+    .values({ email, role: "admin" })
     .returning({
       id: user.id,
       sessionVersion: user.sessionVersion,
@@ -87,6 +136,8 @@ export async function signupAction(
     return { error: (await authCopy()).errCreate };
   }
 
+  await refundCodeLoginOrigin(db(), origin, charge);
+  await clearCodeLoginBudget(db(), email);
   await ensureWorkspace();
   await setSession({
     userId: created.id,

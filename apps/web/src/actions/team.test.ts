@@ -29,6 +29,24 @@ vi.mock("../lib/cookies", () => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
+const emailState = vi.hoisted(() => ({
+  configured: true,
+  sendEmail: vi.fn(async (_message: { to: string; subject: string; text: string }) => true),
+}));
+vi.mock("../lib/email", () => ({
+  emailConfigured: () => emailState.configured,
+  sendEmail: emailState.sendEmail,
+}));
+
+vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+
+const afterState = vi.hoisted(() => ({ queued: [] as Array<() => unknown> }));
+vi.mock("next/server", () => ({
+  after: (callback: () => unknown) => {
+    afterState.queued.push(callback);
+  },
+}));
+
 class Redirected extends Error {
   constructor(readonly to: string) {
     super(`redirect ${to}`);
@@ -58,21 +76,42 @@ const {
   createPairingCodeAction,
 } = await import("./tokens");
 
-function acceptForm(token: string, password = "s3cret-pass") {
+/** Who each link was made for, so `accept` can type the right address by default. */
+const invitedEmail = new Map<string, string>();
+
+async function requestCode(token: string, email: string) {
   const form = new FormData();
   form.set("token", token);
-  form.set("password", password);
-  form.set("confirm", password);
-  return form;
+  form.set("email", email);
+  const answer = await team.requestInviteCodeAction(null, form);
+  while (afterState.queued.length > 0) await afterState.queued.shift()!();
+  return answer;
 }
 
-async function accept(token: string) {
+function lastCodeSentTo(email: string): string | null {
+  const message = emailState.sendEmail.mock.calls.filter(([m]) => m.to === email).at(-1)?.[0];
+  return message?.text.match(/\b(\d{6})\b/)?.[1] ?? null;
+}
+
+async function enter(token: string, email: string, code: string) {
+  const form = new FormData();
+  form.set("token", token);
+  form.set("email", email);
+  form.set("code", code);
   try {
-    return await team.acceptInvitationAction(null, acceptForm(token));
+    return await team.acceptInvitationAction(null, form);
   } catch (error) {
     if (error instanceof Redirected) return { redirectedTo: error.to };
     throw error;
   }
+}
+
+/** The whole way in from a link: type the address, get the code, enter it. */
+async function accept(token: string, email = invitedEmail.get(token) ?? "nobody@example.test") {
+  emailState.sendEmail.mockClear();
+  const asked = await requestCode(token, email);
+  if (asked && "error" in asked) return asked;
+  return enter(token, email, lastCodeSentTo(email) ?? "000000");
 }
 
 async function invite(email: string) {
@@ -83,14 +122,20 @@ async function invite(email: string) {
   });
   if (!created.ok) throw new Error(created.error);
   sessionUserId = "";
-  return created.path.split("/").pop()!;
+  const secret = created.path.split("/").pop()!;
+  invitedEmail.set(secret, email.toLowerCase());
+  return secret;
 }
 
 /** OCL-222: the admin brings a member in, and can switch them off. */
 describe("invitation and team", () => {
   beforeEach(async () => {
+    process.env.AUTH_SECRET = "s".repeat(32);
     world = await createTestWorld();
     sessionsSet.length = 0;
+    emailState.configured = true;
+    emailState.sendEmail.mockClear();
+    afterState.queued.length = 0;
   });
 
   afterEach(async () => {
@@ -114,9 +159,14 @@ describe("invitation and team", () => {
     expect(new Date(created.expiresAt).getTime()).toBeGreaterThan(Date.now());
   });
 
-  it("step 2: opening the link and setting a password creates a member of that organization, signed in, sent to install", async () => {
+  it("step 2: opening the link, typing the invited address and entering the code it gets creates a member of that organization, with no password, signed in, sent to install", async () => {
     const secret = await invite("func@example.test");
-    expect(await accept(secret)).toEqual({ redirectedTo: "/onboarding" });
+    expect(await requestCode(secret, "Func@Example.test")).toEqual({ sent: true });
+    expect(await world.db.select().from(user).where(eq(user.role, "member"))).toHaveLength(0);
+    const code = lastCodeSentTo("func@example.test");
+    expect(code).toMatch(/^\d{6}$/);
+
+    expect(await enter(secret, "func@example.test", code!)).toEqual({ redirectedTo: "/onboarding" });
 
     const [member] = await world.db
       .select()
@@ -124,8 +174,66 @@ describe("invitation and team", () => {
       .where(eq(user.email, "func@example.test"));
     expect(member?.role).toBe("member");
     expect(member?.organizationId).toBe(world.organizationId);
-    expect(member?.passwordHash).not.toContain("s3cret-pass");
+    expect(member?.passwordHash).toBeNull();
     expect(sessionsSet).toEqual([{ userId: member!.id, sessionVersion: member!.sessionVersion }]);
+  });
+
+  it("answers another address the same way, sends it nothing, and creates nobody", async () => {
+    const secret = await invite("func@example.test");
+
+    expect(await requestCode(secret, "stranger@example.test")).toEqual({ sent: true });
+    expect(emailState.sendEmail).not.toHaveBeenCalled();
+    expect(await enter(secret, "stranger@example.test", "123456")).toEqual({
+      error: expect.any(String),
+    });
+    expect(await world.db.select().from(user).where(eq(user.role, "member"))).toHaveLength(0);
+  });
+
+  it("does not create the account from the link alone: a wrong code is refused and the link stays usable", async () => {
+    const secret = await invite("func@example.test");
+    await requestCode(secret, "func@example.test");
+    const code = lastCodeSentTo("func@example.test")!;
+
+    expect(await enter(secret, "func@example.test", code === "000000" ? "111111" : "000000")).toEqual({
+      error: expect.any(String),
+    });
+    expect(await world.db.select().from(user).where(eq(user.role, "member"))).toHaveLength(0);
+    const [row] = await world.db.select().from(invitation);
+    expect(row?.usedAt).toBeNull();
+
+    expect(await enter(secret, "func@example.test", code)).toEqual({ redirectedTo: "/onboarding" });
+  });
+
+  it("does not let a code sent for one invitation accept another", async () => {
+    const first = await invite("func@example.test");
+    const second = await invite("other@example.test");
+    await requestCode(first, "func@example.test");
+    const code = lastCodeSentTo("func@example.test")!;
+
+    expect(await enter(second, "other@example.test", code)).toEqual({ error: expect.any(String) });
+    expect(await enter(second, "func@example.test", code)).toEqual({ error: expect.any(String) });
+    expect(await world.db.select().from(user).where(eq(user.role, "member"))).toHaveLength(0);
+  });
+
+  it("says it is unavailable and sends nothing when email is not configured", async () => {
+    const secret = await invite("func@example.test");
+    emailState.configured = false;
+
+    expect(await requestCode(secret, "func@example.test")).toEqual({
+      error: "Sign-in unavailable: email is not configured.",
+    });
+    expect(emailState.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("takes no password: a form with one and no code creates nobody", async () => {
+    const secret = await invite("func@example.test");
+    const form = new FormData();
+    form.set("token", secret);
+    form.set("password", "s3cret-pass");
+    form.set("confirm", "s3cret-pass");
+
+    expect(await team.acceptInvitationAction(null, form)).toEqual({ error: expect.any(String) });
+    expect(await world.db.select().from(user).where(eq(user.role, "member"))).toHaveLength(0);
   });
 
   it("step 3: the same link a second time is refused as used", async () => {
@@ -162,11 +270,12 @@ describe("invitation and team", () => {
   });
 
   it("step 8: the open signup stays closed after the first admin", async () => {
-    const { signupAction } = await import("./auth");
+    const { requestSetupCodeAction, signupAction } = await import("./auth");
     const form = new FormData();
     form.set("email", "intruder@example.test");
-    form.set("password", "s3cret-pass");
-    form.set("confirm", "s3cret-pass");
+    form.set("code", "123456");
+    expect(await requestSetupCodeAction(null, form)).toEqual({ error: expect.any(String) });
+    expect(emailState.sendEmail).not.toHaveBeenCalled();
     expect(await signupAction(null, form)).toEqual({ error: expect.any(String) });
     expect(
       await world.db.select().from(user).where(eq(user.email, "intruder@example.test")),

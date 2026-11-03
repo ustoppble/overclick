@@ -1,4 +1,4 @@
-import { loginCode, loginCodeRequest, loginFailure } from "@agent-board/db";
+import { loginCode, loginCodeRequest, loginFailure, signupCode } from "@agent-board/db";
 import { isNotNull, lt, or } from "drizzle-orm";
 import type { McpDatabase } from "../mcp/types";
 import { CODE_USER_FAILURE_WINDOW_MS } from "./login-rate-limit";
@@ -13,7 +13,7 @@ const lastSweep = new WeakMap<object, number>();
 /**
  * Deletes what the sign-in tables only keep for a window: budget rows whose
  * window is over (every bucket restarts on its own, so they count nothing
- * any more) and codes that were used or have expired. Each distinct address a
+ * any more) and codes — sign-in and signup — that were used or have expired. Each distinct address a
  * stranger types makes rows, and nothing else ever removes them.
  *
  * Opportunistic, with no cron: the sign-in-by-code actions call it, and it
@@ -39,6 +39,9 @@ export async function sweepLoginRows(
     await db
       .delete(loginCode)
       .where(or(isNotNull(loginCode.consumedAt), lt(loginCode.expiresAt, now)));
+    await db
+      .delete(signupCode)
+      .where(or(isNotNull(signupCode.consumedAt), lt(signupCode.expiresAt, now)));
   } catch (err) {
     console.error(
       `[login-code] housekeeping failed (${err instanceof Error ? err.name : "unknown"})`,

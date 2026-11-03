@@ -125,10 +125,15 @@ function refusalOf(
 }
 
 export type InspectInvitationResult =
-  | { ok: true; email: string; organizationName: string }
+  | { ok: true; id: string; email: string; organizationName: string }
   | { ok: false; reason: InvitationRefusal };
 
-/** What the invite page shows before anyone types a password. */
+/**
+ * What the invite page needs before anyone proves the address: whether the
+ * link can be used, and the invitation it points at. The page shows the
+ * organization, never the email: whoever accepts types it, and a leaked link
+ * alone does not say whose inbox the code goes to.
+ */
 export async function inspectInvitation(
   db: Db,
   secret: string,
@@ -137,6 +142,7 @@ export async function inspectInvitation(
   if (!secret) return { ok: false, reason: "invalid" };
   const [row] = await db
     .select({
+      id: invitation.id,
       email: invitation.email,
       usedAt: invitation.usedAt,
       revokedAt: invitation.revokedAt,
@@ -151,7 +157,7 @@ export async function inspectInvitation(
   if (!row) return { ok: false, reason: "invalid" };
   const refusal = refusalOf(row, now);
   if (refusal) return { ok: false, reason: refusal };
-  return { ok: true, email: row.email, organizationName: row.organizationName };
+  return { ok: true, id: row.id, email: row.email, organizationName: row.organizationName };
 }
 
 export type AcceptInvitationResult =
@@ -187,12 +193,13 @@ export function decodeInvitationSecret(raw: string): string {
 
 /**
  * Creates the invited member and spends the link, in one transaction. The
- * password is hashed by the caller, so this stays free of scrypt and testable.
+ * member has no password: the caller has already had the invited address
+ * proved with a code (`redeemSignupCode`), and that address is how they sign
+ * in from then on.
  */
 export async function acceptInvitation(
   db: Db,
   secret: string,
-  passwordHash: string,
   now: Date = new Date(),
 ): Promise<AcceptInvitationResult> {
   if (!secret) return { ok: false, reason: "invalid" };
@@ -231,7 +238,6 @@ export async function acceptInvitation(
         .insert(user)
         .values({
           email: spent.email,
-          passwordHash,
           role: "member",
           organizationId: spent.organizationId,
         })

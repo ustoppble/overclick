@@ -1,5 +1,6 @@
 import { NebulaAtmosphere } from "../../../components/nebula-atmosphere";
 import { db } from "../../../lib/db";
+import { emailConfigured } from "../../../lib/email";
 import { dict } from "../../../lib/i18n";
 import { decodeInvitationSecret, inspectInvitation } from "../../../lib/invitations";
 import { APP_VERSION } from "../../../lib/updates";
@@ -10,8 +11,8 @@ export const dynamic = "force-dynamic";
 /**
  * The only way in after the first admin (OCL-222): a link an admin generated
  * for one email and one organization. Used, expired, withdrawn or tampered,
- * it says so and offers sign in; valid, it asks for a password and, once set,
- * sends the member on to install.
+ * it says so and offers sign in; valid, it asks for the invited address and
+ * the code sent to it and, once proved, sends the member on to install.
  */
 export default async function InvitePage({
   params,
@@ -45,14 +46,14 @@ export default async function InvitePage({
             {found.ok ? (
               <>
                 <h1>{t.auth.inviteTitle}</h1>
-                <p className="sub">
-                  {t.auth.inviteSub(found.email, found.organizationName)}
-                </p>
-                <InviteForm
-                  token={secret}
-                  email={found.email}
-                  lang={ws?.language ?? "en"}
-                />
+                <p className="sub">{t.auth.inviteSub(found.organizationName)}</p>
+                {emailConfigured() ? (
+                  <InviteForm token={secret} lang={ws?.language ?? "en"} />
+                ) : (
+                  <p className="auth-err" role="alert">
+                    {t.auth.errCodeUnavailable}
+                  </p>
+                )}
               </>
             ) : (
               <>
