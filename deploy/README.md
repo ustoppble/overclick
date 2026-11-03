@@ -25,6 +25,8 @@ POSTGRES_PASSWORD=<a long random string>
 AUTH_SECRET=<32+ random characters>
 OVERCLICK_PORT=3100                      # optional, the loopback port the proxy talks to
 GITHUB_WEBHOOK_SECRET=<random string>    # optional, see "GitHub release webhook"
+RESEND_API_KEY=<your Resend API key>     # optional, see "Sign-in by email code"
+EMAIL_FROM=<Name <sender@your-domain>>   # optional, see "Sign-in by email code"
 ```
 
 Generate both with `openssl rand -hex 32`. The app listens on `127.0.0.1:3100`
@@ -48,6 +50,32 @@ it stays closed until you set it up:
 3. Repeat step 2 for every releases repo a project follows; they all share the
    one secret. After a redeploy, GitHub's "Recent Deliveries" tab shows the
    ping answered 200.
+
+## Sign-in by email code
+
+The login screen offers "Sign in with an email code" next to the password: the
+person types their address, receives a 6-digit code valid for 10 minutes, and
+types it back. It sets the same session as the password sign-in, and the
+password keeps working as before.
+
+Mail goes out through [Resend](https://resend.com), from two variables in
+`deploy/.env`:
+
+```
+RESEND_API_KEY=<your Resend API key>
+EMAIL_FROM=OverClick <login@your-domain>
+```
+
+`EMAIL_FROM` has to be on a domain verified in your Resend account. Run
+`./deploy/deploy.sh` after setting them so the app container picks them up.
+While either is empty, asking for a code answers that the option is not
+available on this instance and logs one line saying which variables are
+missing; nothing else changes.
+
+Codes are stored only as a keyed hash, work once, and die after 5 wrong
+attempts. An address can ask for 1 code a minute and 5 an hour (and one origin
+for 20 an hour, behind the trusted proxy), and the answer never says whether
+the address has an account.
 
 ## Reverse proxy
 
