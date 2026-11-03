@@ -65,8 +65,8 @@ remove_legacy_orphans() {
 }
 
 # Compose records the files that created a project. Refuse to proceed if the
-# existing `overclick` project still has a compose file outside deploy/. The
-# check is intentionally fail-closed: a malformed listing is safer than
+# existing `overclick` project still has a compose file outside a deploy/
+# directory. The check is intentionally fail-closed: a malformed listing is safer than
 # guessing and touching the wrong project.
 assert_deploy_project_files() {
   local projects
@@ -112,19 +112,19 @@ for row in rows:
         "docker-compose.cloud.yml",
         "docker-compose.traefik.yml",
     }
-    deploy_root = os.path.realpath(os.path.join(os.getcwd(), "deploy"))
+    # Compare lexically, not through realpath: the label holds the path the
+    # project was created from. The host records /opt/overclick/deploy/...,
+    # while the OCL-73 sidecar sees the same checkout as /workspace/deploy/...,
+    # so "under this checkouts deploy/" is the wrong test there. What tells the
+    # hosted project from the legacy root-compose one is the file itself: an
+    # allowed basename inside a directory named deploy.
     for item in files:
         if not isinstance(item, str) or not item.strip():
             raise SystemExit(1)
-        path = item.strip()
-        if not os.path.isabs(path):
-            path = os.path.join(os.getcwd(), path)
-        path = os.path.realpath(path)
-        try:
-            inside_deploy = os.path.commonpath([deploy_root, path]) == deploy_root
-        except ValueError:
-            inside_deploy = False
-        if not inside_deploy or os.path.basename(path) not in allowed:
+        path = os.path.normpath(item.strip())
+        if os.path.basename(path) not in allowed:
+            raise SystemExit(1)
+        if os.path.basename(os.path.dirname(path)) != "deploy":
             raise SystemExit(1)
 '; then
     echo "!! compose project overclick has config files outside deploy/; refusing deploy" >&2
