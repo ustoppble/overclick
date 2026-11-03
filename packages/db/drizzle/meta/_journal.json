@@ -337,6 +337,13 @@
       "when": 1793741248029,
       "tag": "0047_board_period_by",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793745612201,
+      "tag": "0048_password_optional",
+      "breakpoints": true
     }
   ]
 }

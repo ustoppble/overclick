@@ -71,6 +71,10 @@ describe("complete schema from spec §3", () => {
     );
   });
 
+  it("user is born without a password: the hash column is optional, kept only for old rows", () => {
+    expect(getTableColumns(user).passwordHash.notNull).toBe(false);
+  });
+
   it("user is local auth only: email + password hash", () => {
     const cols = columnNames(user);
     expect(cols).toEqual(

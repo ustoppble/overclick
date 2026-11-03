@@ -108,3 +108,36 @@ describe("migration 0037 — organization layer", () => {
     ).rejects.toThrow();
   });
 });
+
+/** The migration that stops requiring a password (sign-in is by emailed code only). */
+const OPTIONAL_PASSWORD_MIGRATION = "0048_password_optional.sql";
+
+describe("migration 0048 — the password is no longer required", () => {
+  let client: PGlite;
+
+  beforeAll(async () => {
+    client = new PGlite();
+    for (const file of migrationFiles()) {
+      if (file === OPTIONAL_PASSWORD_MIGRATION) break;
+      await apply(client, file);
+    }
+    await client.exec(
+      `INSERT INTO "user" (email, password_hash) VALUES ('old@example.test', 'scrypt:aa:bb')`,
+    );
+    await apply(client, OPTIONAL_PASSWORD_MIGRATION);
+  });
+
+  it("keeps the hash an old account already had: nothing is deleted", async () => {
+    const result = await client.query<{ password_hash: string | null }>(
+      `SELECT password_hash FROM "user" WHERE email = 'old@example.test'`,
+    );
+    expect(result.rows[0]?.password_hash).toBe("scrypt:aa:bb");
+  });
+
+  it("lets a new account be created with no password at all", async () => {
+    await client.exec(`INSERT INTO "user" (email) VALUES ('new@example.test')`);
+    expect(
+      await count(client, `SELECT count(*)::int AS n FROM "user" WHERE password_hash IS NULL`),
+    ).toBe(1);
+  });
+});
