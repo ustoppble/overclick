@@ -21,6 +21,7 @@ import {
 } from "../lib/login-code";
 import {
   clearCodeLoginBudget,
+  clearCodeUserFailures,
   loginOrigin,
   refundCodeLoginOrigin,
   withinCodeLoginBudget,
@@ -241,6 +242,7 @@ export async function loginWithCodeAction(
 
   await refundCodeLoginOrigin(db(), origin, charge);
   await clearCodeLoginBudget(db(), email);
+  await clearCodeUserFailures(db(), found.id);
   await setSession({
     userId: found.id,
     sessionVersion: found.sessionVersion,

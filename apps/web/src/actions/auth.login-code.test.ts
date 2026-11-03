@@ -440,6 +440,23 @@ describe("signing in with a code sent by email", () => {
       expect(requestState.cookieSet).not.toHaveBeenCalled();
     });
 
+    it("zeroes the account's wrong-guess count on a sign-in that works, so old mistakes do not add up to a lock", async () => {
+      const { issueLoginCode } = await import("../lib/login-code");
+      const issued = await issueLoginCode(world.db, EMAIL);
+      for (let i = 0; i < 4; i++) await loginWithCodeAction(null, codeForm(EMAIL, issued!.code === "000000" ? "111111" : "000000"));
+      const [before] = await world.db
+        .select()
+        .from(loginFailure)
+        .where(eq(loginFailure.id, `logincode-user:${userId}`));
+      expect(before!.count).toBe(4);
+
+      await loginWithCodeAction(null, codeForm(EMAIL, issued!.code));
+      expect(redirectSpy).toHaveBeenCalledWith("/home");
+      expect(
+        await world.db.select().from(loginFailure).where(eq(loginFailure.id, `logincode-user:${userId}`)),
+      ).toHaveLength(0);
+    });
+
     it("refuses the code a second time", async () => {
       await requestLoginCodeAction(null, emailForm(EMAIL));
       const code = lastSentCode();
@@ -637,7 +654,7 @@ describe("signing in with a code sent by email", () => {
       expect(lockNotices(EMAIL)).toHaveLength(1);
     });
 
-    it("sends a new notice for a new lock once the hour is over", async () => {
+    it("sends a new notice for a new lock once the hour is over, but not for a single miss after it", async () => {
       await lockThroughTheAction(EMAIL);
       at(65 * MINUTE);
       const { issueLoginCode } = await import("../lib/login-code");
@@ -647,7 +664,9 @@ describe("signing in with a code sent by email", () => {
         codeForm(EMAIL, issued!.code === "000000" ? "111111" : "000000"),
       );
       await runAfter();
+      expect(lockNotices(EMAIL)).toHaveLength(1);
 
+      await lockThroughTheAction(EMAIL, 70 * MINUTE);
       expect(lockNotices(EMAIL)).toHaveLength(2);
     });
 

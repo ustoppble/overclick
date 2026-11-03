@@ -1,5 +1,5 @@
 import { createHmac, hkdfSync } from "node:crypto";
-import { loginCode, user } from "@agent-board/db";
+import { loginCode, loginFailure, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "@agent-board/db/schema";
@@ -8,7 +8,7 @@ import { setMemberActive } from "./invitations";
 import * as session from "./session";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
-import { MAX_CODE_USER_FAILURES } from "./login-rate-limit";
+import { MAX_CODE_USER_FAILURES, chargeCodeFailure, lockStartedAt } from "./login-rate-limit";
 import {
   LOGIN_CODE_TTL_MS,
   MAX_LOGIN_CODE_ATTEMPTS,
@@ -374,20 +374,55 @@ describe("login codes", () => {
       ).toEqual({ userId });
     });
 
-    it("locks for another hour at the next wrong guess inside the day, instead of handing out ten more", async () => {
+    it("gives the account its ten attempts back when the hour is over: a wrong guess then does not shut it again", async () => {
       await guess(0, 5);
       await guess(2 * MINUTE, 5);
 
-      // The hour is over; one wrong guess shuts it again.
+      // The hour is over; one wrong guess is the first of a new round of ten.
       await guess(HOUR + 5 * MINUTE, 1);
-      const relocked = await issueLoginCode(world.db, EMAIL, at(HOUR + 7 * MINUTE));
+      const open = await issueLoginCode(world.db, EMAIL, at(HOUR + 7 * MINUTE));
       expect(
-        await redeemLoginCode(world.db, EMAIL, relocked!.code, at(HOUR + 7 * MINUTE + 1000)),
+        await redeemLoginCode(world.db, EMAIL, open!.code, at(HOUR + 7 * MINUTE + 1000)),
+      ).toEqual({ userId });
+    });
+
+    it("shuts it again only at the tenth wrong guess of the new round", async () => {
+      await guess(0, 5);
+      await guess(2 * MINUTE, 5);
+
+      await guess(HOUR + 5 * MINUTE, 5);
+      await guess(HOUR + 7 * MINUTE, MAX_CODE_USER_FAILURES - 5);
+      const relocked = await issueLoginCode(world.db, EMAIL, at(HOUR + 9 * MINUTE));
+      expect(
+        await redeemLoginCode(world.db, EMAIL, relocked!.code, at(HOUR + 9 * MINUTE + 1000)),
       ).toBeNull();
 
+      // A fixed hour from that tenth guess, and open after it.
       const open = await issueLoginCode(world.db, EMAIL, at(2 * HOUR + 10 * MINUTE));
       expect(
         await redeemLoginCode(world.db, EMAIL, open!.code, at(2 * HOUR + 10 * MINUTE + 1000)),
+      ).toEqual({ userId });
+    });
+
+    it("lets a guess that was already past the check when the lock began change nothing", async () => {
+      await guess(0, 5);
+      await guess(2 * MINUTE, 5);
+      const lockedAt = await lockStartedAt(world.db, `logincode-user:${userId}`, at(3 * MINUTE));
+      expect(lockedAt).not.toBeNull();
+
+      // One minute before the hour ends, a late charge lands on the lock.
+      await chargeCodeFailure(world.db, userId, at(HOUR + MINUTE));
+      await chargeCodeFailure(world.db, userId, at(HOUR + 2 * MINUTE - 1));
+
+      const [row] = await world.db
+        .select()
+        .from(loginFailure)
+        .where(eq(loginFailure.id, `logincode-user:${userId}`));
+      expect(row!.count).toBe(MAX_CODE_USER_FAILURES);
+      expect(row!.windowStartedAt.getTime()).toBe(lockedAt!.getTime());
+      const open = await issueLoginCode(world.db, EMAIL, at(HOUR + 5 * MINUTE));
+      expect(
+        await redeemLoginCode(world.db, EMAIL, open!.code, at(HOUR + 5 * MINUTE + 1000)),
       ).toEqual({ userId });
     });
 
