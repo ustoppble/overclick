@@ -8,6 +8,7 @@ import {
 } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { clearSession, setSession } from "../lib/cookies";
 import { db } from "../lib/db";
 import { emailConfigured, sendEmail } from "../lib/email";
@@ -172,13 +173,22 @@ export async function requestLoginCodeAction(
   await sweepLoginRows(db());
   const origin = await loginOrigin();
   if (await withinCodeRequestBudget(db(), email, origin)) {
-    const issued = await issueLoginCode(db(), email);
-    if (issued) {
-      // Not awaited: the round trip to Resend is the one cost only a real
-      // account pays, and waiting for it would hand back, as a delay, the
-      // very answer the words above refuse to give. sendEmail never throws.
-      void sendEmail(loginCodeEmail(email, issued.code));
-    }
+    // Everything that depends on the address having an account — the insert
+    // that finds one, the round trip to Resend — runs once the response is
+    // out, so the response is the same, and as fast, for every address. And
+    // `after` keeps the process alive until it finishes, which a floating
+    // promise does not promise on every host.
+    after(async () => {
+      try {
+        const issued = await issueLoginCode(db(), email);
+        if (issued) await sendEmail(loginCodeEmail(email, issued.code));
+      } catch (err) {
+        // Only the error's kind: its message can quote the address.
+        console.error(
+          `[login-code] issuing or sending a code failed (${err instanceof Error ? err.name : "unknown"})`,
+        );
+      }
+    });
   }
   return { sent: true };
 }

@@ -48,9 +48,37 @@ vi.mock("next/headers", () => ({
   headers: async () => new Headers(requestState.headers),
 }));
 
-const { loginAction, loginWithCodeAction, requestLoginCodeAction } = await import(
-  "./auth"
-);
+// `after` only exists inside a request; here it queues the callback so a test
+// decides when the work that follows the response gets to run.
+const afterState = vi.hoisted(() => ({
+  queued: [] as Array<() => unknown>,
+}));
+
+vi.mock("next/server", () => ({
+  after: (callback: () => unknown) => {
+    afterState.queued.push(callback);
+  },
+}));
+
+const actions = await import("./auth");
+const { loginAction, loginWithCodeAction } = actions;
+
+/** Runs, in order, what the action handed to `after`. */
+async function runAfter(): Promise<void> {
+  while (afterState.queued.length > 0) {
+    await afterState.queued.shift()!();
+  }
+}
+
+/** The action, then everything that follows its response. */
+const requestLoginCodeAction: typeof actions.requestLoginCodeAction = async (
+  prev,
+  formData,
+) => {
+  const answer = await actions.requestLoginCodeAction(prev, formData);
+  await runAfter();
+  return answer;
+};
 
 const PASSWORD = "correct-horse-battery";
 const EMAIL = "person@local.test";
@@ -115,6 +143,7 @@ describe("signing in with a code sent by email", () => {
     userId = row!.id;
     emailState.configured = true;
     emailState.sendEmail.mockClear();
+    afterState.queued.length = 0;
     requestState.cookieSet.mockClear();
     redirectSpy.mockClear();
   });
@@ -221,6 +250,42 @@ describe("signing in with a code sent by email", () => {
         await requestLoginCodeAction(null, emailForm(email));
       }
       expect(emailState.sendEmail).toHaveBeenCalledTimes(CODE_REQUESTS_PER_ORIGIN_HOUR);
+    });
+
+    describe("after the response", () => {
+      it("answers before a code exists or an email leaves, and does both once the response is out", async () => {
+        const answer = await actions.requestLoginCodeAction(null, emailForm(EMAIL));
+
+        expect(answer).toEqual({ sent: true });
+        expect(emailState.sendEmail).not.toHaveBeenCalled();
+        expect(await world.db.select().from(loginCode)).toHaveLength(0);
+        expect(afterState.queued).toHaveLength(1);
+
+        await runAfter();
+        expect(emailState.sendEmail).toHaveBeenCalledTimes(1);
+        expect(await world.db.select().from(loginCode)).toHaveLength(1);
+      });
+
+      it("hands the same work to after for an address with no account, so the response cannot tell them apart", async () => {
+        await actions.requestLoginCodeAction(null, emailForm(EMAIL));
+        const real = afterState.queued.length;
+        afterState.queued.length = 0;
+        await actions.requestLoginCodeAction(null, emailForm("ghost@local.test"));
+
+        expect(afterState.queued).toHaveLength(real);
+      });
+
+      it("logs a failure after the response without the address and without throwing", async () => {
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        emailState.sendEmail.mockRejectedValueOnce(new Error(`boom ${EMAIL}`));
+
+        await actions.requestLoginCodeAction(null, emailForm(EMAIL));
+        await expect(runAfter()).resolves.toBeUndefined();
+
+        expect(logged).toHaveBeenCalled();
+        expect(JSON.stringify(logged.mock.calls)).not.toContain(EMAIL);
+        logged.mockRestore();
+      });
     });
 
     describe("the global hourly send cap", () => {
