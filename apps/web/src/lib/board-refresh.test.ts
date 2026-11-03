@@ -114,7 +114,7 @@ describe("board refresh subscription", () => {
 });
 
 describe("board refresh by signature", () => {
-  function setup(options: { held?: string | null; signature?: () => Promise<string | null> } = {}) {
+  function setup(options: { held?: string | null; signature?: () => Promise<string | null | { limited: true }> } = {}) {
     const refresh = vi.fn();
     const host = harness();
     let clockNow = 1_000_000;
@@ -163,6 +163,23 @@ describe("board refresh by signature", () => {
     });
     await throwing.host.tick();
     expect(throwing.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("does not refresh when the server says the poll was too often, and asks again at the next tick", async () => {
+    let answer: string | { limited: true } = { limited: true };
+    const run = setup({ held: "a", signature: async () => answer });
+    await run.host.tick();
+    expect(run.refresh).not.toHaveBeenCalled();
+
+    // Not even a stale board is rebuilt on a refusal: the page asks again soon.
+    run.advance(BOARD_REFRESH_MAX_AGE_MS);
+    await run.host.tick();
+    expect(run.refresh).not.toHaveBeenCalled();
+
+    answer = "b";
+    await run.host.tick();
+    expect(run.signature).toHaveBeenCalledTimes(3);
+    expect(run.refresh).toHaveBeenCalledOnce();
   });
 
   it("refreshes an unchanged board once it is older than the max age", async () => {

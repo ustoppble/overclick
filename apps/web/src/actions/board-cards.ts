@@ -5,6 +5,7 @@ import { project, workspace } from "@agent-board/db";
 import type { BoardCard } from "../app/home/board";
 import { toBoardCards } from "../lib/board-card";
 import { loadBoardSignature } from "../lib/board-signature";
+import { boardSignatureLimiter } from "../lib/board-signature-guard";
 import { parseBoardFilter, parseOlderRequest } from "../lib/board-input";
 import {
   boardSearchLimiter,
@@ -41,8 +42,10 @@ type BoardReader = {
   projects: { id: string; organizationId: string }[];
 };
 
-async function boardReader(): Promise<BoardReader | null> {
-  const session = await getSession();
+async function boardReader(
+  known?: NonNullable<Awaited<ReturnType<typeof getSession>>>,
+): Promise<BoardReader | null> {
+  const session = known ?? (await getSession());
   if (!session) return null;
   const principal = await sessionPrincipal(session);
   if (!principal) return null;
@@ -132,15 +135,29 @@ export async function boardColumnCountsAction(
  * The board's fingerprint for the signed-in reader, which the page compares
  * with the one it was built with before it asks for a whole new render. Null
  * when there is no session, so the poll falls back to a refresh and lands on
- * the login.
+ * the login. One poll at a time and a dozen a minute per person (the page
+ * asks three): past that the answer is `{ limited: true }`, which the page
+ * takes as "ask again later", never as a reason to rebuild itself.
  */
-export async function boardSignatureAction(): Promise<string | null> {
-  const reader = await boardReader();
-  if (!reader) return null;
-  return loadBoardSignature(
-    db(),
-    reader.ws.id,
-    reader.projects.map((item) => item.id),
-    reader.principal,
-  );
+export async function boardSignatureAction(): Promise<
+  string | { limited: true } | null
+> {
+  const session = await getSession();
+  if (!session) return null;
+  // Before the scope reads: a refused poll should cost the session lookup
+  // and nothing else.
+  const slot = boardSignatureLimiter.acquire(session.userId);
+  if (!slot.ok) return { limited: true };
+  try {
+    const reader = await boardReader(session);
+    if (!reader) return null;
+    return await loadBoardSignature(
+      db(),
+      reader.ws.id,
+      reader.projects.map((item) => item.id),
+      reader.principal,
+    );
+  } finally {
+    slot.release();
+  }
 }

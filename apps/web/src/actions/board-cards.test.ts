@@ -1,6 +1,10 @@
 import { task } from "@agent-board/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { boardSearchLimiter } from "../lib/board-search-guard";
+import {
+  BOARD_SIGNATURE_MAX_PER_MINUTE,
+  boardSignatureLimiter,
+} from "../lib/board-signature-guard";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
 
 let world: TestWorld;
@@ -186,6 +190,7 @@ describe("board actions, malformed input", () => {
 describe("board signature action", () => {
   beforeEach(async () => {
     world = await createTestWorld();
+    boardSignatureLimiter.reset();
   });
 
   afterEach(async () => {
@@ -212,5 +217,19 @@ describe("board signature action", () => {
       createdByUserId: world.adminUserId,
     });
     expect(await boardSignatureAction()).not.toBe(first);
+  });
+
+  it("answers a limited sign once a person has polled twelve times in a minute, and does not touch the board", async () => {
+    sessionUserId = world.adminUserId;
+    for (let i = 0; i < BOARD_SIGNATURE_MAX_PER_MINUTE; i += 1) {
+      expect(await boardSignatureAction()).toEqual(expect.any(String));
+    }
+    expect(await boardSignatureAction()).toEqual({ limited: true });
+    expect(await boardSignatureAction()).toEqual({ limited: true });
+  });
+
+  it("does not spend the limit of someone without a session", async () => {
+    sessionUserId = "";
+    for (let i = 0; i < 40; i += 1) expect(await boardSignatureAction()).toBeNull();
   });
 });

@@ -29,10 +29,12 @@ export type BoardRefreshSource = {
   /** A refresh asked earlier has not come back yet. */
   isBusy?: () => boolean;
   /**
-   * The cheap question: a fingerprint of what the page is made of, or null
-   * when the server would not say. Without it every tick refreshes.
+   * The cheap question: a fingerprint of what the page is made of, null when
+   * the server would not say, or `{ limited: true }` when it was asked too
+   * often and wants to be left alone for a while. Without it every tick
+   * refreshes.
    */
-  signature?: () => Promise<string | null>;
+  signature?: () => Promise<string | { limited: true } | null>;
   /** The fingerprint the page on screen was built with. */
   held?: () => string | null;
   now?: () => number;
@@ -70,7 +72,7 @@ export function subscribeToBoardRefresh(
     }
     if (checking || source.isBusy?.()) return;
     checking = true;
-    let current: string | null = null;
+    let current: string | { limited: true } | null = null;
     try {
       current = await source.signature();
     } catch {
@@ -78,6 +80,9 @@ export function subscribeToBoardRefresh(
     } finally {
       checking = false;
     }
+    // Turned away for asking too often: no reason to rebuild the page, the
+    // next tick asks again.
+    if (current !== null && typeof current === "object") return;
     const stale = now() - lastRefreshAt >= BOARD_REFRESH_MAX_AGE_MS;
     if (current === null || current !== (source.held?.() ?? null) || stale) {
       refresh();
