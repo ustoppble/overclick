@@ -302,6 +302,20 @@
       "when": 1790265884294,
       "tag": "0042_invitation",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793715577650,
+      "tag": "0043_login_code",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793716727526,
+      "tag": "0044_login_code_one_live_per_user",
+      "breakpoints": true
     }
   ]
 }

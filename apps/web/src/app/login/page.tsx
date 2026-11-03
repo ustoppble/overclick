@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { NebulaAtmosphere } from "../../components/nebula-atmosphere";
 import { getSession } from "../../lib/cookies";
 import { db } from "../../lib/db";
+import { emailConfigured } from "../../lib/email";
 import { dict } from "../../lib/i18n";
 import { countUsers } from "../../lib/instance";
 import { APP_VERSION } from "../../lib/updates";
@@ -44,7 +45,13 @@ export default async function LoginPage() {
             <p className="brand">{t.auth.brand}</p>
             <h1>{t.auth.loginTitle}</h1>
             <p className="sub">{t.auth.loginSub}</p>
-            <LoginForm lang={ws?.language ?? "en"} />
+            {/* Decided here, on the server: an instance that cannot send mail does
+                not offer a way in that only fails after the address is typed.
+                The action still answers a direct call with its own refusal. */}
+            <LoginForm
+              lang={ws?.language ?? "en"}
+              codeEnabled={emailConfigured()}
+            />
             <p className="foot">v{APP_VERSION} · {t.auth.foot}</p>
           </div>
         </div>

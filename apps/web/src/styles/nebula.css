@@ -3037,6 +3037,25 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb-auth .auth-rule.ok { color: rgb(var(--oc-ok-rgb) / .8); }
 .nb-auth .auth-rule.bad { color: var(--oc-danger); }
 
+/* The other way in (password <-> emailed code), and asking for another
+   code: quiet text under the primary button, never a second pill competing
+   with it. */
+.nb-auth .auth-switch {
+  align-self: center;
+  margin: 12px 0 0; padding: 4px 6px;
+  background: none; border: 0; border-radius: var(--oc-radius-box);
+  font-family: var(--nebula-font-label); font-size: 11px;
+  letter-spacing: .03em; color: var(--nebula-text-secondary);
+  text-decoration: underline; text-underline-offset: 3px;
+  cursor: pointer;
+}
+.nb-auth .auth-switch + .auth-switch { margin-top: 2px; }
+.nb-auth .auth-switch:hover { color: var(--nebula-text-primary); }
+.nb-auth .auth-switch:focus-visible {
+  outline: 1px solid var(--oc-border-strong); outline-offset: 2px;
+}
+.nb-auth form > .auth-rule:first-child { margin: 0 0 14px; }
+
 .nb-auth .foot {
   margin: 18px 0 0;
   font-family: var(--nebula-font-label); font-size: 9.5px;

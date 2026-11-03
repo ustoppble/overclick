@@ -19,6 +19,13 @@ describe("first-access admin (spec §2 + §6)", () => {
     expect(isValidEmail("")).toBe(false);
   });
 
+  it("refuses an address longer than 254 characters, the most an email can be", () => {
+    const local = "a".repeat(254 - "@x.test".length);
+    expect(isValidEmail(`${local}@x.test`)).toBe(true);
+    expect(isValidEmail(`${local}a@x.test`)).toBe(false);
+    expect(isValidEmail(`${"a".repeat(5000)}@x.test`)).toBe(false);
+  });
+
   it("requires a password of at least 8 characters and nothing else", () => {
     expect(isValidPassword("abcdefgh")).toBe(true);
     expect(isValidPassword("short")).toBe(false);

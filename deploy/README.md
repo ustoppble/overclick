@@ -25,6 +25,8 @@ POSTGRES_PASSWORD=<a long random string>
 AUTH_SECRET=<32+ random characters>
 OVERCLICK_PORT=3100                      # optional, the loopback port the proxy talks to
 GITHUB_WEBHOOK_SECRET=<random string>    # optional, see "GitHub release webhook"
+RESEND_API_KEY=<your Resend API key>     # optional, see "Sign-in by email code"
+EMAIL_FROM=<Name <sender@your-domain>>   # optional, see "Sign-in by email code"
 ```
 
 Generate both with `openssl rand -hex 32`. The app listens on `127.0.0.1:3100`
@@ -48,6 +50,88 @@ it stays closed until you set it up:
 3. Repeat step 2 for every releases repo a project follows; they all share the
    one secret. After a redeploy, GitHub's "Recent Deliveries" tab shows the
    ping answered 200.
+
+## Sign-in by email code
+
+The login screen offers "Sign in with an email code" next to the password: the
+person types their address, receives a 6-digit code valid for 10 minutes, and
+types it back. It sets the same session as the password sign-in, and the
+password keeps working as before.
+
+Mail goes out through [Resend](https://resend.com), from two variables in
+`deploy/.env`:
+
+```
+RESEND_API_KEY=<your Resend API key>
+EMAIL_FROM=OverClick <login@your-domain>
+```
+
+`EMAIL_FROM` has to be on a domain verified in your Resend account. Run
+`./deploy/deploy.sh` after setting them so the app container picks them up.
+While either is empty the login screen does not offer the code link at all;
+a direct call to the action answers that the option is not available on this
+instance and logs one line saying which variables are missing. Nothing else
+changes.
+
+Codes are stored only as a keyed hash (an HKDF subkey of `AUTH_SECRET`, so
+the session key itself is never used for it), work once, and die after 5 wrong
+attempts. An address can ask for 1 code a minute and 5 an hour (and one origin
+for 20 an hour, behind the trusted proxy), and the answer never says whether
+the address has an account. A live code under a minute old is never replaced
+by a new ask. Ten wrong codes in 24 hours, however many codes they were
+spread over, shut code sign-in for that account for 24 hours; the password
+keeps working. Passwords and codes have separate failed-attempt budgets, so
+running one out never locks the other. Each budget is 8 failures in 15 minutes
+per address typed and, behind the trusted proxy, per origin. The origin is
+charged before the password or code is checked, in one step, so a burst of
+parallel guesses cannot slip past it together; the charge is given back when
+the sign-in works, so people who sign in correctly are never counted against
+it. Switching a member off deletes the codes they were
+sent.
+
+The whole instance also sends at most 60 code emails an hour, whoever asks;
+set `LOGIN_CODE_MAX_SENDS_PER_HOUR` in `deploy/.env` to change it. Past the cap
+nobody gets an email, the answer stays the same neutral one, and the log gets
+one line (`hourly send cap reached`, no address in it) per hour. The cap is
+checked before an address's own minute and hour allowance is charged, so asks
+turned away for it cost their owners nothing. The cap is a
+kill switch, not a defence: someone asking for codes can use it up and keep
+real people from getting theirs until the hour turns.
+
+**Next step, not done:** put a bot check (Cloudflare Turnstile or a captcha) in
+front of "send me a code". It needs a Cloudflare site key and secret, so it is
+the owner's call; until then the limits above are all there is.
+
+### Behind a proxy: which address counts as the origin
+
+The per-origin limit (and the failed-attempt budget by origin, which
+sign-ins that work give back) reads the **last**
+hop of `X-Forwarded-For`, and only when `OVERCLICK_TRUSTED_PROXY=1`. That is
+right for one proxy that **appends** the address it saw (Caddy, Traefik,
+nginx with `$proxy_add_x_forwarded_for`). Two things to know:
+
+- With another proxy in front of yours (Cloudflare, a load balancer), the last
+  hop is that proxy's address, not the visitor's: everyone behind the same
+  edge shares one bucket of 20 requests an hour, and real people can be
+  refused. Make the proxy nearest the app write the visitor's real address as
+  the last hop, or leave `OVERCLICK_TRUSTED_PROXY` off and rely on the
+  per-address and global limits.
+- Without `X-Forwarded-For` the app falls back to `X-Real-IP`, which a client
+  can send itself unless your proxy overwrites or strips it. Make it do one or
+  the other.
+
+### Behind a proxy: the Origin check on forms
+
+Sign-in (like every form in the app) is a Next.js Server Action. Next accepts
+one only when the request's `Origin` header matches `Host` (or
+`X-Forwarded-Host`), and aborts it otherwise; that check is what keeps another
+site from signing a visitor in or sending them code emails. The app sets no
+`serverActions.allowedOrigins`, so the proxy must pass the original `Host`
+(Caddy and Traefik do by default; nginx needs `proxy_set_header Host $host`).
+After a deploy, confirm it holds: a `POST` to the login page with a foreign
+`Origin` header must be refused, and the login form on your own domain must
+still work. Do not "fix" a failing check by widening `allowedOrigins` to
+`*`.
 
 ## Reverse proxy
 

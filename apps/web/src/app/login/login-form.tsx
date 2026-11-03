@@ -1,10 +1,37 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { loginAction, type AuthState } from "../../actions/auth";
 import { dict } from "../../lib/i18n";
+import { LoginCodeForm } from "./login-code-form";
 
-export function LoginForm({ lang }: { lang: string }) {
+export function LoginForm({
+  lang,
+  codeEnabled,
+}: {
+  lang: string;
+  /** Whether this instance can send the code; the server decides. */
+  codeEnabled: boolean;
+}) {
+  const [withCode, setWithCode] = useState(false);
+  if (withCode && codeEnabled) {
+    return <LoginCodeForm lang={lang} onUsePassword={() => setWithCode(false)} />;
+  }
+  return (
+    <PasswordForm
+      lang={lang}
+      onUseCode={codeEnabled ? () => setWithCode(true) : null}
+    />
+  );
+}
+
+function PasswordForm({
+  lang,
+  onUseCode,
+}: {
+  lang: string;
+  onUseCode: (() => void) | null;
+}) {
   const t = dict(lang);
   const [state, action, pending] = useActionState<AuthState, FormData>(
     loginAction,
@@ -55,6 +82,11 @@ export function LoginForm({ lang }: { lang: string }) {
       <button className="btn-next" type="submit" disabled={pending}>
         {pending ? t.auth.signingIn : t.auth.signIn}
       </button>
+      {onUseCode ? (
+        <button className="auth-switch" type="button" onClick={onUseCode}>
+          {t.auth.codeLink}
+        </button>
+      ) : null}
     </form>
   );
 }
