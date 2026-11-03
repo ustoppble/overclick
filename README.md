@@ -42,9 +42,14 @@ The signing key is mandatory and must be unique to each installation. Compose
 stops with an explanatory error when `AUTH_SECRET` is missing; keep the generated
 value in your deployment's protected environment so restarts use the same key.
 
-Open `http://localhost:3000`, create the local admin account (e-mail + password, stored in
-your own Postgres, used only for login), and follow the 3-step onboarding: project,
-executors, connect your agent. Full walkthrough: [docs/getting-started.md](docs/getting-started.md).
+Open `http://localhost:3000`, create the local admin account, and follow the 3-step
+onboarding: project, executors, connect your agent. There are no passwords: you sign in
+with a 6-digit code sent to your e-mail, through [Resend](https://resend.com)
+(`RESEND_API_KEY` and `EMAIL_FROM`). Without them, create the first admin and sign in with
+a one-time emergency link made on the server:
+`docker compose exec app pnpm emergency-login you@example.com` prints the path of a file
+inside the container that holds the link. Full walkthrough:
+[docs/getting-started.md](docs/getting-started.md).
 
 ### Connect an agent
 

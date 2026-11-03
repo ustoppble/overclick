@@ -57,8 +57,8 @@ services:
       # secret (GitHub's X-Hub-Signature-256), and refuses every call while it
       # is empty. Put the same value in each GitHub release webhook.
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
-      # Sign-in by a code sent by email. Both empty = the option says it is
-      # unavailable and everything else runs as before; see deploy/README.md.
+      # Sign-in is by a code sent by email only. Both empty = the login screen
+      # says it is unavailable; use pnpm emergency-login (deploy/README.md).
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
       EMAIL_FROM: "${EMAIL_FROM:-}"
       LOGIN_CODE_MAX_SENDS_PER_HOUR: "${LOGIN_CODE_MAX_SENDS_PER_HOUR:-}"

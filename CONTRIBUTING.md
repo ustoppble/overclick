@@ -104,9 +104,12 @@ with `pnpm db:generate` and commit the files it writes to `packages/db/drizzle/`
 pnpm dev
 ```
 
-Open http://localhost:3000, create the local admin account (e-mail + password, stored
-hashed in your own Postgres), and follow the 3-step onboarding. See
-[`docs/getting-started.md`](docs/getting-started.md) for the full walkthrough.
+Open http://localhost:3000 and create the local admin account: sign-in is by a 6-digit
+code sent by e-mail (Resend, `RESEND_API_KEY` + `EMAIL_FROM`), with no password. Without
+Resend, `pnpm emergency-login you@example.com` (with `DATABASE_URL` set) creates the first
+admin and writes a one-time sign-in link to a mode-600 file, printing only its path. Then
+follow the 3-step onboarding. See [`docs/getting-started.md`](docs/getting-started.md) for
+the full walkthrough.
 
 ## Running the tests
 
