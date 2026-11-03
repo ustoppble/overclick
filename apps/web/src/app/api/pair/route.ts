@@ -1,32 +1,18 @@
+import { clientOrigin } from "../../../lib/client-origin";
 import { db } from "../../../lib/db";
 import { exchangePairingCode } from "../../../lib/pairing";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Who is guessing, as far as this deployment can honestly tell.
- *
- * A forwarded-for header is written by whatever sits in front, and on a
- * directly exposed instance that is the caller itself: trusting it there
- * would hand a guesser a fresh budget per request just by varying a string,
- * which is worse than having no scope at all. So it counts only where the
- * deploy declares it is behind a proxy, and then only the last hop — the
- * entry our own proxy appended, which the caller cannot write past.
- *
- * Undeclared, everyone shares one bucket. That still refuses a burst and
- * still destroys nothing; what it loses is the ability to tell the guesser
- * apart from the honest agent, which is why the hosted overlay sets the
- * flag and the quickstart, which nobody should expose, does not.
+ * Who is guessing, as far as this deployment can honestly tell: see
+ * `clientOrigin`. Undeclared, everyone shares one bucket. That still refuses
+ * a burst and still destroys nothing; what it loses is the ability to tell
+ * the guesser apart from the honest agent, which is why the hosted overlay
+ * sets the flag and the quickstart, which nobody should expose, does not.
  */
 function guessOrigin(request: Request): string | null {
-  if (process.env.OVERCLICK_TRUSTED_PROXY !== "1") return null;
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (!forwarded) return request.headers.get("x-real-ip");
-  const hops = forwarded
-    .split(",")
-    .map((hop) => hop.trim())
-    .filter(Boolean);
-  return hops.at(-1) ?? null;
+  return clientOrigin(request.headers);
 }
 
 /**

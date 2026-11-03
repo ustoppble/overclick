@@ -10,6 +10,7 @@ import {
   spendBudgetStatement,
 } from "./attempt-budget";
 import type { McpDatabase } from "../mcp/types";
+import { clientOrigin } from "./client-origin";
 
 /**
  * Failed sign-ins one identifier may spend inside a window before the
@@ -40,27 +41,16 @@ function loginFailureScope(kind: "email" | "origin", value: string): string {
 }
 
 /**
- * The caller's origin, as far as this deployment can honestly tell — see
- * `guessOrigin` in `app/api/pair/route.ts`, which this mirrors. Trusting a
- * forwarded-for header on a directly exposed instance would hand a guesser a
- * fresh budget per request just by varying a string, so it only counts where
- * the deploy declares it sits behind a proxy. Server Actions do not receive
- * a `Request`, so this reads `next/headers` instead; guarded so a caller
- * outside a request scope (a unit test invoking the action directly) simply
- * sees no origin rather than throwing — the same behaviour as an undeclared
- * proxy.
+ * The caller's origin for the sign-in budgets — see `clientOrigin`, which the
+ * pairing endpoint reads too. Server Actions do not receive a `Request`, so
+ * this reads `next/headers` instead; guarded so a caller outside a request
+ * scope (a unit test invoking the action directly) simply sees no origin
+ * rather than throwing — the same behaviour as an undeclared proxy.
  */
 export async function loginOrigin(): Promise<string | null> {
   if (process.env.OVERCLICK_TRUSTED_PROXY !== "1") return null;
   try {
-    const store = await headers();
-    const forwarded = store.get("x-forwarded-for");
-    if (!forwarded) return store.get("x-real-ip");
-    const hops = forwarded
-      .split(",")
-      .map((hop) => hop.trim())
-      .filter(Boolean);
-    return hops.at(-1) ?? null;
+    return clientOrigin(await headers());
   } catch {
     return null;
   }

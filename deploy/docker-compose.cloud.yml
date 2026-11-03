@@ -46,7 +46,13 @@ services:
       # $proxy_add_x_forwarded_for, caddy all do) rather than passing a
       # client-supplied header through. Never set it on an instance that
       # takes connections directly: the caller would be naming itself.
-      OVERCLICK_TRUSTED_PROXY: "1"
+      # On by default here; deploy/.env can turn it off.
+      OVERCLICK_TRUSTED_PROXY: "${OVERCLICK_TRUSTED_PROXY:-1}"
+      # Behind Cloudflare the last hop is Cloudflare's edge, shared by every
+      # visitor: name the header it writes the visitor's address into
+      # (cf-connecting-ip) and that is the origin instead. Only safe when the
+      # server takes traffic from Cloudflare alone; see deploy/README.md.
+      OVERCLICK_CLIENT_IP_HEADER: "${OVERCLICK_CLIENT_IP_HEADER:-}"
       # OCL-226: /api/github/release only trusts deliveries signed with this
       # secret (GitHub's X-Hub-Signature-256), and refuses every call while it
       # is empty. Put the same value in each GitHub release webhook.

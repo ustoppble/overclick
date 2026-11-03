@@ -21,9 +21,13 @@ vi.mock("../lib/login-code", async (importOriginal) => {
 
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
+const requestHeaders = vi.hoisted(() => ({
+  current: { "x-forwarded-for": "198.51.100.7" } as Record<string, string>,
+}));
+
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined, set: vi.fn(), delete: vi.fn() }),
-  headers: async () => new Headers({ "x-forwarded-for": "198.51.100.7" }),
+  headers: async () => new Headers(requestHeaders.current),
 }));
 
 vi.mock("next/server", () => ({ after: () => undefined }));
@@ -225,5 +229,60 @@ describe("what a right sign-in gives back", () => {
       error: expect.any(String),
     });
     expect(redeemLoginCode).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Behind Cloudflare everyone arrives from the same edge: with the last hop as
+ * the origin they all share one bucket. Named with OVERCLICK_CLIENT_IP_HEADER,
+ * the visitor's own address is the origin, so one visitor's wrong guesses do
+ * not lock out the next one.
+ */
+describe("two visitors behind the same edge", () => {
+  const EDGE = "203.0.113.10";
+
+  function from(visitor: string) {
+    requestHeaders.current = {
+      "x-forwarded-for": `${visitor}, ${EDGE}`,
+      "cf-connecting-ip": visitor,
+    };
+  }
+
+  beforeEach(async () => {
+    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.OVERCLICK_TRUSTED_PROXY = "1";
+    world = await createTestWorld();
+  });
+
+  afterEach(async () => {
+    if (world) await closeTestWorld(world);
+    delete process.env.AUTH_SECRET;
+    delete process.env.OVERCLICK_TRUSTED_PROXY;
+    delete process.env.OVERCLICK_CLIENT_IP_HEADER;
+    requestHeaders.current = { "x-forwarded-for": "198.51.100.7" };
+  });
+
+  async function lockOneThenTryTheOther(): Promise<{ error: string } | null | undefined> {
+    const [email] = await seedAccounts(1);
+    const [code] = await seedCodes([email!]);
+    from("198.51.100.1");
+    for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
+      await loginWithCodeAction(null, codeForm(`ghost${i}@local.test`, "123456"));
+    }
+    from("198.51.100.2");
+    return loginWithCodeAction(null, codeForm(email!, code!));
+  }
+
+  it("get buckets of their own when the client IP header is named", async () => {
+    process.env.OVERCLICK_CLIENT_IP_HEADER = "cf-connecting-ip";
+
+    expect(await lockOneThenTryTheOther()).toBeUndefined();
+    expect(await originCount("logincode-origin:198.51.100.1")).toBe(MAX_LOGIN_FAILURES);
+    expect(await originCount(`logincode-origin:${EDGE}`)).toBe(0);
+  });
+
+  it("share the edge's bucket when it is not, as before", async () => {
+    expect(await lockOneThenTryTheOther()).toEqual({ error: expect.any(String) });
+    expect(await originCount(`logincode-origin:${EDGE}`)).toBe(MAX_LOGIN_FAILURES);
   });
 });

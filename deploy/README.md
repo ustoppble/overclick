@@ -148,21 +148,46 @@ no other way to set it up.
 
 ### Behind a proxy: which address counts as the origin
 
-The per-origin limit (and the failed-attempt budget by origin, which
-sign-ins that work give back) reads the **last**
-hop of `X-Forwarded-For`, and only when `OVERCLICK_TRUSTED_PROXY=1`. That is
-right for one proxy that **appends** the address it saw (Caddy, Traefik,
-nginx with `$proxy_add_x_forwarded_for`). Two things to know:
+The per-origin limits (code requests, and the failed-attempt budget by origin,
+which sign-ins that work give back) and the pairing endpoint only look at the
+caller's address when `OVERCLICK_TRUSTED_PROXY=1`. The cloud compose file sets
+it to `1` unless `deploy/.env` says otherwise. Then:
 
-- With another proxy in front of yours (Cloudflare, a load balancer), the last
-  hop is that proxy's address, not the visitor's: everyone behind the same
-  edge shares one bucket of 20 requests an hour, and real people can be
-  refused. Make the proxy nearest the app write the visitor's real address as
-  the last hop, or leave `OVERCLICK_TRUSTED_PROXY` off and rely on the
-  per-address and global limits.
+- By default the origin is the **last** hop of `X-Forwarded-For`. That is right
+  for one proxy that **appends** the address it saw (Caddy, Traefik, nginx
+  with `$proxy_add_x_forwarded_for`).
+- With Cloudflare (or another proxy) in front of yours, the last hop is
+  Cloudflare's edge, not the visitor: everyone coming through the same edge
+  shares one bucket and real people can be refused. Set
+  `OVERCLICK_CLIENT_IP_HEADER=cf-connecting-ip` in `deploy/.env` and run
+  `./deploy/deploy.sh`: the origin is then the address Cloudflare writes in
+  that header, so two visitors behind the same edge get buckets of their own.
+  A request without the header falls back to the last hop.
 - Without `X-Forwarded-For` the app falls back to `X-Real-IP`, which a client
   can send itself unless your proxy overwrites or strips it. Make it do one or
   the other.
+
+**`OVERCLICK_CLIENT_IP_HEADER` is only trustworthy if the server takes
+traffic from Cloudflare alone.** Anyone who can reach the server directly can
+send `CF-Connecting-IP` with any value and get a fresh budget per request.
+Before setting it, check, without pasting addresses anywhere public:
+
+1. The app port is bound to loopback (`127.0.0.1:${OVERCLICK_PORT}` in the
+   compose file), so only the reverse proxy reaches it.
+2. Ports 80/443 on the server accept connections **only from Cloudflare's
+   published ranges** (https://www.cloudflare.com/ips/): either a host
+   firewall (ufw/nftables/iptables, or the provider's firewall) that allows
+   80/443 from those ranges and drops the rest, or Traefik limited to them
+   (an `ipAllowList` middleware, `ipWhiteList` on Traefik v2, with Cloudflare's ranges on the router, plus
+   `forwardedHeaders.trustedIPs` with the same ranges on the entrypoint).
+3. From a machine outside Cloudflare, a request straight to the server's own
+   address on 443 (not through the domain) times out or is refused. If it
+   gets the board, the header is not safe yet.
+4. Cloudflare's ranges change now and then; recheck the list when you update
+   the rule.
+
+If any of this does not hold, leave `OVERCLICK_CLIENT_IP_HEADER` empty: the
+shared edge bucket refuses real people sooner, but it cannot be bypassed.
 
 ### Behind a proxy: the Origin check on forms
 
