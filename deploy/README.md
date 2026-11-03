@@ -72,10 +72,16 @@ While either is empty, asking for a code answers that the option is not
 available on this instance and logs one line saying which variables are
 missing; nothing else changes.
 
-Codes are stored only as a keyed hash, work once, and die after 5 wrong
+Codes are stored only as a keyed hash (an HKDF subkey of `AUTH_SECRET`, so
+the session key itself is never used for it), work once, and die after 5 wrong
 attempts. An address can ask for 1 code a minute and 5 an hour (and one origin
 for 20 an hour, behind the trusted proxy), and the answer never says whether
-the address has an account.
+the address has an account. A live code under a minute old is never replaced
+by a new ask. Ten wrong codes in 24 hours, however many codes they were
+spread over, shut code sign-in for that account for 24 hours; the password
+keeps working. Passwords and codes have separate failed-attempt budgets, so
+running one out never locks the other. Switching a member off deletes the
+codes they were sent.
 
 The whole instance also sends at most 60 code emails an hour, whoever asks;
 set `LOGIN_CODE_MAX_SENDS_PER_HOUR` in `deploy/.env` to change it. Past the cap
