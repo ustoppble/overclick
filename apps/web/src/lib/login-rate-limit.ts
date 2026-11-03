@@ -232,8 +232,11 @@ function codeRequestScope(
 }
 
 /**
- * Charges one code request and says whether a code may be issued. The
- * buckets are charged in order and a refusal stops the chain: an ask the
+ * Charges one code request and says whether a code may be issued. The global
+ * cap is only read first: when it is spent nothing else is charged, so asks
+ * turned away for it cost their owners none of the minute's or hour's
+ * allowance and the address works again the moment the window opens. Then
+ * the buckets are charged in order and a refusal stops the chain: an ask the
  * minute bucket turned away must not also eat the hour's allowance, or a
  * stranger hammering an address for a second would leave its owner without
  * codes for the whole hour. Which bucket refused cannot tell a caller
@@ -244,6 +247,12 @@ export async function withinCodeRequestBudget(
   email: string,
   origin: string | null,
 ): Promise<boolean> {
+  const cap = loginCodeSendCap();
+  const globalScope = codeRequestScope("hour-global", "all");
+  if (await budgetExhausted(db, loginCodeRequest, globalScope, cap, CODE_REQUEST_HOUR_MS)) {
+    return false;
+  }
+
   const originOk = origin
     ? await spendBudget(
         db,
@@ -274,24 +283,23 @@ export async function withinCodeRequestBudget(
   if (!hourOk) return false;
 
   // Charged for every ask that got this far, account or not, so the cap is
-  // no more an oracle than the buckets above.
-  const cap = loginCodeSendCap();
+  // no more an oracle than the buckets above. The read above is not atomic
+  // with this charge, so a burst may overshoot by a few; the count here is
+  // what keeps it from going further.
   const [global] = await spendBudgetStatement(
     db,
     loginCodeRequest,
-    codeRequestScope("hour-global", "all"),
+    globalScope,
     new Date(),
     CODE_REQUEST_HOUR_MS,
   );
   const count = global?.count ?? 1;
-  if (count > cap) {
-    // One line per window, with no address in it: enough to alert on.
-    if (count === cap + 1) {
-      console.error(
-        `[login-code] hourly send cap reached (${cap}); no sign-in codes go out until the window passes`,
-      );
-    }
-    return false;
+  if (count > cap) return false;
+  // One line per window, with no address in it: enough to alert on.
+  if (count === cap) {
+    console.error(
+      `[login-code] hourly send cap reached (${cap}); no sign-in codes go out until the window passes`,
+    );
   }
   return true;
 }

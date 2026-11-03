@@ -341,6 +341,33 @@ describe("signing in with a code sent by email", () => {
         expect(emailState.sendEmail).not.toHaveBeenCalled();
       });
 
+      it("reads the cap before charging the address's own buckets, so asks refused for it cost the owner nothing", async () => {
+        process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "2";
+        process.env.OVERCLICK_TRUSTED_PROXY = "1";
+        requestState.headers = { "x-forwarded-for": "198.51.100.7" };
+        const [a, b] = await addAccounts(2);
+        await requestLoginCodeAction(null, emailForm(a!));
+        await requestLoginCodeAction(null, emailForm(b!));
+        const spent = await world.db.select().from(loginCodeRequest);
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const answers = [];
+        for (let i = 0; i < 6; i++) {
+          at((i + 1) * 2 * MINUTE);
+          answers.push(await requestLoginCodeAction(null, emailForm(EMAIL)));
+        }
+        logged.mockRestore();
+
+        expect(answers).toEqual(Array(6).fill({ sent: true }));
+        expect(emailState.sendEmail).toHaveBeenCalledTimes(2);
+        const rows = await world.db.select().from(loginCodeRequest);
+        expect(rows.map((row) => row.id)).not.toContain(`code-minute-email:${EMAIL}`);
+        expect(rows.map((row) => row.id)).not.toContain(`code-hour-email:${EMAIL}`);
+        const origin = (list: typeof rows) =>
+          list.find((row) => row.id === "code-hour-origin:198.51.100.7")?.count;
+        expect(origin(rows)).toBe(origin(spent));
+      });
+
       it("opens again in the next hour", async () => {
         process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "1";
         const [a, b] = await addAccounts(2);

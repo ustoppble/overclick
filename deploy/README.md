@@ -90,7 +90,9 @@ sent.
 The whole instance also sends at most 60 code emails an hour, whoever asks;
 set `LOGIN_CODE_MAX_SENDS_PER_HOUR` in `deploy/.env` to change it. Past the cap
 nobody gets an email, the answer stays the same neutral one, and the log gets
-one line (`hourly send cap reached`, no address in it) per hour. The cap is a
+one line (`hourly send cap reached`, no address in it) per hour. The cap is
+checked before an address's own minute and hour allowance is charged, so asks
+turned away for it cost their owners nothing. The cap is a
 kill switch, not a defence: someone asking for codes can use it up and keep
 real people from getting theirs until the hour turns.
 
