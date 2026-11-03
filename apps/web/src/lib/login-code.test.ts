@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "@agent-board/db/schema";
 import type { McpDatabase } from "../mcp/types";
+import { setMemberActive } from "./invitations";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
 import { MAX_CODE_USER_FAILURES } from "./login-rate-limit";
@@ -10,6 +11,7 @@ import {
   LOGIN_CODE_TTL_MS,
   MAX_LOGIN_CODE_ATTEMPTS,
   generateLoginCode,
+  clearLoginCodes,
   issueLoginCode,
   redeemLoginCode,
 } from "./login-code";
@@ -198,6 +200,50 @@ describe("login codes", () => {
     const inserts = statements.filter((query) => /^insert into "login_code"/i.test(query));
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toMatch(/^insert into "login_code" \("[^)]*\) values \(/i);
+  });
+
+  describe("a code does not outlive the state of the account it was sent for", () => {
+    it("is gone when the member is switched off, and does not come back when they are switched on", async () => {
+      const issued = await issueLoginCode(world.db, EMAIL, T0);
+
+      const off = await setMemberActive(world.db, {
+        targetUserId: userId,
+        active: false,
+        actingUserId: world.adminUserId,
+      });
+      expect(off).toEqual({ ok: true });
+      expect(await world.db.select().from(loginCode)).toHaveLength(0);
+
+      await setMemberActive(world.db, {
+        targetUserId: userId,
+        active: true,
+        actingUserId: world.adminUserId,
+      });
+      expect(await redeemLoginCode(world.db, EMAIL, issued!.code, at(1000))).toBeNull();
+    });
+
+    it("leaves other accounts' codes alone", async () => {
+      const [other] = await world.db
+        .insert(user)
+        .values({ email: "other@local.test", passwordHash: "x" })
+        .returning({ id: user.id });
+      await issueLoginCode(world.db, "other@local.test", T0);
+
+      await setMemberActive(world.db, {
+        targetUserId: userId,
+        active: false,
+        actingUserId: world.adminUserId,
+      });
+
+      const rows = await world.db.select().from(loginCode);
+      expect(rows.map((row) => row.userId)).toEqual([other!.id]);
+    });
+
+    it("is gone through clearLoginCodes, for any path that changes a password or the session version", async () => {
+      await issueLoginCode(world.db, EMAIL, T0);
+      await clearLoginCodes(world.db, userId);
+      expect(await world.db.select().from(loginCode)).toHaveLength(0);
+    });
   });
 
   describe("one live code per account, enforced by the database", () => {

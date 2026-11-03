@@ -8,6 +8,7 @@ import {
 } from "@agent-board/db";
 import { and, asc, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { McpDatabase } from "../mcp/types";
+import { clearLoginCodes } from "./login-code";
 
 /**
  * Invitations and the team (OCL-222): how a second person gets onto a board
@@ -300,7 +301,8 @@ export type SetActiveResult = { ok: true } | { ok: false; error: string };
  * Switches a member off or back on. Off bumps the session version, so the
  * signed cookie they hold stops matching on their next request, and the MCP
  * refuses their tokens while the flag is down. Admins are not switched off
- * here: that would be a way to lock the instance out of itself.
+ * here: that would be a way to lock the instance out of itself. Off also
+ * deletes the sign-in codes they were sent.
  */
 export async function setMemberActive(
   db: Db,
@@ -319,6 +321,8 @@ export async function setMemberActive(
     .where(and(eq(user.id, input.targetUserId), eq(user.role, "member")))
     .returning({ id: user.id });
   if (!row) return { ok: false, error: "Member not found." };
+  // A code emailed before the switch-off must not sign them in after it.
+  if (!input.active) await clearLoginCodes(db, input.targetUserId);
   return { ok: true };
 }
 

@@ -103,6 +103,16 @@ export async function issueLoginCode(
 }
 
 /**
+ * Deletes every sign-in code of the account. Anything that changes who may
+ * get into it — switching it off, a new password, a bumped session version —
+ * has to call this, or a code sent before the change keeps working for up to
+ * ten minutes after it, as the one way in the change was meant to close.
+ */
+export async function clearLoginCodes(db: McpDatabase, userId: string): Promise<void> {
+  await db.delete(loginCode).where(eq(loginCode.userId, userId));
+}
+
+/**
  * Spends one attempt on the live code for `email` and, if `code` is it,
  * consumes it and returns its account. Null for anything else: no account,
  * no live code, a wrong code, an expired, used or exhausted one.
