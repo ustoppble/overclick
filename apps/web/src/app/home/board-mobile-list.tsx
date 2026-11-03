@@ -5,10 +5,8 @@ import {
   COLUMN_STATUSES,
   countByStatus,
   firstStatusWithCards,
-  type ColumnCounts,
   type ColumnStatus,
 } from "../../lib/board-columns";
-import { columnTotal } from "../../lib/board-window";
 import type { Dict } from "../../lib/i18n";
 import { Icon } from "../../components/icon";
 import type { BoardCard } from "./board";
@@ -42,7 +40,7 @@ export function BoardMobileList({
   renderRow,
   renderEmpty,
   renderMore,
-  columnTotals = null,
+  headCount,
   t,
 }: {
   /** Already through the board filters, exactly what the columns render. */
@@ -53,8 +51,8 @@ export function BoardMobileList({
   renderEmpty: (status: ColumnStatus) => ReactNode;
   /** The "show older" button of a finished column, when it has older cards. */
   renderMore?: (status: ColumnStatus) => ReactNode;
-  /** Every card of each column, counted on the server; null under a search. */
-  columnTotals?: ColumnCounts | null;
+  /** The number on a column's head, given the cards that column holds here. */
+  headCount: (status: ColumnStatus, list: BoardCard[]) => number;
   t: Dict;
 }) {
   const counts = useMemo(() => countByStatus(cards), [cards]);
@@ -89,7 +87,7 @@ export function BoardMobileList({
           <Icon name="chevronDown" label={null} size={13} />
         </span>
         <span className="count">
-          {columnTotal(counts[status], columnTotals?.[status])}
+          {headCount(status, list)}
         </span>
       </label>
       <div className="col">

@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { project, workspace } from "@agent-board/db";
 import type { BoardCard } from "../app/home/board";
 import { toBoardCards } from "../lib/board-card";
+import { loadBoardSignature } from "../lib/board-signature";
 import { parseBoardFilter, parseOlderRequest } from "../lib/board-input";
 import {
   boardSearchLimiter,
@@ -11,9 +12,9 @@ import {
   type BoardSearchRefusal,
 } from "../lib/board-search-guard";
 import type { BoardFilter } from "../lib/board-filter";
-import type { ColumnCounts } from "../lib/board-columns";
 import {
   countBoardColumns,
+  type BoardColumnCounts,
   loadBoardTasksByIds,
   loadOlderBoardTasks,
   searchBoardTaskIds,
@@ -68,7 +69,7 @@ async function asCards(
   });
 }
 
-/** One "show older" click on a validated or discarded column. */
+/** One "show older" click on a column: the cards past what the board shows. */
 export async function loadOlderBoardCardsAction(input: {
   status: string;
   filter: BoardFilter;
@@ -114,12 +115,32 @@ export async function searchBoardCardsAction(
   }
 }
 
-/** How many cards each column holds under a filter the client just picked. */
+/**
+ * How many cards each column holds under a filter the client just picked,
+ * inside its period and past it.
+ */
 export async function boardColumnCountsAction(
   filter: BoardFilter,
-): Promise<ColumnCounts | null> {
+): Promise<BoardColumnCounts | null> {
   const wanted = parseBoardFilter(filter);
   const reader = await boardReader();
   if (!reader || !wanted) return null;
   return countBoardColumns(db(), reader.projects, reader.principal, wanted);
+}
+
+/**
+ * The board's fingerprint for the signed-in reader, which the page compares
+ * with the one it was built with before it asks for a whole new render. Null
+ * when there is no session, so the poll falls back to a refresh and lands on
+ * the login.
+ */
+export async function boardSignatureAction(): Promise<string | null> {
+  const reader = await boardReader();
+  if (!reader) return null;
+  return loadBoardSignature(
+    db(),
+    reader.ws.id,
+    reader.projects.map((item) => item.id),
+    reader.principal,
+  );
 }

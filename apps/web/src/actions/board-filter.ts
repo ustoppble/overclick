@@ -4,11 +4,13 @@ import { and, eq, inArray } from "drizzle-orm";
 import { mission, organization, project, task, user } from "@agent-board/db";
 import { isReleaseVersion } from "@agent-board/mcp-core";
 import {
+  DEFAULT_BOARD_PERIOD,
   NO_MISSION,
   encodeFacetSelection,
   encodeOrganizationSelection,
   encodeProjectSelection,
   encodeReleaseSelection,
+  isBoardPeriod,
   isTaskPriority,
   isTaskType,
   type BoardFilter,
@@ -72,6 +74,9 @@ export async function setBoardFilterAction(
   if (!input.priorities.every(isTaskPriority)) {
     return { ok: false, error: "Task priority not found." };
   }
+  if (input.period !== undefined && !isBoardPeriod(input.period)) {
+    return { ok: false, error: "Period not found." };
+  }
   if (typeof input.resolvedIn === "string") {
     // The filter offers releases only, so only a release can be stored as
     // one — a branch name in resolved_in is not a selection (OCL-128).
@@ -107,6 +112,7 @@ export async function setBoardFilterAction(
       boardTaskTypes: encodeFacetSelection([...new Set(input.types)]),
       boardPriorities: encodeFacetSelection([...new Set(input.priorities)]),
       boardResolvedIn: encodeReleaseSelection(input.resolvedIn),
+      boardPeriod: input.period ?? DEFAULT_BOARD_PERIOD,
     })
     .where(eq(user.id, session.userId));
 

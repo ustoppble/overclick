@@ -1335,6 +1335,11 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   text-transform: uppercase; color: var(--nebula-text-secondary);
 }
 .nb .col-head .count { color: var(--nebula-text-tertiary); }
+/* What lies past the period: said once, quietly, beside the count. */
+.nb .col-head .older-hint {
+  color: var(--nebula-text-tertiary); opacity: .7; font-size: 11px;
+  letter-spacing: 0.02em; text-transform: none; margin-left: auto;
+}
 .nb .col { display: flex; flex-direction: column; gap: var(--nebula-space-3); min-height: 300px; padding-bottom: 48px; }
 
 .nb .empty-col {

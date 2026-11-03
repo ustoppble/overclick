@@ -1,5 +1,11 @@
 import { searchBoardCards, type SearchableBoardCard } from "./board-filter";
-import type { ColumnStatus } from "./board-columns";
+import {
+  COLUMN_STATUSES,
+  PAGED_STATUSES,
+  type ColumnCounts,
+  type ColumnStatus,
+} from "./board-columns";
+import type { BoardPeriod } from "./board-filter";
 
 /**
  * The client half of the board's window. The page hands over the window
@@ -128,4 +134,42 @@ export function columnTotal(
   serverCount: number | undefined,
 ): number {
   return serverCount === undefined ? loaded : Math.max(loaded, serverCount);
+}
+
+/**
+ * What each column still has to show past the board: the server's count of
+ * the column (inside the period and beyond it) less what is loaded. With a
+ * period every column can have older cards; with all time only the finished
+ * ones do, since live work is never cut. Null counts (a filter the server has
+ * not answered yet) and a column the last page emptied offer nothing.
+ */
+export function olderLeft(
+  server: { counts: ColumnCounts; older: ColumnCounts } | null,
+  loaded: ColumnCounts,
+  period: BoardPeriod,
+  isExhausted: (status: ColumnStatus) => boolean,
+): Partial<Record<ColumnStatus, number>> {
+  const left: Partial<Record<ColumnStatus, number>> = {};
+  if (!server) return left;
+  const statuses = period === "all" ? PAGED_STATUSES : COLUMN_STATUSES;
+  for (const status of statuses) {
+    const remaining = server.counts[status] + server.older[status] - loaded[status];
+    if (remaining > 0 && !isExhausted(status)) left[status] = remaining;
+  }
+  return left;
+}
+
+/**
+ * The number on a column head. Inside a period it is the column inside the
+ * period, so the older cards a reader pulled in do not inflate it; the count
+ * of what lies beyond is said apart. For all time it is the whole column.
+ */
+export function periodTotal(
+  period: BoardPeriod,
+  loadedInPeriod: number,
+  loaded: number,
+  serverCount: number | undefined,
+): number {
+  if (serverCount === undefined) return loaded;
+  return columnTotal(period === "all" ? loaded : loadedInPeriod, serverCount);
 }

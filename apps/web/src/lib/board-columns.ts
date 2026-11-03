@@ -15,6 +15,12 @@ export const COLUMN_STATUSES = [
 
 export type ColumnStatus = (typeof COLUMN_STATUSES)[number];
 
+/**
+ * The columns whose old cards stay out of the window and come in by "show
+ * older": everything past live work.
+ */
+export const PAGED_STATUSES = ["feito", "validado", "descartado"] as const;
+
 export type ColumnCounts = Record<ColumnStatus, number>;
 
 /** Counts per column over the cards already through the board filters. */

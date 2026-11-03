@@ -10,6 +10,7 @@ import {
 } from "../../actions/board-filter";
 import {
   boardColumnCountsAction,
+  boardSignatureAction,
   loadOlderBoardCardsAction,
   searchBoardCardsAction,
 } from "../../actions/board-cards";
@@ -17,6 +18,8 @@ import { assignCardsToMissionAction } from "../../actions/missions";
 import {
   NO_MISSION,
   boardFilterToQuery,
+  boardViewKey,
+  DEFAULT_BOARD_PERIOD,
   countLooseCards,
   filterBoardCards,
   missionFilterOptions,
@@ -28,12 +31,18 @@ import {
   toggleProject,
   type BoardFilter,
 } from "../../lib/board-filter";
-import type { ColumnCounts, ColumnStatus } from "../../lib/board-columns";
+import {
+  countByStatus,
+  type ColumnCounts,
+  type ColumnStatus,
+} from "../../lib/board-columns";
+import type { BoardColumnCounts } from "../../lib/board-tasks";
 import { subscribeToBoardRefresh } from "../../lib/board-refresh";
 import { createBoardSearchRunner } from "../../lib/board-search-runner";
 import {
   addExtraCards,
   mergeBoardCards,
+  olderLeft,
   pageCursor,
   windowCursor,
   type OlderCursor,
@@ -45,6 +54,7 @@ import { Icon } from "../../components/icon";
 import { Board, type BoardCard, type BoardMissionOption } from "./board";
 import { BoardTotal } from "./board-total";
 import { FacetFilters } from "./facet-filters";
+import { PeriodFilter } from "./period-filter";
 import { MissionHeader } from "./mission-header";
 import { MissionFilter } from "./mission-filter";
 import { OrganizationFilter } from "./organization-filter";
@@ -244,6 +254,7 @@ export function HomeShell({
   columnCounts,
   openCardId,
   windowSince,
+  boardSignature,
 }: {
   lang: string;
   organizations: BoardOrganizationOption[];
@@ -255,11 +266,13 @@ export function HomeShell({
   /** What the initial filter consumed, already aggregated on the server. */
   initialTotals: BoardTotals;
   /** Every card of each column under the initial filter, loaded or not. */
-  columnCounts: ColumnCounts;
+  columnCounts: BoardColumnCounts;
   /** The card a link asked to open, already among the cards. */
   openCardId: string | null;
-  /** Where the window starts: the finished cards older than this are not in `cards`. */
+  /** Where the window starts: cards that changed before this are not in `cards`, unless live under all time. */
   windowSince: string;
+  /** The board's fingerprint when the page was built; the poll compares against it. */
+  boardSignature: string;
 }) {
   const router = useRouter();
   const t = dict(lang);
@@ -282,13 +295,14 @@ export function HomeShell({
   );
   // The column counts answer one filter. The page's answer is for the stored
   // filter, so it only counts once the filter on screen is that one again.
-  const filterKey = boardFilterToQuery(filter);
-  const [counts, setCounts] = useState({
-    key: boardFilterToQuery(initialFilter),
+  const filterKey = boardViewKey(filter);
+  const period = filter.period ?? DEFAULT_BOARD_PERIOD;
+  const [counts, setCounts] = useState<{ key: string; counts: BoardColumnCounts }>({
+    key: boardViewKey(initialFilter),
     counts: columnCounts,
   });
   useEffect(() => {
-    setCounts({ key: boardFilterToQuery(initialFilter), counts: columnCounts });
+    setCounts({ key: boardViewKey(initialFilter), counts: columnCounts });
   }, [initialFilter, columnCounts]);
   // A column whose last page said "nothing more", for this filter.
   const [exhausted, setExhausted] = useState<Set<string>>(() => new Set());
@@ -324,20 +338,16 @@ export function HomeShell({
     [inFilter, debouncedSearchQuery, serverHits],
   );
   const searchActive = debouncedSearchQuery.trim().length > 0;
-  const columnTotals =
+  const serverCounts =
     !searchActive && counts.key === filterKey ? counts.counts : null;
-  const olderLeft = useMemo(() => {
-    const left: Partial<Record<ColumnStatus, number>> = {};
-    if (!columnTotals) return left;
-    for (const status of ["validado", "descartado"] as const) {
-      const loaded = inFilter.filter((card) => card.status === status).length;
-      const remaining = columnTotals[status] - loaded;
-      if (remaining > 0 && !exhausted.has(`${filterKey}|${status}`)) {
-        left[status] = remaining;
-      }
-    }
-    return left;
-  }, [columnTotals, inFilter, exhausted, filterKey]);
+  const columnTotals = serverCounts?.counts ?? null;
+  const olderLeftByColumn = useMemo(
+    () =>
+      olderLeft(serverCounts, countByStatus(inFilter), period, (status) =>
+        exhausted.has(`${filterKey}|${status}`),
+      ),
+    [serverCounts, inFilter, period, exhausted, filterKey],
+  );
   // Only the first render opens it: the link is an arrival, not a pin.
   const [openCard] = useState(() =>
     openCardId ? (windowCards.find((card) => card.id === openCardId) ?? null) : null,
@@ -429,7 +439,26 @@ export function HomeShell({
   // MCP writes happen outside this React tree. Refreshing the dynamic route
   // pulls projects, cards and their latest attempts together, so every part
   // of the board observes one consistent snapshot without a manual reload.
-  useEffect(() => subscribeToBoardRefresh(() => router.refresh()), [router]);
+  // The refresh runs inside a transition so the shell knows when it is still
+  // on its way back, and the poll does not start another behind it.
+  const [refreshing, startRefresh] = useTransition();
+  const refreshingRef = useRef(false);
+  refreshingRef.current = refreshing;
+  // The poll asks a few small queries whether anything moved, and only
+  // rebuilds the page when this fingerprint (the one the page arrived with)
+  // is no longer the server's.
+  const signatureRef = useRef(boardSignature);
+  signatureRef.current = boardSignature;
+  useEffect(
+    () =>
+      subscribeToBoardRefresh({
+        refresh: () => startRefresh(() => router.refresh()),
+        isBusy: () => refreshingRef.current,
+        signature: boardSignatureAction,
+        held: () => signatureRef.current,
+      }),
+    [router],
+  );
 
   // The search also asks the server, so a card the window left out still
   // answers its words. Whatever it finds stays on the board like a page of
@@ -482,12 +511,23 @@ export function HomeShell({
   }
 
   function apply(next: BoardFilter) {
+    const saved = setBoardFilterAction(next);
     setFilter(next);
-    void setBoardFilterAction(next);
+    if ((next.period ?? DEFAULT_BOARD_PERIOD) !== period) {
+      // A new period is a new window, and the window is the server's: save the
+      // choice, then ask for the page again right away (this is the reader's
+      // own action, not the poll). What was pulled in past the old window, and
+      // the counts of the old period, go with it.
+      setExtraCards([]);
+      setExhausted(new Set());
+      setPagedCursors(new Map());
+      void saved.then(() => startRefresh(() => router.refresh()));
+      return;
+    }
     // The total is aggregated where Insights aggregates it, so a new filter
     // asks the server for its numbers instead of adding cards up here.
     void boardTotalsAction(next).then(setTotals);
-    const key = boardFilterToQuery(next);
+    const key = boardViewKey(next);
     void boardColumnCountsAction(next).then((nextCounts) => {
       if (nextCounts) setCounts({ key, counts: nextCounts });
     });
@@ -515,6 +555,8 @@ export function HomeShell({
       missionId: null,
       types: [],
       priorities: [],
+      // The period is a reach, not a narrowing: clearing filters keeps it.
+      period,
     });
   }
 
@@ -612,6 +654,11 @@ export function HomeShell({
               value={filter.missionId}
               onChange={(missionId) => apply({ ...filter, missionId })}
               onCreated={(missionId) => apply({ ...filter, missionId })}
+              t={t}
+            />
+            <PeriodFilter
+              value={period}
+              onChange={(next) => apply({ ...filter, period: next })}
               t={t}
             />
             <FacetFilters
@@ -728,7 +775,9 @@ export function HomeShell({
         onToggleSelect={toggleSelect}
         onMissionSelect={(missionId) => apply({ ...filter, missionId })}
         columnTotals={columnTotals}
-        olderLeft={olderLeft}
+        period={period}
+        windowSince={windowSince}
+        olderLeft={olderLeftByColumn}
         loadingOlder={loadingOlder}
         onShowOlder={showOlder}
         initialOpen={openCard}

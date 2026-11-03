@@ -4,7 +4,9 @@ import {
   columnTotal,
   findLinkedCard,
   mergeBoardCards,
+  olderLeft,
   pageCursor,
+  periodTotal,
   searchWithServerHits,
   windowCursor,
 } from "./board-window";
@@ -118,5 +120,54 @@ describe("board window, client side", () => {
     expect(columnTotal(12, 3009)).toBe(3009);
     expect(columnTotal(5, undefined)).toBe(5);
     expect(columnTotal(6, 5)).toBe(6);
+  });
+
+  const zero = { aberto: 0, em_execucao: 0, feito: 0, validado: 0, descartado: 0 };
+
+  it("with all time, offers show-older on the finished columns with what is left of the real total", () => {
+    const counts = { aberto: 5, em_execucao: 2, feito: 2672, validado: 50, descartado: 71 };
+    const loaded = { aberto: 5, em_execucao: 2, feito: 12, validado: 3, descartado: 71 };
+    expect(olderLeft({ counts, older: zero }, loaded, "all", () => false)).toEqual({
+      feito: 2660,
+      validado: 47,
+    });
+  });
+
+  it("with a period, offers it on every column that has cards past the period", () => {
+    const counts = { aberto: 9, em_execucao: 1, feito: 4, validado: 0, descartado: 0 };
+    const older = { aberto: 623, em_execucao: 154, feito: 2668, validado: 50, descartado: 71 };
+    const loaded = { aberto: 9, em_execucao: 1, feito: 4, validado: 0, descartado: 0 };
+    expect(olderLeft({ counts, older }, loaded, "7d", () => false)).toEqual({
+      aberto: 623,
+      em_execucao: 154,
+      feito: 2668,
+      validado: 50,
+      descartado: 71,
+    });
+    // After one page of 50 open cards the rest is what is left.
+    expect(
+      olderLeft({ counts, older }, { ...loaded, aberto: 59 }, "7d", () => false).aberto,
+    ).toBe(573);
+  });
+
+  it("drops a column the server said is exhausted", () => {
+    const counts = { ...zero, feito: 90 };
+    const loaded = { ...zero, feito: 40 };
+    expect(olderLeft({ counts, older: zero }, loaded, "all", (status) => status === "feito")).toEqual({});
+  });
+
+  it("offers nothing while the counts are not the ones of this filter", () => {
+    expect(olderLeft(null, { ...zero, feito: 40 }, "7d", () => false)).toEqual({});
+  });
+
+  it("heads a column with its count inside the period, not with the older cards pulled in", () => {
+    // 4 in the period, 50 older ones loaded by "show older": the head says 4.
+    expect(periodTotal("7d", 4, 54, 4)).toBe(4);
+    // A card that arrived before the counts did still shows.
+    expect(periodTotal("7d", 5, 5, 4)).toBe(5);
+    // All time counts the column whole, as before.
+    expect(periodTotal("all", 4, 54, 2672)).toBe(2672);
+    // No counts (a search is on): what is loaded.
+    expect(periodTotal("7d", 4, 54, undefined)).toBe(54);
   });
 });
