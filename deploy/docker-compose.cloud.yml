@@ -55,6 +55,7 @@ services:
       # unavailable and everything else runs as before; see deploy/README.md.
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
       EMAIL_FROM: "${EMAIL_FROM:-}"
+      LOGIN_CODE_MAX_SENDS_PER_HOUR: "${LOGIN_CODE_MAX_SENDS_PER_HOUR:-}"
     volumes:
       - update-trigger:/update-trigger
     # Bound to loopback: the reverse proxy is the only way in from outside.

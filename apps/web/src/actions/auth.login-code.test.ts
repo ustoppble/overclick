@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CODE_REQUESTS_PER_HOUR,
   CODE_REQUESTS_PER_ORIGIN_HOUR,
+  DEFAULT_LOGIN_CODE_MAX_SENDS_PER_HOUR,
+  loginCodeSendCap,
 } from "../lib/login-rate-limit";
 import { hashPassword } from "../lib/password";
 import { SESSION_COOKIE } from "../lib/session";
@@ -121,6 +123,7 @@ describe("signing in with a code sent by email", () => {
     if (world) await closeTestWorld(world);
     delete process.env.AUTH_SECRET;
     delete process.env.OVERCLICK_TRUSTED_PROXY;
+    delete process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR;
   });
 
   describe("asking for a code", () => {
@@ -201,6 +204,74 @@ describe("signing in with a code sent by email", () => {
         await requestLoginCodeAction(null, emailForm(email));
       }
       expect(emailState.sendEmail).toHaveBeenCalledTimes(CODE_REQUESTS_PER_ORIGIN_HOUR);
+    });
+
+    describe("the global hourly send cap", () => {
+      async function addAccounts(count: number): Promise<string[]> {
+        const emails = Array.from({ length: count }, (_, i) => `g${i}@local.test`);
+        for (const email of emails) {
+          await world.db.insert(user).values({ email, passwordHash: "x" });
+        }
+        return emails;
+      }
+
+      it("defaults to 60 an hour and reads LOGIN_CODE_MAX_SENDS_PER_HOUR", () => {
+        expect(DEFAULT_LOGIN_CODE_MAX_SENDS_PER_HOUR).toBe(60);
+        expect(loginCodeSendCap()).toBe(60);
+        process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "7";
+        expect(loginCodeSendCap()).toBe(7);
+        for (const junk of ["", "0", "-3", "abc", "1.5"]) {
+          process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = junk;
+          expect(loginCodeSendCap()).toBe(60);
+        }
+      });
+
+      it("sends nothing to anyone past the cap, answers every address the same and logs one line without personal data", async () => {
+        process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "3";
+        const emails = await addAccounts(6);
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const answers = [];
+        for (const email of emails) {
+          answers.push(await requestLoginCodeAction(null, emailForm(email)));
+        }
+
+        expect(emailState.sendEmail).toHaveBeenCalledTimes(3);
+        expect(new Set(answers.map((a) => JSON.stringify(a)))).toEqual(
+          new Set([JSON.stringify({ sent: true })]),
+        );
+        expect(logged).toHaveBeenCalledTimes(1);
+        const line = JSON.stringify(logged.mock.calls);
+        expect(line).toMatch(/cap/i);
+        for (const email of emails) expect(line).not.toContain(email);
+        logged.mockRestore();
+      });
+
+      it("counts an address with no account against the cap too, so the cap says nothing about who has one", async () => {
+        process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "2";
+        const [first] = await addAccounts(1);
+        await requestLoginCodeAction(null, emailForm("ghost1@local.test"));
+        await requestLoginCodeAction(null, emailForm("ghost2@local.test"));
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        await requestLoginCodeAction(null, emailForm(first!));
+        logged.mockRestore();
+
+        expect(emailState.sendEmail).not.toHaveBeenCalled();
+      });
+
+      it("opens again in the next hour", async () => {
+        process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "1";
+        const [a, b] = await addAccounts(2);
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        await requestLoginCodeAction(null, emailForm(a!));
+        await requestLoginCodeAction(null, emailForm(b!));
+        expect(emailState.sendEmail).toHaveBeenCalledTimes(1);
+
+        at(61 * MINUTE);
+        await requestLoginCodeAction(null, emailForm(b!));
+        expect(emailState.sendEmail).toHaveBeenCalledTimes(2);
+        logged.mockRestore();
+      });
     });
 
     it("fails in a controlled way, the same for everyone, when email is not configured", async () => {

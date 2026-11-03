@@ -1,6 +1,6 @@
 import { loginCodeRequest, loginFailure } from "@agent-board/db";
 import { headers } from "next/headers";
-import { clearBudget, spendBudget } from "./attempt-budget";
+import { clearBudget, spendBudget, spendBudgetStatement } from "./attempt-budget";
 import type { McpDatabase } from "../mcp/types";
 
 /**
@@ -124,8 +124,26 @@ export const CODE_REQUESTS_PER_HOUR = 5;
  */
 export const CODE_REQUESTS_PER_ORIGIN_HOUR = 20;
 
+/**
+ * Emails of sign-in codes the whole instance sends in an hour, whoever asks.
+ * The per-address and per-origin caps do not bound the total: without a
+ * trusted proxy there is no origin, and with one a botnet has plenty. This is
+ * the kill switch that keeps the email provider's quota (and the domain's
+ * reputation) from being spent by strangers. Past it nobody gets an email and
+ * the answer stays the neutral one. Set `LOGIN_CODE_MAX_SENDS_PER_HOUR` to
+ * change it.
+ */
+export const DEFAULT_LOGIN_CODE_MAX_SENDS_PER_HOUR = 60;
+
+export function loginCodeSendCap(): number {
+  const raw = process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR;
+  if (!raw || !/^\d+$/.test(raw)) return DEFAULT_LOGIN_CODE_MAX_SENDS_PER_HOUR;
+  const cap = Number(raw);
+  return cap > 0 ? cap : DEFAULT_LOGIN_CODE_MAX_SENDS_PER_HOUR;
+}
+
 function codeRequestScope(
-  kind: "minute-email" | "hour-email" | "hour-origin",
+  kind: "minute-email" | "hour-email" | "hour-origin" | "hour-global",
   value: string,
 ): string {
   return `code-${kind}:${value}`;
@@ -164,5 +182,27 @@ export async function withinCodeRequestBudget(
         CODE_REQUEST_HOUR_MS,
       )
     : true;
-  return minuteOk && hourOk && originOk;
+  if (!(minuteOk && hourOk && originOk)) return false;
+
+  // Charged for every ask that got this far, account or not, so the cap is
+  // no more an oracle than the buckets above.
+  const cap = loginCodeSendCap();
+  const [global] = await spendBudgetStatement(
+    db,
+    loginCodeRequest,
+    codeRequestScope("hour-global", "all"),
+    new Date(),
+    CODE_REQUEST_HOUR_MS,
+  );
+  const count = global?.count ?? 1;
+  if (count > cap) {
+    // One line per window, with no address in it: enough to alert on.
+    if (count === cap + 1) {
+      console.error(
+        `[login-code] hourly send cap reached (${cap}); no sign-in codes go out until the window passes`,
+      );
+    }
+    return false;
+  }
+  return true;
 }
