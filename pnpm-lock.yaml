@@ -35,7 +35,7 @@ importers:
         specifier: ^19.1.1
         version: 19.2.8(react@19.2.8)
       resend:
-        specifier: ^6.18.1
+        specifier: 6.37.0
         version: 6.37.0
       zod:
         specifier: ^3.25.76

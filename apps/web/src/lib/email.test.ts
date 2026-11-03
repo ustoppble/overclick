@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const resendState = vi.hoisted(() => ({
@@ -95,5 +96,15 @@ describe("email", () => {
 
     await expect(sendEmail(MESSAGE)).resolves.toBe(false);
     expect(logged).toHaveBeenCalled();
+  });
+});
+
+describe("the resend dependency", () => {
+  it("is pinned to an exact version: it holds the API key and brings its own transitive packages", () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+    ) as { dependencies: Record<string, string> };
+
+    expect(manifest.dependencies.resend).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
