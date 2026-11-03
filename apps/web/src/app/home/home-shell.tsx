@@ -429,7 +429,19 @@ export function HomeShell({
   // MCP writes happen outside this React tree. Refreshing the dynamic route
   // pulls projects, cards and their latest attempts together, so every part
   // of the board observes one consistent snapshot without a manual reload.
-  useEffect(() => subscribeToBoardRefresh(() => router.refresh()), [router]);
+  // The refresh runs inside a transition so the shell knows when it is still
+  // on its way back, and the poll does not start another behind it.
+  const [refreshing, startRefresh] = useTransition();
+  const refreshingRef = useRef(false);
+  refreshingRef.current = refreshing;
+  useEffect(
+    () =>
+      subscribeToBoardRefresh({
+        refresh: () => startRefresh(() => router.refresh()),
+        isBusy: () => refreshingRef.current,
+      }),
+    [router],
+  );
 
   // The search also asks the server, so a card the window left out still
   // answers its words. Whatever it finds stays on the board like a page of

@@ -1,5 +1,9 @@
-/** A short enough window for MCP changes to feel live without hammering the DB. */
-export const BOARD_REFRESH_INTERVAL_MS = 5_000;
+/**
+ * How often the board looks for writes made outside the browser. A refresh
+ * rebuilds the whole page on the server, and on a small machine one takes
+ * seconds; at 5 s they started faster than they finished and piled up.
+ */
+export const BOARD_REFRESH_INTERVAL_MS = 20_000;
 
 type RefreshDocument = Pick<
   Document,
@@ -11,17 +15,30 @@ type RefreshClock = {
   clearInterval(id: number): void;
 };
 
+export type BoardRefreshSource = {
+  /** Ask the server for a fresh page. */
+  refresh: () => void;
+  /** A refresh asked earlier has not come back yet. */
+  isBusy?: () => boolean;
+};
+
 /**
  * Keep the server-rendered board in step with writes made outside the browser.
  * Hidden tabs do no work; returning to one refreshes immediately before the
- * regular cadence resumes.
+ * regular cadence resumes. A tick that finds the previous refresh still in
+ * flight does nothing: the next one will look again.
  */
 export function subscribeToBoardRefresh(
-  refresh: () => void,
+  source: BoardRefreshSource,
   doc: RefreshDocument = document,
   clock: RefreshClock = window,
 ): () => void {
   let interval: number | null = null;
+
+  const refresh = () => {
+    if (source.isBusy?.()) return;
+    source.refresh();
+  };
 
   const stop = () => {
     if (interval === null) return;

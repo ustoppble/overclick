@@ -45,10 +45,10 @@ describe("board refresh subscription", () => {
     const refresh = vi.fn();
     const host = harness();
 
-    const unsubscribe = subscribeToBoardRefresh(refresh, host.doc, host.clock);
+    const unsubscribe = subscribeToBoardRefresh({ refresh }, host.doc, host.clock);
 
     expect(host.clock.setInterval).toHaveBeenCalledWith(
-      refresh,
+      expect.any(Function),
       BOARD_REFRESH_INTERVAL_MS,
     );
     host.tick();
@@ -62,7 +62,7 @@ describe("board refresh subscription", () => {
     const refresh = vi.fn();
     const host = harness("hidden");
 
-    subscribeToBoardRefresh(refresh, host.doc, host.clock);
+    subscribeToBoardRefresh({ refresh }, host.doc, host.clock);
     expect(host.clock.setInterval).not.toHaveBeenCalled();
 
     host.setVisibility("visible");
@@ -71,5 +71,43 @@ describe("board refresh subscription", () => {
 
     host.setVisibility("hidden");
     expect(host.clock.clearInterval).toHaveBeenCalledWith(17);
+  });
+
+  it("polls every 20 seconds, not every 5", () => {
+    expect(BOARD_REFRESH_INTERVAL_MS).toBe(20_000);
+  });
+
+  it("skips a tick while the previous refresh has not finished", () => {
+    const refresh = vi.fn();
+    let busy = false;
+    const host = harness();
+
+    subscribeToBoardRefresh({ refresh, isBusy: () => busy }, host.doc, host.clock);
+
+    host.tick();
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    // The first refresh is still in flight: three more ticks pile up nothing.
+    busy = true;
+    host.tick();
+    host.tick();
+    host.tick();
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    busy = false;
+    host.tick();
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not refresh on coming back to the tab while one is in flight", () => {
+    const refresh = vi.fn();
+    const host = harness("hidden");
+
+    subscribeToBoardRefresh({ refresh, isBusy: () => true }, host.doc, host.clock);
+    host.setVisibility("visible");
+
+    expect(refresh).not.toHaveBeenCalled();
+    // The cadence still resumes, so the next free tick refreshes.
+    expect(host.clock.setInterval).toHaveBeenCalledOnce();
   });
 });
