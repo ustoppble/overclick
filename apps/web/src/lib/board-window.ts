@@ -1,24 +1,15 @@
-import { searchBoardCards, type SearchableBoardCard } from "./board-filter";
 import {
-  COLUMN_STATUSES,
-  PAGED_STATUSES,
-  type ColumnCounts,
-  type ColumnStatus,
-} from "./board-columns";
-import type { BoardPeriod } from "./board-filter";
+  searchBoardCards,
+  type BoardPeriodField,
+  type SearchableBoardCard,
+} from "./board-filter";
+import type { ColumnStatus } from "./board-columns";
 
 /**
- * The client half of the board's window. The page hands over the window
- * (live cards, plus the finished ones that changed this week); everything the
- * reader pulled in past it — a page of older cards, a search hit, a linked
- * card — is kept here, so the next refresh does not take it away again.
+ * The client half of the board's window. The page hands over the window (the
+ * cards inside the period); what the search pulled in past it is kept here,
+ * so the next refresh does not take it away while the words are still typed.
  */
-
-/** One "show older" click. */
-export const BOARD_PAGE_SIZE = 50;
-
-/** Where an older page starts: right below this card's change. */
-export type OlderCursor = { updatedAt: string; id: string };
 
 type WindowCard = {
   id: string;
@@ -44,7 +35,7 @@ export function mergeBoardCards<T extends WindowCard>(
   );
 }
 
-/** Extras kept by id, so a second page or a repeated search adds nothing twice. */
+/** Extras kept by id, so a repeated search adds nothing twice. */
 export function addExtraCards<T extends WindowCard>(
   current: readonly T[],
   incoming: readonly T[],
@@ -57,42 +48,20 @@ export function addExtraCards<T extends WindowCard>(
 }
 
 /**
- * Where the first "show older" page of a column starts: the oldest change among
- * the cards the window itself handed over. A card the page added for a link
- * (?card=) rides with the window but is older than it, and a search hit lives
- * in the extras; neither says what the window holds, so neither counts.
+ * The cards inside the period, by the date it reads: what every column shows
+ * while no search is on. `since` is where the page's window starts, null for
+ * all time. A search hit or a linked card held from outside the window stays
+ * held, and shows again when the search asks for it.
  */
-export function windowCursor(
-  windowCards: readonly WindowCard[],
-  status: ColumnStatus,
-  since: string,
-): OlderCursor | null {
-  return oldestChange(
-    windowCards.filter((card) => card.status === status && card.updatedAt >= since),
+export function cardsInPeriod<T extends WindowCard>(
+  cards: readonly T[],
+  since: string | null,
+  periodBy: BoardPeriodField,
+): T[] {
+  if (since === null) return [...cards];
+  return cards.filter(
+    (card) => (periodBy === "created" ? card.createdAt : card.updatedAt) >= since,
   );
-}
-
-/**
- * Where the next page starts once the server answered one: the oldest change
- * of the page it returned. This is the only thing that moves the cursor past
- * the window.
- */
-export function pageCursor(page: readonly WindowCard[]): OlderCursor | null {
-  return oldestChange(page);
-}
-
-function oldestChange(cards: readonly WindowCard[]): OlderCursor | null {
-  let oldest: WindowCard | null = null;
-  for (const card of cards) {
-    if (
-      !oldest ||
-      card.updatedAt < oldest.updatedAt ||
-      (card.updatedAt === oldest.updatedAt && card.id < oldest.id)
-    ) {
-      oldest = card;
-    }
-  }
-  return oldest ? { updatedAt: oldest.updatedAt, id: oldest.id } : null;
 }
 
 /**
@@ -115,8 +84,8 @@ export function findLinkedCard<
 
 /**
  * The board search over what the board holds, widened by what the server
- * search found for the same words: its full-text match reads comments too,
- * which the cards on the client do not carry.
+ * search found for the same words: its full-text match reads the contract
+ * and the comments too, which the cards on the client do not carry.
  */
 export function searchWithServerHits<T extends SearchableBoardCard & { id: string }>(
   cards: T[],
@@ -126,50 +95,4 @@ export function searchWithServerHits<T extends SearchableBoardCard & { id: strin
   if (!query.trim()) return cards;
   const local = new Set(searchBoardCards(cards, query).map((card) => card.id));
   return cards.filter((card) => local.has(card.id) || serverHits.has(card.id));
-}
-
-/** A column's number: the server's count, never less than what is on screen. */
-export function columnTotal(
-  loaded: number,
-  serverCount: number | undefined,
-): number {
-  return serverCount === undefined ? loaded : Math.max(loaded, serverCount);
-}
-
-/**
- * What each column still has to show past the board: the server's count of
- * the column (inside the period and beyond it) less what is loaded. With a
- * period every column can have older cards; with all time only the finished
- * ones do, since live work is never cut. Null counts (a filter the server has
- * not answered yet) and a column the last page emptied offer nothing.
- */
-export function olderLeft(
-  server: { counts: ColumnCounts; older: ColumnCounts } | null,
-  loaded: ColumnCounts,
-  period: BoardPeriod,
-  isExhausted: (status: ColumnStatus) => boolean,
-): Partial<Record<ColumnStatus, number>> {
-  const left: Partial<Record<ColumnStatus, number>> = {};
-  if (!server) return left;
-  const statuses = period === "all" ? PAGED_STATUSES : COLUMN_STATUSES;
-  for (const status of statuses) {
-    const remaining = server.counts[status] + server.older[status] - loaded[status];
-    if (remaining > 0 && !isExhausted(status)) left[status] = remaining;
-  }
-  return left;
-}
-
-/**
- * The number on a column head. Inside a period it is the column inside the
- * period, so the older cards a reader pulled in do not inflate it; the count
- * of what lies beyond is said apart. For all time it is the whole column.
- */
-export function periodTotal(
-  period: BoardPeriod,
-  loadedInPeriod: number,
-  loaded: number,
-  serverCount: number | undefined,
-): number {
-  if (serverCount === undefined) return loaded;
-  return columnTotal(period === "all" ? loaded : loadedInPeriod, serverCount);
 }

@@ -122,5 +122,7 @@ export const task = pgTable(
     index("task_superseded_by_idx").on(table.supersededById),
     // The board's window keeps finished cards by how recently they changed.
     index("task_updated_at_idx").on(table.updatedAt),
+    // ...or by when they were created, when the reader asks for that date.
+    index("task_created_at_idx").on(table.createdAt),
   ],
 );

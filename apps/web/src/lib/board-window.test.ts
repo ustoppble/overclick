@@ -1,14 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   addExtraCards,
-  columnTotal,
+  cardsInPeriod,
   findLinkedCard,
   mergeBoardCards,
-  olderLeft,
-  pageCursor,
-  periodTotal,
   searchWithServerHits,
-  windowCursor,
 } from "./board-window";
 
 type Card = {
@@ -25,10 +21,10 @@ function card(id: string, status: Card["status"], day: number, title = id): Card
 }
 
 describe("board window, client side", () => {
-  it("keeps the older cards the reader loaded across a refresh", () => {
+  it("keeps the search hits the reader pulled in across a refresh", () => {
     const window = [card("a", "aberto", 20), card("v-new", "validado", 30)];
     const older = [card("v-old", "validado", 2)];
-    // The refresh hands a fresh window that never had the older card.
+    // The refresh hands a fresh window that never had the search hit.
     const refreshed = [card("a", "aberto", 20), card("v-new", "validado", 30)];
     expect(mergeBoardCards(window, older).map((c) => c.id)).toEqual([
       "v-old",
@@ -46,50 +42,10 @@ describe("board window, client side", () => {
     expect(merged[0]?.title).toBe("reopened");
   });
 
-  it("adds a page without duplicating what is already held", () => {
+  it("adds search hits without duplicating what is already held", () => {
     const current = [card("a", "validado", 3)];
     const next = addExtraCards(current, [card("a", "validado", 3), card("b", "validado", 2)]);
     expect(next.map((c) => c.id)).toEqual(["a", "b"]);
-  });
-
-  it("starts the first page below the oldest change of the window", () => {
-    const since = "2026-10-03T00:00:00.000Z";
-    const cards = [
-      card("v1", "validado", 10),
-      card("v2", "validado", 4),
-      card("o1", "aberto", 1),
-    ];
-    expect(windowCursor(cards, "validado", since)).toEqual({
-      updatedAt: "2026-10-04T00:00:00.000Z",
-      id: "v2",
-    });
-    expect(windowCursor(cards, "descartado", since)).toBeNull();
-  });
-
-  it("does not let a search hit or a linked card pull the cursor past the window", () => {
-    const since = "2026-10-23T00:00:00.000Z";
-    const windowCards = [
-      card("v-new", "validado", 30),
-      card("v-edge", "validado", 25),
-      // ?card= of a three-month-old card rides along with the window.
-      card("v-linked", "validado", 2),
-    ];
-    // A search hit lives in the extras, which never reach the cursor.
-    const cursor = windowCursor(windowCards, "validado", since);
-    expect(cursor).toEqual({ updatedAt: "2026-10-25T00:00:00.000Z", id: "v-edge" });
-  });
-
-  it("moves the cursor only with the page the server returned", () => {
-    const page = [
-      card("p1", "validado", 20),
-      card("p2", "validado", 18),
-      card("p3", "validado", 16),
-    ];
-    expect(pageCursor(page)).toEqual({
-      updatedAt: "2026-10-16T00:00:00.000Z",
-      id: "p3",
-    });
-    expect(pageCursor([])).toBeNull();
   });
 
   it("opens the current owner of a short id before the card that once had it", () => {
@@ -107,67 +63,38 @@ describe("board window, client side", () => {
 
   it("shows a server search hit the local words did not match", () => {
     const cards = [
-      { ...card("a", "validado", 1), shortId: "OC-1", oQue: "", porQue: "", comoConfirmo: [], organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "black panes" },
-      { ...card("b", "validado", 1), shortId: "OC-2", oQue: "", porQue: "", comoConfirmo: [], organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "matched in a comment" },
-      { ...card("c", "validado", 1), shortId: "OC-3", oQue: "", porQue: "", comoConfirmo: [], organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "unrelated" },
+      { ...card("a", "validado", 1), shortId: "OC-1", organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "black panes" },
+      { ...card("b", "validado", 1), shortId: "OC-2", organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "matched in its contract" },
+      { ...card("c", "validado", 1), shortId: "OC-3", organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "unrelated" },
     ];
     expect(
       searchWithServerHits(cards, "black", new Set(["b"])).map((c) => c.id),
     ).toEqual(["a", "b"]);
   });
 
-  it("counts the whole column, never less than what is on screen", () => {
-    expect(columnTotal(12, 3009)).toBe(3009);
-    expect(columnTotal(5, undefined)).toBe(5);
-    expect(columnTotal(6, 5)).toBe(6);
-  });
+  describe("the period decides what every column shows", () => {
+    // Created on the 1st, touched on the 30th; created and touched on the 25th.
+    const touched = { ...card("touched", "feito", 1), updatedAt: "2026-10-30T00:00:00.000Z" };
+    const recent = card("recent", "aberto", 25);
+    const stale = card("stale", "validado", 3);
+    const since = "2026-10-20T00:00:00.000Z";
 
-  const zero = { aberto: 0, em_execucao: 0, feito: 0, validado: 0, descartado: 0 };
-
-  it("with all time, offers show-older on the finished columns with what is left of the real total", () => {
-    const counts = { aberto: 5, em_execucao: 2, feito: 2672, validado: 50, descartado: 71 };
-    const loaded = { aberto: 5, em_execucao: 2, feito: 12, validado: 3, descartado: 71 };
-    expect(olderLeft({ counts, older: zero }, loaded, "all", () => false)).toEqual({
-      feito: 2660,
-      validado: 47,
+    it("reads the last activity under Updated", () => {
+      expect(cardsInPeriod([touched, recent, stale], since, "updated").map((c) => c.id)).toEqual([
+        "touched",
+        "recent",
+      ]);
     });
-  });
 
-  it("with a period, offers it on every column that has cards past the period", () => {
-    const counts = { aberto: 9, em_execucao: 1, feito: 4, validado: 0, descartado: 0 };
-    const older = { aberto: 623, em_execucao: 154, feito: 2668, validado: 50, descartado: 71 };
-    const loaded = { aberto: 9, em_execucao: 1, feito: 4, validado: 0, descartado: 0 };
-    expect(olderLeft({ counts, older }, loaded, "7d", () => false)).toEqual({
-      aberto: 623,
-      em_execucao: 154,
-      feito: 2668,
-      validado: 50,
-      descartado: 71,
+    it("reads the creation date under Created", () => {
+      expect(cardsInPeriod([touched, recent, stale], since, "created").map((c) => c.id)).toEqual([
+        "recent",
+      ]);
     });
-    // After one page of 50 open cards the rest is what is left.
-    expect(
-      olderLeft({ counts, older }, { ...loaded, aberto: 59 }, "7d", () => false).aberto,
-    ).toBe(573);
-  });
 
-  it("drops a column the server said is exhausted", () => {
-    const counts = { ...zero, feito: 90 };
-    const loaded = { ...zero, feito: 40 };
-    expect(olderLeft({ counts, older: zero }, loaded, "all", (status) => status === "feito")).toEqual({});
-  });
-
-  it("offers nothing while the counts are not the ones of this filter", () => {
-    expect(olderLeft(null, { ...zero, feito: 40 }, "7d", () => false)).toEqual({});
-  });
-
-  it("heads a column with its count inside the period, not with the older cards pulled in", () => {
-    // 4 in the period, 50 older ones loaded by "show older": the head says 4.
-    expect(periodTotal("7d", 4, 54, 4)).toBe(4);
-    // A card that arrived before the counts did still shows.
-    expect(periodTotal("7d", 5, 5, 4)).toBe(5);
-    // All time counts the column whole, as before.
-    expect(periodTotal("all", 4, 54, 2672)).toBe(2672);
-    // No counts (a search is on): what is loaded.
-    expect(periodTotal("7d", 4, 54, undefined)).toBe(54);
+    it("keeps every card for all time", () => {
+      expect(cardsInPeriod([touched, recent, stale], null, "created")).toHaveLength(3);
+      expect(cardsInPeriod([touched, recent, stale], null, "updated")).toHaveLength(3);
+    });
   });
 });

@@ -50,6 +50,8 @@ export const user = pgTable("user", {
   boardResolvedIn: text("board_resolved_in"),
   /** How far back the board reaches by last activity: "7d", "14d", "30d" or "all". Null = the default, 7 days. */
   boardPeriod: text("board_period"),
+  /** Which date the period reads: "updated" (last activity) or "created". Null = the default, "updated". */
+  boardPeriodBy: text("board_period_by"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

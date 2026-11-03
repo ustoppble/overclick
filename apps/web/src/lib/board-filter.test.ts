@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeFilterCount,
   ALL_ORGANIZATIONS,
   ALL_PROJECTS,
   NO_MISSION,
   boardFilterFromQuery,
   boardFilterToQuery,
-  boardViewKey,
   DEFAULT_BOARD_PERIOD,
+  DEFAULT_BOARD_PERIOD_FIELD,
   periodDays,
   countLooseCards,
   encodeFacetSelection,
@@ -74,21 +75,11 @@ const searchableCards = [
     ...cards[0],
     shortId: "OCL-72",
     title: "Pesquisar no board",
-    oQue: "Campo de busca dentro de Filtros",
-    porQue: "Achar cards sem rolagem cega",
-    comoConfirmo: [
-      { step: "Digitar um trecho", expected: "Board filtra em tempo real" },
-    ],
   },
   {
     ...cards[1],
     shortId: "OCL-11",
     title: "Revisão do cabeçalho",
-    oQue: "Ajustar o topbar",
-    porQue: "Dar mais espaço",
-    comoConfirmo: [
-      { step: "Abrir o board", expected: "Cabeçalho em uma linha" },
-    ],
   },
 ];
 const ALL: string[] = [];
@@ -101,6 +92,7 @@ function boardFilter(overrides: Partial<BoardFilter> = {}): BoardFilter {
     types: [],
     priorities: [],
     period: "7d",
+    periodBy: "updated",
     ...overrides,
   };
 }
@@ -114,6 +106,7 @@ describe("board filters", () => {
       types: [],
       priorities: [],
       period: "7d",
+      periodBy: "updated",
     });
   });
 
@@ -151,16 +144,15 @@ describe("board filters", () => {
     expect(both.map((card) => card.id)).toEqual(["a"]);
   });
 
-  it("searches card ids, titles and contract text without losing facet results", () => {
+  it("searches card ids and titles on the client, leaving the contract to the server search", () => {
     expect(searchBoardCards(searchableCards, "ocl-72").map((card) => card.shortId)).toEqual([
       "OCL-72",
     ]);
-    expect(searchBoardCards(searchableCards, "rolagem cega").map((card) => card.shortId)).toEqual([
+    expect(searchBoardCards(searchableCards, "PESQUISAR board").map((card) => card.shortId)).toEqual([
       "OCL-72",
     ]);
-    expect(searchBoardCards(searchableCards, "CAMPO filtros").map((card) => card.shortId)).toEqual([
-      "OCL-72",
-    ]);
+    // The line carries no contract: those words come back from task_search.
+    expect(searchBoardCards(searchableCards, "rolagem cega")).toEqual([]);
     expect(searchBoardCards(searchableCards, "  ")).toEqual(searchableCards);
   });
 
@@ -324,6 +316,7 @@ describe("several projects at once", () => {
       types: [],
       priorities: [],
       period: "7d",
+      periodBy: "updated",
     });
     expect(
       boardFilterFromQuery({ projects: "all", mission: NO_MISSION }, projects, missions),
@@ -589,6 +582,7 @@ describe("the release filter only offers releases", () => {
       types: [],
       priorities: [],
       period: "7d",
+      periodBy: "updated",
     });
   });
 
@@ -649,11 +643,21 @@ describe("the period filter", () => {
     expect(periodDays("all")).toBeNull();
   });
 
-  it("is part of the key a view of the board is told apart by, but not of the shared query", () => {
+  it("is not part of the query shared with Insights, and neither is the date it reads", () => {
     const base = resolveBoardFilter(none, projects, missions);
-    const wider = { ...base, period: "30d" as const };
-    expect(boardViewKey(base)).not.toBe(boardViewKey(wider));
-    expect(boardFilterToQuery(base)).toBe(boardFilterToQuery(wider));
+    expect(boardFilterToQuery(base)).toBe(boardFilterToQuery({ ...base, period: "30d" }));
+    expect(boardFilterToQuery(base)).toBe(boardFilterToQuery({ ...base, periodBy: "created" }));
+  });
+
+  it("reads the last activity unless the reader picked the creation date", () => {
+    expect(DEFAULT_BOARD_PERIOD_FIELD).toBe("updated");
+    expect(resolveBoardFilter(none, projects, missions).periodBy).toBe("updated");
+    expect(resolveBoardFilter({ ...none, periodBy: "created" }, projects, missions).periodBy).toBe(
+      "created",
+    );
+    expect(resolveBoardFilter({ ...none, periodBy: "closed" }, projects, missions).periodBy).toBe(
+      "updated",
+    );
   });
 
   it("does not hide a card by its age on the client: the server window decides that", () => {
@@ -667,5 +671,46 @@ describe("the period filter", () => {
     };
     const filter = resolveBoardFilter({ ...none, period: "7d" }, projects, missions);
     expect(filterBoardCards([card], filter)).toHaveLength(1);
+  });
+});
+
+describe("active filter count", () => {
+  const none = {
+    organizationIds: [],
+    projectIds: [],
+    missionId: null,
+    types: [],
+    priorities: [],
+  };
+
+  it("is zero for a board that is not filtered, so the phone button wears no badge", () => {
+    expect(activeFilterCount(none)).toBe(0);
+    // The default period and the default date it reads are not choices made.
+    expect(activeFilterCount({ ...none, period: "7d", periodBy: "updated" })).toBe(0);
+  });
+
+  it("counts a period other than 7 days, and the creation date, one each", () => {
+    expect(activeFilterCount({ ...none, period: "30d" })).toBe(1);
+    expect(activeFilterCount({ ...none, period: "all" })).toBe(1);
+    expect(activeFilterCount({ ...none, periodBy: "created" })).toBe(1);
+    expect(activeFilterCount({ ...none, period: "14d", periodBy: "created" })).toBe(2);
+  });
+
+  it("counts every choice made, one each, the way the Filters menu counts its own", () => {
+    expect(
+      activeFilterCount({
+        organizationIds: ["o1"],
+        projectIds: ["p1", "p2"],
+        missionId: "m1",
+        types: ["bug"],
+        priorities: ["urgente", "alta"],
+        resolvedIn: "v1.2.0",
+      }),
+    ).toBe(8);
+  });
+
+  it("counts the cards without a release and the cards without a mission as choices", () => {
+    expect(activeFilterCount({ ...none, resolvedIn: null })).toBe(1);
+    expect(activeFilterCount({ ...none, missionId: NO_MISSION })).toBe(1);
   });
 });

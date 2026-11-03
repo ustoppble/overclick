@@ -13,12 +13,13 @@ import {
 } from "@agent-board/db";
 import type {
   BoardCard,
+  BoardCardDetail,
   DurationView,
   TelemetrySegment,
   TranscriptView,
 } from "../app/home/board";
 import { decodeExecutor, parseComoConfirmo } from "../mcp/map";
-import type { BoardTaskRow } from "./board-tasks";
+import type { BoardTaskDetailRow, BoardTaskRow } from "./board-tasks";
 import {
   approx,
   formatDuration,
@@ -30,6 +31,10 @@ import type { Dict } from "./i18n";
 import { bindUsageRecipe, recipeForCli } from "./recipes";
 
 type TaskRow = BoardTaskRow;
+type DetailRow = BoardTaskDetailRow;
+/** The newest attempt as the list carries it; the detail's full row is wider. */
+type LineAttempt = NonNullable<TaskRow["latestAttempt"]>;
+type HandoffUsage = TaskRow["latestHandoffUsage"];
 
 /*
  * Number formatting lives in one place now (lib/format.ts, ux-v2.md §4).
@@ -145,7 +150,7 @@ function fmtCost(value: number, source: CostSource | null, tr: Dict): string {
  * missing is the path, not the whole section.
  */
 function toTranscriptView(
-  attempt: TaskRow["attempts"][number] | undefined,
+  attempt: DetailRow["attempts"][number] | undefined,
   recipes: readonly UsageRecipeRow[],
 ): TranscriptView | null {
   if (!attempt) return null;
@@ -173,32 +178,11 @@ function toTranscriptView(
   };
 }
 
-export function toBoardCard(
-  t: TaskRow,
-  tr: Dict,
-  /** Money is opt-in: with it off the footer is tokens and time only. */
-  pricingEnabled: boolean,
-  recipes: readonly UsageRecipeRow[],
-  /** Who is looking, so the card can tell whose review it waits on. */
-  viewerId: string,
-  /** Workspace lease: after this silence another executor may reclaim. */
-  claimTimeoutMinutes: number,
-): BoardCard {
-  const devolve =
-    t.devolveParaKind === "human"
-      ? (t.reviewer?.email ?? "human")
-      : t.devolveParaKind === "agent"
-        ? (t.devolveParaAgentRef ?? "agent")
-        : "workspace queue";
-
-  const origem = t.createdBy?.email ?? t.origin?.agent ?? t.origin?.cli ?? "board";
-
-  const latestAttempt = [...t.attempts].sort(
-    (a, b) => b.startedAt.getTime() - a.startedAt.getTime(),
-  )[0];
-  // What the latest claim ran on (OCL-202): the board records the harness
-  // that executed and never shows a plan. The planned value older cards still
-  // carry in task.harness stays in the database, unread.
+/** What the latest claim ran on (OCL-202), model and effort. */
+function claimedHarness(latestAttempt: LineAttempt | null | undefined) {
+  // The board records the harness that executed and never shows a plan. The
+  // planned value older cards still carry in task.harness stays in the
+  // database, unread.
   const claimed = latestAttempt
     ? decodeExecutor(
         latestAttempt.executor,
@@ -207,54 +191,25 @@ export function toBoardCard(
       )
     : null;
   const claimedModel = claimed?.model ?? null;
-  const harness =
-    [claimedModel, claimed?.effort].filter(Boolean).join(" · ") || null;
-  const latestHandoff = [...t.handoffs].sort(
-    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
-  )[0];
+  return {
+    cli: claimed?.cli ?? null,
+    claimedModel,
+    harness: [claimedModel, claimed?.effort].filter(Boolean).join(" · ") || null,
+  };
+}
 
-  // Typed execution trace: executor swaps at claim, spawn failures from
-  // orchestrators, and reports, oldest first.
-  const comments = [...t.comments].sort(
-    (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
-  );
-  const timeline = comments
-    .filter(
-      (c) =>
-        c.kind === "executor_swap" ||
-        c.kind === "spawn_failure" ||
-        c.kind === "report" ||
-        c.kind === "comment" ||
-        c.kind === "validation" ||
-        c.kind === "claim_release" ||
-        c.kind === "claim_stale",
-    )
-    .map((c) => ({
-      kind: c.kind as
-        | "executor_swap"
-        | "spawn_failure"
-        | "report"
-        | "comment"
-        | "validation"
-        | "claim_release"
-        | "claim_stale",
-      body: c.body,
-      author: c.authorAgentRef,
-      at: fmtDate(c.createdAt),
-    }));
-  const reportsCount = comments.filter((c) => c.kind === "report").length;
-  const claimInactive =
-    t.status === "em_execucao" && latestAttempt
-      ? tr.board.noActivityFor(
-          claimInactiveMinutes(latestAttempt.lastActivityAt),
-        )
-      : null;
-  const claimStale = Boolean(
-    t.status === "em_execucao" &&
-      latestAttempt &&
-      isClaimStale(latestAttempt.lastActivityAt, claimTimeoutMinutes),
-  );
-
+/**
+ * The run's numbers, read off the newest attempt or, without one, the newest
+ * handoff's usage: the words for the panel, the short segments for the line,
+ * both clocks, and the models that actually ran.
+ */
+function cardTelemetry(
+  latestAttempt: LineAttempt | null | undefined,
+  handoffUsage: HandoffUsage | undefined,
+  telemetryIncomplete: boolean,
+  tr: Dict,
+  pricingEnabled: boolean,
+) {
   // Footer ladder: full usage > estimated usage (labeled) > server-measured
   // duration with "usage not reported". A delivered card never shows nothing.
   let telemetry: string | null = null;
@@ -361,8 +316,8 @@ export function toBoardCard(
         { kind: "note", text: tr.board.usageNotReported },
       ];
     }
-  } else if (latestHandoff?.usage) {
-    const u = latestHandoff.usage;
+  } else if (handoffUsage) {
+    const u = handoffUsage;
     const parts: string[] = [];
     const isEstimate = u.estimated ?? false;
     // No attempt behind it, so the only clock here is the agent's own.
@@ -399,7 +354,7 @@ export function toBoardCard(
   // tilde already carries "estimated", and one line is the whole point.
   if (telemetry && estimated) {
     telemetry += ` · ${tr.board.estimated}`;
-  } else if (telemetry && t.telemetryIncomplete && !telemetry.includes(tr.board.usageNotReported)) {
+  } else if (telemetry && telemetryIncomplete && !telemetry.includes(tr.board.usageNotReported)) {
     telemetry += ` · ${tr.board.telemetryIncomplete}`;
   }
   if (costReason && !telemetry) {
@@ -409,21 +364,54 @@ export function toBoardCard(
     telemetry += ` · ${costReason}`;
     telemetryLine.push({ kind: "note", text: costReason });
   }
+  return { telemetry, telemetryLine, duration, ranModels };
+}
 
-  // The card line says what ran in one value: the claimed model, then any
-  // other model the usage recorded. The detail panel keeps the claim, with
-  // its effort, apart from what the usage measured.
-  const ranChain = harnessChain(null, ranModels);
-  const claimedChain = harnessChain(claimedModel);
+/**
+ * The card as the board's list carries it: what its line, the filters and
+ * the topbar read, and nothing the panel alone shows. The rest comes with
+ * toBoardCardDetail when the card is opened.
+ */
+export function toBoardCard(
+  t: TaskRow,
+  tr: Dict,
+  /** Money is opt-in: with it off the footer is tokens and time only. */
+  pricingEnabled: boolean,
+  /** Who is looking, so the card can tell whose review it waits on. */
+  viewerId: string,
+  /** Workspace lease: after this silence another executor may reclaim. */
+  claimTimeoutMinutes: number,
+): BoardCard {
+  const devolve =
+    t.devolveParaKind === "human"
+      ? (t.reviewer?.email ?? "human")
+      : t.devolveParaKind === "agent"
+        ? (t.devolveParaAgentRef ?? "agent")
+        : "workspace queue";
+
+  const latestAttempt = t.latestAttempt;
+  const claimed = claimedHarness(latestAttempt);
+  const claimInactive =
+    t.status === "em_execucao" && latestAttempt
+      ? tr.board.noActivityFor(
+          claimInactiveMinutes(latestAttempt.lastActivityAt),
+        )
+      : null;
+  const claimStale = Boolean(
+    t.status === "em_execucao" &&
+      latestAttempt &&
+      isClaimStale(latestAttempt.lastActivityAt, claimTimeoutMinutes),
+  );
+  const { telemetryLine, ranModels } = cardTelemetry(
+    latestAttempt,
+    t.latestHandoffUsage,
+    t.telemetryIncomplete,
+    tr,
+    pricingEnabled,
+  );
   const executors = [
     ...new Set(
-      t.attempts.flatMap((attempt) =>
-        decodeExecutor(
-          attempt.executor,
-          attempt.model,
-          attempt.modelSource,
-        ).cli ?? [],
-      ),
+      t.attemptExecutors.flatMap((raw) => decodeExecutor(raw, null).cli ?? []),
     ),
   ].sort((a, b) => a.localeCompare(b));
 
@@ -443,30 +431,14 @@ export function toBoardCard(
       ? { id: t.supersededBy.id, shortId: t.supersededBy.shortId }
       : null,
     isExample: t.isExample,
-    oQue: t.oQue,
-    porQue: t.porQue,
-    comoConfirmo: parseComoConfirmo(t.comoConfirmo),
-    validationTicks: t.validationTicks.map((tick) => ({
-      index: tick.index,
-      byEmail: tick.byEmail,
-      at: tick.at,
-    })),
     mission: t.mission?.title ?? null,
-    harness,
     // The claim records the CLI as a plain name; older attempts only ever
     // wrote it inside the executor blob, which still answers here.
-    ranCli:
-      t.claimedByExecutor ??
-      (latestAttempt
-        ? (decodeExecutor(
-            latestAttempt.executor,
-            latestAttempt.model,
-            latestAttempt.modelSource,
-          ).cli ?? null)
-        : null),
+    ranCli: t.claimedByExecutor ?? claimed.cli,
     executors,
-    harnessChain: harnessChain(claimedModel, ranModels),
-    harnessRan: ranChain && ranChain !== claimedChain ? ranChain : null,
+    // The card line says what ran in one value: the claimed model, then any
+    // other model the usage recorded.
+    harnessChain: harnessChain(claimed.claimedModel, ranModels),
     modelSource: latestAttempt?.modelSource ?? null,
     // The column already says "done · review". A chip only earns its place by
     // saying something the column cannot: that this one is waiting on you.
@@ -475,32 +447,17 @@ export function toBoardCard(
       t.devolveParaKind === "human" &&
       t.devolveParaUserId === viewerId,
     devolve,
-    origem: `${origem} · ${fmtDate(t.createdAt)}`,
-    executor: t.claimedByExecutor ?? latestAttempt?.executor ?? null,
+    // The line names the executor only while the card runs and no model
+    // chain says it better; the panel carries it for every card.
+    executor:
+      t.status === "em_execucao"
+        ? (t.claimedByExecutor ?? latestAttempt?.executor ?? null)
+        : null,
     elapsed: t.claimedAt ? fmtElapsed(t.claimedAt, tr) : null,
     claimInactive,
     claimStale,
-    branch: t.branch ?? latestHandoff?.branch ?? null,
-    commit: t.commitHash ?? latestHandoff?.commitHash ?? null,
-    commitUrl: githubCommitUrl(
-      t.project?.repoUrl,
-      t.commitHash ?? latestHandoff?.commitHash ?? null,
-    ),
-    deliveryUnverified:
-      t.deliveryUnverified || latestHandoff?.deliveryUnverified === true,
-    deliveryVerification:
-      t.deliveryVerification ?? latestHandoff?.deliveryVerification ?? null,
-    deliveryWarning: t.deliveryWarning ?? latestHandoff?.deliveryWarning ?? null,
     resolvedIn: t.resolvedIn ?? null,
-    reportsCount,
-    timeline,
-    telemetry,
     telemetryLine,
-    duration,
-    usageSuspect: latestAttempt?.usageSuspect ?? false,
-    transcript: toTranscriptView(latestAttempt, recipes),
-    handoff: latestHandoff?.summary ?? null,
-    howToVerify: latestHandoff?.howToVerify ?? null,
     organizationId: t.project.organizationId,
     projectId: t.projectId,
     projectName: t.project?.name ?? t.projectId,
@@ -508,11 +465,106 @@ export function toBoardCard(
   };
 }
 
+/**
+ * What the detail panel adds to the card's line, read when the card is
+ * opened: the contract, the newest handoff, the execution trace and the
+ * transcript, with the run's numbers spelled out in words.
+ */
+export function toBoardCardDetail(
+  t: DetailRow,
+  tr: Dict,
+  pricingEnabled: boolean,
+  recipes: readonly UsageRecipeRow[],
+): BoardCardDetail {
+  const origem = t.createdBy?.email ?? t.origin?.agent ?? t.origin?.cli ?? "board";
+  const latestAttempt = [...t.attempts].sort(
+    (a, b) => b.startedAt.getTime() - a.startedAt.getTime(),
+  )[0];
+  const claimed = claimedHarness(latestAttempt);
+  const latestHandoff = [...t.handoffs].sort(
+    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+  )[0];
+
+  // Typed execution trace: executor swaps at claim, spawn failures from
+  // orchestrators, and reports, oldest first.
+  const comments = [...t.comments].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+  );
+  const timeline = comments
+    .filter(
+      (c) =>
+        c.kind === "executor_swap" ||
+        c.kind === "spawn_failure" ||
+        c.kind === "report" ||
+        c.kind === "comment" ||
+        c.kind === "validation" ||
+        c.kind === "claim_release" ||
+        c.kind === "claim_stale",
+    )
+    .map((c) => ({
+      kind: c.kind as
+        | "executor_swap"
+        | "spawn_failure"
+        | "report"
+        | "comment"
+        | "validation"
+        | "claim_release"
+        | "claim_stale",
+      body: c.body,
+      author: c.authorAgentRef,
+      at: fmtDate(c.createdAt),
+    }));
+  const reportsCount = comments.filter((c) => c.kind === "report").length;
+  const { telemetry, duration, ranModels } = cardTelemetry(
+    latestAttempt,
+    latestHandoff?.usage,
+    t.telemetryIncomplete,
+    tr,
+    pricingEnabled,
+  );
+  // The detail panel keeps the claim, with its effort, apart from what the
+  // usage measured.
+  const ranChain = harnessChain(null, ranModels);
+  const claimedChain = harnessChain(claimed.claimedModel);
+  const commit = t.commitHash ?? latestHandoff?.commitHash ?? null;
+
+  return {
+    id: t.id,
+    oQue: t.oQue,
+    porQue: t.porQue,
+    comoConfirmo: parseComoConfirmo(t.comoConfirmo),
+    validationTicks: t.validationTicks.map((tick) => ({
+      index: tick.index,
+      byEmail: tick.byEmail,
+      at: tick.at,
+    })),
+    harness: claimed.harness,
+    executor: t.claimedByExecutor ?? latestAttempt?.executor ?? null,
+    harnessRan: ranChain && ranChain !== claimedChain ? ranChain : null,
+    origem: `${origem} · ${fmtDate(t.createdAt)}`,
+    branch: t.branch ?? latestHandoff?.branch ?? null,
+    commit,
+    commitUrl: githubCommitUrl(t.project?.repoUrl, commit),
+    deliveryUnverified:
+      t.deliveryUnverified || latestHandoff?.deliveryUnverified === true,
+    deliveryVerification:
+      t.deliveryVerification ?? latestHandoff?.deliveryVerification ?? null,
+    deliveryWarning: t.deliveryWarning ?? latestHandoff?.deliveryWarning ?? null,
+    reportsCount,
+    timeline,
+    telemetry,
+    duration,
+    usageSuspect: latestAttempt?.usageSuspect ?? false,
+    transcript: toTranscriptView(latestAttempt, recipes),
+    handoff: latestHandoff?.summary ?? null,
+    howToVerify: latestHandoff?.howToVerify ?? null,
+  };
+}
+
 /** What turning rows into cards needs to know about the workspace and the reader. */
 export type BoardCardContext = {
   tr: Dict;
   pricingEnabled: boolean;
-  recipes: readonly UsageRecipeRow[];
   viewerId: string;
   claimTimeoutMinutes: number;
 };
@@ -523,7 +575,6 @@ export function toBoardCards(rows: TaskRow[], ctx: BoardCardContext): BoardCard[
       row,
       ctx.tr,
       ctx.pricingEnabled,
-      ctx.recipes,
       ctx.viewerId,
       ctx.claimTimeoutMinutes,
     ),

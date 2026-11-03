@@ -96,3 +96,51 @@ describe("the board period is saved like the other board filters", () => {
     expect(await stored(world.adminUserId)).toBe("all");
   });
 });
+
+describe("the date the period reads is saved the same way", () => {
+  const stored = async () => {
+    const [row] = await world.db
+      .select({ periodBy: user.boardPeriodBy })
+      .from(user)
+      .where(eq(user.id, world.adminUserId));
+    return row?.periodBy;
+  };
+
+  beforeEach(async () => {
+    world = await createTestWorld();
+    sessionUserId = world.adminUserId;
+  });
+
+  afterEach(async () => {
+    sessionUserId = "";
+    if (world) await closeTestWorld(world);
+  });
+
+  it("starts with nothing stored, which reads as the last activity", async () => {
+    const periodBy = await stored();
+    expect(periodBy).toBeNull();
+    expect(
+      resolveBoardFilter({ projectId: "all", missionId: null, periodBy }, [], []).periodBy,
+    ).toBe("updated");
+  });
+
+  it("stores Created and Updated and reads them back on the next visit", async () => {
+    for (const periodBy of ["created", "updated"] as const) {
+      expect(await setBoardFilterAction({ ...base, periodBy })).toEqual({ ok: true });
+      expect(await stored()).toBe(periodBy);
+      expect(
+        resolveBoardFilter({ projectId: "all", missionId: null, periodBy: await stored() }, [], [])
+          .periodBy,
+      ).toBe(periodBy);
+    }
+  });
+
+  it("refuses a date the board does not offer and keeps the old one", async () => {
+    await setBoardFilterAction({ ...base, periodBy: "created" });
+    expect(await setBoardFilterAction({ ...base, periodBy: "closed" as never })).toEqual({
+      ok: false,
+      error: "Period date not found.",
+    });
+    expect(await stored()).toBe("created");
+  });
+});

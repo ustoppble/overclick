@@ -13,7 +13,6 @@ import { toBoardCards } from "../../lib/board-card";
 import { findLinkedCard } from "../../lib/board-window";
 import {
   boardWindowStart,
-  countBoardColumns,
   findBoardTaskByShortId,
   loadBoardTasks,
 } from "../../lib/board-tasks";
@@ -30,7 +29,6 @@ import {
   taskScope,
 } from "../../lib/scope";
 import { pagePrincipal } from "../../lib/web-scope";
-import { loadUsageRecipes } from "../../lib/recipes";
 import { detectRuntime } from "../../lib/runtime";
 import { detectDeployMode } from "../../lib/deploy-mode";
 import {
@@ -214,6 +212,7 @@ export default async function HomePage({
       boardPriorities: user.boardPriorities,
       boardResolvedIn: user.boardResolvedIn,
       boardPeriod: user.boardPeriod,
+      boardPeriodBy: user.boardPeriodBy,
     })
     .from(user)
     .where(eq(user.id, session.userId))
@@ -244,15 +243,16 @@ export default async function HomePage({
       priorities: me?.boardPriorities ?? null,
       resolvedIn: me?.boardResolvedIn ?? null,
       period: me?.boardPeriod ?? null,
+      periodBy: me?.boardPeriodBy ?? null,
     },
     projects,
     missions,
     releases,
     organizations,
   );
-  // The window, not the whole history: the cards that changed inside the
-  // period (last 7 days unless the reader chose otherwise). The rest come in
-  // on demand, a page at a time, or through the search or a link.
+  // The window is the period, in every column: the cards that changed (or were
+  // created, if the reader picked that date) in the last 7 days unless they
+  // chose otherwise. The rest come in through the search or a link.
   const windowNow = new Date();
   // Read before the cards, so a write landing in between makes the poll
   // refresh once more instead of hiding behind a fingerprint newer than the page.
@@ -260,6 +260,7 @@ export default async function HomePage({
   const rows = await loadBoardTasks(db(), projectIds, principal, {
     now: windowNow,
     period: initialFilter.period,
+    periodBy: initialFilter.periodBy,
   });
   // A link to one card (?card=OCL-12) opens it even when the window left it
   // out. Out of scope reads as no card, the same as an id that matches none.
@@ -274,13 +275,11 @@ export default async function HomePage({
   }
   // Same rule as the Insights page: no money layer, no price table to read.
   const prices = ws.pricingEnabled ? await loadModelPrices(db(), ws.id) : [];
-  // The same recipes the briefing hands agents, so the card's recompute
-  // command is the one that measured the run, pinned to its transcript.
-  const recipes = await loadUsageRecipes(db(), ws.id);
+  // Each card's line only: the panel's share (contract, handoff, timeline,
+  // transcript) is read when a card is opened (loadBoardCardDetailAction).
   const cards = toBoardCards(rows, {
     tr: t,
     pricingEnabled: ws.pricingEnabled,
-    recipes,
     viewerId: session.userId,
     claimTimeoutMinutes: ws.claimTimeoutMinutes,
   });
@@ -293,14 +292,6 @@ export default async function HomePage({
     prices,
     initialFilter,
     principal,
-  );
-  // Each column head counts the whole column under this filter, loaded or not.
-  const columnCounts = await countBoardColumns(
-    db(),
-    projects,
-    principal,
-    initialFilter,
-    { now: windowNow },
   );
 
   return (
@@ -332,9 +323,8 @@ export default async function HomePage({
         cards={cards}
         initialFilter={initialFilter}
         initialTotals={initialTotals}
-        columnCounts={columnCounts}
         openCardId={linkedRow?.id ?? null}
-        windowSince={boardWindowStart(windowNow, initialFilter.period).toISOString()}
+        windowSince={boardWindowStart(windowNow, initialFilter.period)?.toISOString() ?? null}
         boardSignature={boardSignature}
       />
 

@@ -9,17 +9,16 @@ import {
   setBoardFilterAction,
 } from "../../actions/board-filter";
 import {
-  boardColumnCountsAction,
   boardSignatureAction,
-  loadOlderBoardCardsAction,
   searchBoardCardsAction,
 } from "../../actions/board-cards";
 import { assignCardsToMissionAction } from "../../actions/missions";
 import {
   NO_MISSION,
   boardFilterToQuery,
-  boardViewKey,
+  activeFilterCount,
   DEFAULT_BOARD_PERIOD,
+  DEFAULT_BOARD_PERIOD_FIELD,
   countLooseCards,
   filterBoardCards,
   missionFilterOptions,
@@ -31,21 +30,12 @@ import {
   toggleProject,
   type BoardFilter,
 } from "../../lib/board-filter";
-import {
-  countByStatus,
-  type ColumnCounts,
-  type ColumnStatus,
-} from "../../lib/board-columns";
-import type { BoardColumnCounts } from "../../lib/board-tasks";
 import { subscribeToBoardRefresh } from "../../lib/board-refresh";
 import { createBoardSearchRunner } from "../../lib/board-search-runner";
 import {
   addExtraCards,
+  cardsInPeriod,
   mergeBoardCards,
-  olderLeft,
-  pageCursor,
-  windowCursor,
-  type OlderCursor,
   searchWithServerHits,
 } from "../../lib/board-window";
 import type { BoardTotals } from "../../lib/board-totals";
@@ -54,7 +44,7 @@ import { Icon } from "../../components/icon";
 import { Board, type BoardCard, type BoardMissionOption } from "./board";
 import { BoardTotal } from "./board-total";
 import { FacetFilters } from "./facet-filters";
-import { PeriodFilter } from "./period-filter";
+import { PeriodByFilter, PeriodFilter } from "./period-filter";
 import { MissionHeader } from "./mission-header";
 import { MissionFilter } from "./mission-filter";
 import { OrganizationFilter } from "./organization-filter";
@@ -251,7 +241,6 @@ export function HomeShell({
   cards: windowCards,
   initialFilter,
   initialTotals,
-  columnCounts,
   openCardId,
   windowSince,
   boardSignature,
@@ -265,12 +254,10 @@ export function HomeShell({
   initialFilter: BoardFilter;
   /** What the initial filter consumed, already aggregated on the server. */
   initialTotals: BoardTotals;
-  /** Every card of each column under the initial filter, loaded or not. */
-  columnCounts: BoardColumnCounts;
   /** The card a link asked to open, already among the cards. */
   openCardId: string | null;
-  /** Where the window starts: cards that changed before this are not in `cards`, unless live under all time. */
-  windowSince: string;
+  /** Where the window starts, by the date the period reads; null for all time. */
+  windowSince: string | null;
   /** The board's fingerprint when the page was built; the poll compares against it. */
   boardSignature: string;
 }) {
@@ -286,34 +273,15 @@ export function HomeShell({
   // one button. On the desktop the panel never opens because the button is
   // hidden and the wrapper is transparent to the bar.
   const [filtersOpen, setFiltersOpen] = useState(false);
-  // What the reader pulled in past the window: older pages, search hits. The
-  // refresh replaces the window and leaves these alone (OCL board window).
+  // What the search pulled in past the window. The refresh replaces the
+  // window and leaves these alone (OCL board window).
   const [extraCards, setExtraCards] = useState<BoardCard[]>([]);
   const cards = useMemo(
     () => mergeBoardCards(windowCards, extraCards),
     [windowCards, extraCards],
   );
-  // The column counts answer one filter. The page's answer is for the stored
-  // filter, so it only counts once the filter on screen is that one again.
-  const filterKey = boardViewKey(filter);
   const period = filter.period ?? DEFAULT_BOARD_PERIOD;
-  const [counts, setCounts] = useState<{ key: string; counts: BoardColumnCounts }>({
-    key: boardViewKey(initialFilter),
-    counts: columnCounts,
-  });
-  useEffect(() => {
-    setCounts({ key: boardViewKey(initialFilter), counts: columnCounts });
-  }, [initialFilter, columnCounts]);
-  // A column whose last page said "nothing more", for this filter.
-  const [exhausted, setExhausted] = useState<Set<string>>(() => new Set());
-  // Where the next "show older" page of a column starts, per filter. It is
-  // born from the window and moves only with what loadOlder returns: a search
-  // hit or a linked card is older than the window and says nothing about what
-  // lies between.
-  const [pagedCursors, setPagedCursors] = useState<Map<string, OlderCursor>>(
-    () => new Map(),
-  );
-  const [loadingOlder, setLoadingOlder] = useState<ColumnStatus | null>(null);
+  const periodBy = filter.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD;
   const [serverHits, setServerHits] = useState<{
     query: string;
     ids: Set<string>;
@@ -327,7 +295,17 @@ export function HomeShell({
       search: searchBoardCardsAction,
     });
   }
-  const inFilter = useMemo(() => filterBoardCards(cards, filter), [cards, filter]);
+  const searchActive = debouncedSearchQuery.trim().length > 0;
+  // The period alone decides what every column holds; the search is the one
+  // way past it, so while words are typed every card held can answer them.
+  const inFilter = useMemo(
+    () =>
+      filterBoardCards(
+        searchActive ? cards : cardsInPeriod(cards, windowSince, periodBy),
+        filter,
+      ),
+    [cards, filter, searchActive, windowSince, periodBy],
+  );
   const visible = useMemo(
     () =>
       searchWithServerHits(
@@ -336,17 +314,6 @@ export function HomeShell({
         serverHits.query === debouncedSearchQuery ? serverHits.ids : new Set<string>(),
       ),
     [inFilter, debouncedSearchQuery, serverHits],
-  );
-  const searchActive = debouncedSearchQuery.trim().length > 0;
-  const serverCounts =
-    !searchActive && counts.key === filterKey ? counts.counts : null;
-  const columnTotals = serverCounts?.counts ?? null;
-  const olderLeftByColumn = useMemo(
-    () =>
-      olderLeft(serverCounts, countByStatus(inFilter), period, (status) =>
-        exhausted.has(`${filterKey}|${status}`),
-      ),
-    [serverCounts, inFilter, period, exhausted, filterKey],
   );
   // Only the first render opens it: the link is an arrival, not a pin.
   const [openCard] = useState(() =>
@@ -461,8 +428,7 @@ export function HomeShell({
   );
 
   // The search also asks the server, so a card the window left out still
-  // answers its words. Whatever it finds stays on the board like a page of
-  // older cards would.
+  // answers its words. Whatever it finds is held for as long as the words are.
   useEffect(() => {
     const query = debouncedSearchQuery.trim();
     if (query.length < 2) {
@@ -489,48 +455,24 @@ export function HomeShell({
     });
   }, [debouncedSearchQuery]);
 
-  function showOlder(status: ColumnStatus) {
-    if (loadingOlder) return;
-    const key = `${filterKey}|${status}`;
-    const before =
-      pagedCursors.get(key) ??
-      windowCursor(filterBoardCards(windowCards, filter), status, windowSince);
-    setLoadingOlder(status);
-    void loadOlderBoardCardsAction({ status, filter, before })
-      .then((page) => {
-        setExtraCards((current) => addExtraCards(current, page.cards));
-        const next = pageCursor(page.cards);
-        if (next) {
-          setPagedCursors((current) => new Map(current).set(key, next));
-        }
-        if (!page.hasMore) {
-          setExhausted((current) => new Set(current).add(key));
-        }
-      })
-      .finally(() => setLoadingOlder(null));
-  }
-
   function apply(next: BoardFilter) {
     const saved = setBoardFilterAction(next);
     setFilter(next);
-    if ((next.period ?? DEFAULT_BOARD_PERIOD) !== period) {
-      // A new period is a new window, and the window is the server's: save the
-      // choice, then ask for the page again right away (this is the reader's
-      // own action, not the poll). What was pulled in past the old window, and
-      // the counts of the old period, go with it.
+    if (
+      (next.period ?? DEFAULT_BOARD_PERIOD) !== period ||
+      (next.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD) !== periodBy
+    ) {
+      // A new period, or a new date for it, is a new window, and the window is
+      // the server's: save the choice, then ask for the page again right away
+      // (this is the reader's own action, not the poll). What the search
+      // pulled in past the old window goes with it.
       setExtraCards([]);
-      setExhausted(new Set());
-      setPagedCursors(new Map());
       void saved.then(() => startRefresh(() => router.refresh()));
       return;
     }
     // The total is aggregated where Insights aggregates it, so a new filter
     // asks the server for its numbers instead of adding cards up here.
     void boardTotalsAction(next).then(setTotals);
-    const key = boardViewKey(next);
-    void boardColumnCountsAction(next).then((nextCounts) => {
-      if (nextCounts) setCounts({ key, counts: nextCounts });
-    });
   }
 
   function toggleSelect(id: string) {
@@ -555,8 +497,10 @@ export function HomeShell({
       missionId: null,
       types: [],
       priorities: [],
-      // The period is a reach, not a narrowing: clearing filters keeps it.
+      // The period is a reach, not a narrowing: clearing filters keeps it,
+      // and the date it reads.
       period,
+      periodBy,
     });
   }
 
@@ -661,6 +605,13 @@ export function HomeShell({
               onChange={(next) => apply({ ...filter, period: next })}
               t={t}
             />
+            {/* On the phone this one moves into More filters (the sheet
+                hides it), so the sheet keeps one row for the period. */}
+            <PeriodByFilter
+              value={periodBy}
+              onChange={(next) => apply({ ...filter, periodBy: next })}
+              t={t}
+            />
             <FacetFilters
               types={filter.types}
               priorities={filter.priorities}
@@ -673,6 +624,8 @@ export function HomeShell({
               onReleaseChange={(resolvedIn) =>
                 apply({ ...filter, resolvedIn })
               }
+              periodBy={periodBy}
+              onPeriodByChange={(next) => apply({ ...filter, periodBy: next })}
               query={searchQuery}
               onQueryChange={setSearchQuery}
               onOpen={() => setFiltersOpen(true)}
@@ -727,7 +680,11 @@ export function HomeShell({
           >
             <Icon name="filter" label={null} size={14} />
             <span>{t.board.filters}</span>
-            <span className="badge">{visible.length}</span>
+            {/* How many filters are on, not how many cards are left: that
+                count is a line of its own in the sheet. Nothing when none. */}
+            {activeFilterCount(filter) > 0 ? (
+              <span className="badge">{activeFilterCount(filter)}</span>
+            ) : null}
             {searchQuery.trim() ? (
               <span
                 className="badge ff-query-badge"
@@ -774,13 +731,8 @@ export function HomeShell({
         selectedIds={selected}
         onToggleSelect={toggleSelect}
         onMissionSelect={(missionId) => apply({ ...filter, missionId })}
-        columnTotals={columnTotals}
-        period={period}
-        windowSince={windowSince}
-        olderLeft={olderLeftByColumn}
-        loadingOlder={loadingOlder}
-        onShowOlder={showOlder}
         initialOpen={openCard}
+        detailVersion={boardSignature}
       />
 
       {picking ? (

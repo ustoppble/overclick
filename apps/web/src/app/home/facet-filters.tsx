@@ -4,8 +4,11 @@ import type { TaskPriority, TaskType } from "@agent-board/db";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/icon";
 import {
+  BOARD_PERIOD_FIELDS,
+  DEFAULT_BOARD_PERIOD_FIELD,
   TASK_PRIORITIES,
   TASK_TYPES,
+  type BoardPeriodField,
   type ReleaseCount,
 } from "../../lib/board-filter";
 import type { Dict } from "../../lib/i18n";
@@ -39,6 +42,8 @@ export function FacetFilters({
   onTypesChange,
   onPrioritiesChange,
   onReleaseChange,
+  periodBy,
+  onPeriodByChange,
   onClear,
   query,
   onQueryChange,
@@ -53,6 +58,12 @@ export function FacetFilters({
   onTypesChange: (types: TaskType[]) => void;
   onPrioritiesChange: (priorities: TaskPriority[]) => void;
   onReleaseChange: (release: string | null | undefined) => void;
+  /**
+   * The date the period reads. The bar has a control of its own for it; on
+   * the phone it lives here instead, so it is only shown (and counted) there.
+   */
+  periodBy: BoardPeriodField;
+  onPeriodByChange: (periodBy: BoardPeriodField) => void;
   onClear: () => void;
   query: string;
   onQueryChange: (query: string) => void;
@@ -67,6 +78,8 @@ export function FacetFilters({
   const search = useRef<HTMLInputElement | null>(null);
   const activeCount =
     types.length + priorities.length + (resolvedIn !== undefined ? 1 : 0);
+  const sheetCount =
+    activeCount + (periodBy !== DEFAULT_BOARD_PERIOD_FIELD ? 1 : 0);
   const hasSearch = query.trim().length > 0;
   const hasActiveFilters = activeCount > 0 || hasSearch;
 
@@ -178,8 +191,18 @@ export function FacetFilters({
         {/* ux-v2 §3: the funnel is the Lucide filter mark at 14px, and an
             active filter set reads as a count badge, not as "· N" text. */}
         <Icon name="filter" label={null} size={14} />
-        <span>{t.board.filters}</span>
-        {activeCount > 0 ? <span className="badge">{activeCount}</span> : null}
+        {/* On the phone this menu lives inside the sheet the bar's Filters
+            button opens: two buttons named alike, so the sheet's says More. */}
+        <span className="ff-label-bar">{t.board.filters}</span>
+        <span className="ff-label-sheet">{t.board.moreFilters}</span>
+        {/* The bar's badge and the sheet's: More filters also holds the date
+            the period reads, so on the phone it counts that choice too. */}
+        {activeCount > 0 ? (
+          <span className="badge ff-badge-bar">{activeCount}</span>
+        ) : null}
+        {sheetCount > 0 ? (
+          <span className="badge ff-badge-sheet">{sheetCount}</span>
+        ) : null}
         {hasSearch ? (
           <span className="badge ff-query-badge" title={query.trim()}>
             {query.trim()}
@@ -254,6 +277,33 @@ export function FacetFilters({
                   release.count,
                 ),
               )}
+            </div>
+          </section>
+          <section
+            className="ff-section ff-sheet-only"
+            aria-labelledby="ff-period-by-label"
+          >
+            <h3 id="ff-period-by-label">{t.board.periodByLabel}</h3>
+            <div className="ff-list">
+              {BOARD_PERIOD_FIELDS.map((field) => {
+                const selected = periodBy === field;
+                return (
+                  <label key={field} className={`ff-opt${selected ? " on" : ""}`}>
+                    <input
+                      type="radio"
+                      name="board-period-by"
+                      checked={selected}
+                      onChange={() => onPeriodByChange(field)}
+                    />
+                    <span className="ff-box ff-radio" aria-hidden="true">
+                      {selected ? <span className="ff-radio-dot" /> : null}
+                    </span>
+                    <span className="ff-opt-name">
+                      {t.board.periodByOptions[field]}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           </section>
           <button

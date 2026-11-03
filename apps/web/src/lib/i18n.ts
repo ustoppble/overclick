@@ -151,6 +151,11 @@ const en = {
      * its panel (AGB-65, OCL-20).
      */
     filters: "Filters",
+    /**
+     * The facet menu's name inside the phone's filters sheet, where the bar
+     * button above it already says "Filters".
+     */
+    moreFilters: "More filters",
     typeFilter: "Type",
     priorityFilter: "Priority",
     releaseFilter: "Release",
@@ -165,8 +170,6 @@ const en = {
     priorityLow: "low",
     clearFilters: "Clear filters",
     cardsShown: (n: number) => `${n} card${n === 1 ? "" : "s"}`,
-    showOlder: (n: number) => `Show older (${n} more)`,
-    loadingOlder: "Loading…",
     periodLabel: "Period",
     periodOptions: {
       "7d": "Last 7 days",
@@ -174,7 +177,11 @@ const en = {
       "30d": "30 days",
       all: "All time",
     },
-    olderBeyondPeriod: (n: number) => `+${n} older`,
+    periodByLabel: "Period date",
+    periodByOptions: {
+      updated: "Updated",
+      created: "Created",
+    },
     searchingOlder: "Searching older cards…",
     searchLimited: "Showing what is already on screen; the search of older cards is busy.",
     missionLabel: "Mission",
@@ -318,6 +325,9 @@ const en = {
     filterByMission: "Filter the board by this mission",
     /** An empty contract is a fact about the card, not a dash. */
     noSteps: "This card was written without confirmation steps.",
+    /** The panel's share of the card is read when it opens, and that read can fail. */
+    loadError: "Could not load this card.",
+    retry: "Try again",
   },
   wizard: {
     stepProject: "01 · project",
@@ -814,6 +824,7 @@ const ptBR: Dict = {
     settings: "Configurações",
     logout: "Sair",
     filters: "Filtros",
+    moreFilters: "Mais filtros",
     typeFilter: "Tipo",
     priorityFilter: "Prioridade",
     releaseFilter: "Release",
@@ -828,8 +839,6 @@ const ptBR: Dict = {
     priorityLow: "baixa",
     clearFilters: "Limpar filtros",
     cardsShown: (n: number) => `${n} card${n === 1 ? "" : "s"}`,
-    showOlder: (n: number) => `Ver mais antigos (mais ${n})`,
-    loadingOlder: "Carregando…",
     periodLabel: "Período",
     periodOptions: {
       "7d": "Últimos 7 dias",
@@ -837,7 +846,11 @@ const ptBR: Dict = {
       "30d": "30 dias",
       all: "Todo o período",
     },
-    olderBeyondPeriod: (n: number) => `+${n} mais antigos`,
+    periodByLabel: "Data do período",
+    periodByOptions: {
+      updated: "Atualizado",
+      created: "Criado",
+    },
     searchingOlder: "Buscando nos cards antigos…",
     searchLimited: "Mostrando só o que já está na tela; a busca nos cards antigos está ocupada.",
     missionLabel: "Missão",
@@ -962,6 +975,8 @@ const ptBR: Dict = {
     cardLocation: "Localização do card",
     filterByMission: "Filtrar o board por esta missão",
     noSteps: "Este card foi escrito sem passos de confirmação.",
+    loadError: "Não foi possível carregar este card.",
+    retry: "Tentar de novo",
   },
   wizard: {
     stepProject: "01 · projeto",

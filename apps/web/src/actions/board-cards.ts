@@ -2,23 +2,19 @@
 
 import { and, eq } from "drizzle-orm";
 import { project, workspace } from "@agent-board/db";
-import type { BoardCard } from "../app/home/board";
-import { toBoardCards } from "../lib/board-card";
+import type { BoardCard, BoardCardDetail } from "../app/home/board";
+import { toBoardCardDetail, toBoardCards } from "../lib/board-card";
 import { loadBoardSignature } from "../lib/board-signature";
-import { parseBoardFilter, parseOlderRequest } from "../lib/board-input";
+import { boardSignatureLimiter } from "../lib/board-signature-guard";
 import {
   boardSearchLimiter,
   normalizeBoardSearch,
   type BoardSearchRefusal,
 } from "../lib/board-search-guard";
-import type { BoardFilter } from "../lib/board-filter";
 import {
-  countBoardColumns,
-  type BoardColumnCounts,
+  loadBoardTaskDetail,
   loadBoardTasksByIds,
-  loadOlderBoardTasks,
   searchBoardTaskIds,
-  type OlderCursor,
 } from "../lib/board-tasks";
 import { getSession } from "../lib/cookies";
 import { db } from "../lib/db";
@@ -28,58 +24,78 @@ import { projectScope, type Principal } from "../lib/scope";
 import { sessionPrincipal } from "../lib/web-scope";
 
 /**
- * The cards the board's window leaves out, fetched on demand: a page of older
- * finished cards per column, the hits of a search, and the real size of each
- * column. Every one of them reads through the same scope as the page itself,
- * so a member gets their own cards here and nothing else.
+ * The cards the board's window leaves out, fetched on demand: the hits of a
+ * search, whatever the period. It reads through the same scope as the page
+ * itself, so a member gets their own cards here and nothing else.
  */
 
 type BoardReader = {
   principal: Principal;
   session: { userId: string };
   ws: typeof workspace.$inferSelect;
-  projects: { id: string; organizationId: string }[];
+  projects: { id: string }[];
 };
 
-async function boardReader(): Promise<BoardReader | null> {
-  const session = await getSession();
+async function boardReader(
+  known?: NonNullable<Awaited<ReturnType<typeof getSession>>>,
+): Promise<BoardReader | null> {
+  const session = known ?? (await getSession());
   if (!session) return null;
   const principal = await sessionPrincipal(session);
   if (!principal) return null;
   const ws = await db().query.workspace.findFirst();
   if (!ws) return null;
   const projects = await db()
-    .select({ id: project.id, organizationId: project.organizationId })
+    .select({ id: project.id })
     .from(project)
     .where(and(eq(project.workspaceId, ws.id), projectScope(principal)));
   return { principal, session, ws, projects };
 }
 
-async function asCards(
+function asCards(
   reader: BoardReader,
   rows: Parameters<typeof toBoardCards>[0],
-): Promise<BoardCard[]> {
+): BoardCard[] {
   if (rows.length === 0) return [];
   return toBoardCards(rows, {
     tr: dict(reader.ws.language),
     pricingEnabled: reader.ws.pricingEnabled,
-    recipes: await loadUsageRecipes(db(), reader.ws.id),
     viewerId: reader.session.userId,
     claimTimeoutMinutes: reader.ws.claimTimeoutMinutes,
   });
 }
 
-/** One "show older" click on a column: the cards past what the board shows. */
-export async function loadOlderBoardCardsAction(input: {
-  status: string;
-  filter: BoardFilter;
-  before: OlderCursor | null;
-}): Promise<{ cards: BoardCard[]; hasMore: boolean }> {
-  const request = parseOlderRequest(input);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * What the detail panel adds to a card, read when the card is opened: the
+ * board's list carries only each card's line. Same scope as the board: a
+ * member gets their own cards, and any other id, theirs or nobody's, reads
+ * as "Card not found.", the same answer as no session at all.
+ */
+export async function loadBoardCardDetailAction(
+  id: string,
+): Promise<{ ok: true; detail: BoardCardDetail } | { ok: false; error: string }> {
+  const notFound = { ok: false as const, error: "Card not found." };
+  if (typeof id !== "string" || !UUID.test(id)) return notFound;
   const reader = await boardReader();
-  if (!reader || !request) return { cards: [], hasMore: false };
-  const page = await loadOlderBoardTasks(db(), reader.projects, reader.principal, request);
-  return { cards: await asCards(reader, page.tasks), hasMore: page.hasMore };
+  if (!reader) return notFound;
+  const row = await loadBoardTaskDetail(
+    db(),
+    reader.projects.map((item) => item.id),
+    reader.principal,
+    id,
+  );
+  if (!row) return notFound;
+  return {
+    ok: true,
+    detail: toBoardCardDetail(
+      row,
+      dict(reader.ws.language),
+      reader.ws.pricingEnabled,
+      await loadUsageRecipes(db(), reader.ws.id),
+    ),
+  };
 }
 
 /**
@@ -109,38 +125,39 @@ export async function searchBoardCardsAction(
       reader.principal,
       ids,
     );
-    return { query, cards: await asCards(reader, rows) };
+    return { query, cards: asCards(reader, rows) };
   } finally {
     slot.release();
   }
 }
 
 /**
- * How many cards each column holds under a filter the client just picked,
- * inside its period and past it.
- */
-export async function boardColumnCountsAction(
-  filter: BoardFilter,
-): Promise<BoardColumnCounts | null> {
-  const wanted = parseBoardFilter(filter);
-  const reader = await boardReader();
-  if (!reader || !wanted) return null;
-  return countBoardColumns(db(), reader.projects, reader.principal, wanted);
-}
-
-/**
  * The board's fingerprint for the signed-in reader, which the page compares
  * with the one it was built with before it asks for a whole new render. Null
  * when there is no session, so the poll falls back to a refresh and lands on
- * the login.
+ * the login. One poll at a time and a dozen a minute per person (the page
+ * asks three): past that the answer is `{ limited: true }`, which the page
+ * takes as "ask again later", never as a reason to rebuild itself.
  */
-export async function boardSignatureAction(): Promise<string | null> {
-  const reader = await boardReader();
-  if (!reader) return null;
-  return loadBoardSignature(
-    db(),
-    reader.ws.id,
-    reader.projects.map((item) => item.id),
-    reader.principal,
-  );
+export async function boardSignatureAction(): Promise<
+  string | { limited: true } | null
+> {
+  const session = await getSession();
+  if (!session) return null;
+  // Before the scope reads: a refused poll should cost the session lookup
+  // and nothing else.
+  const slot = boardSignatureLimiter.acquire(session.userId);
+  if (!slot.ok) return { limited: true };
+  try {
+    const reader = await boardReader(session);
+    if (!reader) return null;
+    return await loadBoardSignature(
+      db(),
+      reader.ws.id,
+      reader.projects.map((item) => item.id),
+      reader.principal,
+    );
+  } finally {
+    slot.release();
+  }
 }

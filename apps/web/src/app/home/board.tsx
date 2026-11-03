@@ -13,6 +13,7 @@ import {
 } from "react";
 import { assignCardsToMissionAction } from "../../actions/missions";
 import { releaseClaimAction } from "../../actions/claims";
+import { loadBoardCardDetailAction } from "../../actions/board-cards";
 import { discardTaskAction } from "../../actions/discard";
 import {
   answerOpenTaskAction,
@@ -20,13 +21,7 @@ import {
   tickValidationStepAction,
   validateTaskAction,
 } from "../../actions/review";
-import {
-  COLUMN_STATUSES,
-  type ColumnCounts,
-  type ColumnStatus,
-} from "../../lib/board-columns";
-import { BOARD_PAGE_SIZE, periodTotal } from "../../lib/board-window";
-import type { BoardPeriod } from "../../lib/board-filter";
+import { COLUMN_STATUSES, type ColumnStatus } from "../../lib/board-columns";
 import { pickRowNumber, typeInitial } from "../../lib/board-row";
 import { dict, type Dict } from "../../lib/i18n";
 import { CliMark } from "../../components/cli-mark";
@@ -101,10 +96,16 @@ export type TimelineEntry = {
   at: string;
 };
 
+/**
+ * A card as the board's list carries it: what its line, the filters and the
+ * topbar read. Everything only the detail panel shows comes apart, in
+ * BoardCardDetail, when the card is opened, so "all time" stays a list of
+ * summaries instead of every handoff, comment and transcript on the board.
+ */
 export type BoardCard = {
   id: string;
   shortId: string;
-  /** ISO timestamps: the column order, and where a page of older cards starts. */
+  /** ISO timestamps: the column order, and the dates the period reads. */
   createdAt: string;
   updatedAt: string;
   title: string;
@@ -114,55 +115,63 @@ export type BoardCard = {
   supersedes: { id: string; shortId: string } | null;
   supersededBy: { id: string; shortId: string } | null;
   isExample: boolean;
-  oQue: string;
-  porQue: string;
-  comoConfirmo: ConfirmStep[];
-  validationTicks: ValidationTickView[];
-  howToVerify: string | null;
   /** The business the card's project belongs to, which the board filters by. */
   organizationId: string;
   projectId: string;
   projectName: string;
   missionId: string | null;
   mission: string | null;
-  /**
-   * What the latest claim ran on, model and effort, for the detail panel.
-   * The board records the harness that executed; it never plans one (OCL-202).
-   */
-  harness: string | null;
   /** The CLI that actually claimed the card, for its brand mark. */
   ranCli: string | null;
   /** Every distinct CLI that attempted this card, including earlier reopens. */
   executors: string[];
   /** What ran in one value: "sonnet-5", or "sonnet-5 → fable-5" when the usage switched model. */
   harnessChain: string | null;
-  /** The models the usage recorded, set only when they are not what the claim declared. */
-  harnessRan: string | null;
   /** Where the attempt's current model identity came from. */
   modelSource: "declared" | "harness" | "measured" | null;
   /** True when this card waits on the review of whoever is looking at it. */
   awaitingMyReview: boolean;
   devolve: string;
-  origem: string;
+  /** Set only on a running card, the one place the line names it. */
   executor: string | null;
   elapsed: string | null;
   /** Lease age, independent from total time since claim. */
   claimInactive: string | null;
   /** True once another executor may reclaim without force. */
   claimStale: boolean;
+  resolvedIn: string | null;
+  /** The run's numbers spelled for the single line the card has. */
+  telemetryLine: TelemetrySegment[];
+};
+
+/** What the detail panel adds to a card, loaded when the card is opened. */
+export type BoardCardDetail = {
+  id: string;
+  oQue: string;
+  porQue: string;
+  comoConfirmo: ConfirmStep[];
+  validationTicks: ValidationTickView[];
+  howToVerify: string | null;
+  /**
+   * What the latest claim ran on, model and effort, for the detail panel.
+   * The board records the harness that executed; it never plans one (OCL-202).
+   */
+  harness: string | null;
+  /** Whatever claimed the card, for every status; the line's copy is the running card's only. */
+  executor: string | null;
+  /** The models the usage recorded, set only when they are not what the claim declared. */
+  harnessRan: string | null;
+  origem: string;
   branch: string | null;
   commit?: string | null;
   commitUrl?: string | null;
   deliveryUnverified?: boolean;
   deliveryVerification?: "verified" | "unverified" | null;
   deliveryWarning?: string | null;
-  resolvedIn: string | null;
   reportsCount: number;
   timeline: TimelineEntry[];
   /** The whole breakdown in words, for the detail panel. */
   telemetry: string | null;
-  /** The same numbers spelled for the single line the card has. */
-  telemetryLine: TelemetrySegment[];
   /** Null when neither clock ran on this card. */
   duration: DurationView | null;
   /** Server guard: this attempt's counters stay outside trusted Insights totals. */
@@ -170,6 +179,9 @@ export type BoardCard = {
   transcript: TranscriptView | null;
   handoff: string | null;
 };
+
+/** An opened card: its line and its detail together. */
+export type OpenBoardCard = BoardCard & BoardCardDetail;
 
 function columnLabels(t: Dict): Record<ColumnStatus, string> {
   return {
@@ -619,7 +631,7 @@ function ConfirmChecklist({
   disabled,
   t,
 }: {
-  card: BoardCard;
+  card: OpenBoardCard;
   ticks: ValidationTickView[];
   onToggle?: (index: number, checked: boolean) => void;
   disabled?: boolean;
@@ -1144,7 +1156,7 @@ function Detail({
   onClose,
   t,
 }: {
-  card: BoardCard;
+  card: OpenBoardCard;
   missions: BoardMissionOption[];
   onMissionSelect?: (missionId: string) => void;
   onClose: () => void;
@@ -1488,6 +1500,89 @@ function Detail({
   );
 }
 
+type DetailState =
+  | { id: string; status: "loading" }
+  | { id: string; status: "error"; error: string }
+  | { id: string; status: "ready"; detail: BoardCardDetail };
+
+/**
+ * The open card's detail, read from the server when the card opens: the list
+ * only carries each card's line. It is read again when `version` moves, which
+ * is the board's signature, so the panel follows a change the same way the
+ * list does and a poll that found nothing new asks for nothing. A card already
+ * on screen stays there while it is read again; only a first read shows the
+ * skeleton, and only a first read that fails shows the error.
+ */
+function useCardDetail(cardId: string | null, version: string | undefined, t: Dict) {
+  const [state, setState] = useState<DetailState | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!cardId) return;
+    let live = true;
+    setState((current) =>
+      current?.id === cardId && current.status === "ready"
+        ? current
+        : { id: cardId, status: "loading" },
+    );
+    loadBoardCardDetailAction(cardId).then(
+      (result) => {
+        if (!live) return;
+        setState((current) =>
+          result.ok
+            ? { id: cardId, status: "ready", detail: result.detail }
+            : current?.id === cardId && current.status === "ready"
+              ? current
+              : { id: cardId, status: "error", error: result.error },
+        );
+      },
+      () => {
+        if (!live) return;
+        setState((current) =>
+          current?.id === cardId && current.status === "ready"
+            ? current
+            : { id: cardId, status: "error", error: t.detail.loadError },
+        );
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [cardId, version, attempt, t]);
+  return {
+    state: state && state.id === cardId ? state : null,
+    retry: () => setAttempt((n) => n + 1),
+  };
+}
+
+/** The panel's place when the card's detail could not be read. */
+function DetailError({
+  message,
+  onRetry,
+  onClose,
+  t,
+}: {
+  message: string;
+  onRetry: () => void;
+  onClose: () => void;
+  t: Dict;
+}) {
+  return (
+    <div className="ov" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="detail nebula-glass" role="alertdialog" aria-modal="true" tabIndex={-1}>
+        <button className="d-close" onClick={onClose} aria-label={t.detail.close}>
+          <Icon name="close" label={null} size={15} />
+        </button>
+        <p className="d-err">{message}</p>
+        <div className="d-actions">
+          <button className="d-btn-pri oc-tappable" onClick={onRetry}>
+            {t.detail.retry}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Board({
   cards,
   lang,
@@ -1497,13 +1592,8 @@ export function Board({
   selectedIds = [],
   onToggleSelect,
   onMissionSelect,
-  columnTotals = null,
-  period = "all",
-  windowSince = "",
-  olderLeft = {},
-  loadingOlder = null,
-  onShowOlder,
   initialOpen = null,
+  detailVersion,
 }: {
   cards: BoardCard[];
   lang: string;
@@ -1514,26 +1604,18 @@ export function Board({
   selectedIds?: string[];
   onToggleSelect?: (id: string) => void;
   onMissionSelect?: (missionId: string) => void;
-  /**
-   * Every card of each column, loaded or not, counted on the server. Null
-   * while a search narrows the board: then the column is what it shows.
-   */
-  columnTotals?: ColumnCounts | null;
-  /** How far back the board reaches; a column head counts inside it. */
-  period?: BoardPeriod;
-  /** Where the period starts: cards changed since then are inside it. */
-  windowSince?: string;
-  /** How many older cards each column still holds back past the board. */
-  olderLeft?: Partial<Record<ColumnStatus, number>>;
-  loadingOlder?: ColumnStatus | null;
-  onShowOlder?: (status: ColumnStatus) => void;
   /** The card a link asked to open on arrival. */
   initialOpen?: BoardCard | null;
+  /** The board's signature: when it moves, the open card's detail is read again. */
+  detailVersion?: string;
 }) {
   const t = dict(lang);
   const colLabel = columnLabels(t);
   const [open, setOpen] = useState<BoardCard | null>(initialOpen);
-  const [detailLoading, setDetailLoading] = useState(false);
+  // The line of the open card as the latest refresh drew it; the one it was
+  // opened with when the filter no longer shows it.
+  const openLine = open ? (cards.find((card) => card.id === open.id) ?? open) : null;
+  const detail = useCardDetail(open?.id ?? null, detailVersion, t);
   const picked = new Set(selectedIds);
 
   const onKey = useCallback((e: KeyboardEvent) => {
@@ -1544,14 +1626,8 @@ export function Board({
     return () => document.removeEventListener("keydown", onKey);
   }, [onKey]);
 
-  // A short loading beat when opening a card lets the modal show a skeleton
-  // instead of popping straight into content, matching the loading states of
-  // the other three surfaces without changing how the card data is fetched.
   const openCard = useCallback((card: BoardCard) => {
     setOpen(card);
-    setDetailLoading(true);
-    const timer = window.setTimeout(() => setDetailLoading(false), 180);
-    return () => window.clearTimeout(timer);
   }, []);
 
   // The same card in both layouts: the phone list is a different arrangement
@@ -1568,36 +1644,6 @@ export function Board({
       t={t}
     />
   );
-
-  // The number on a column head: the column inside the period, so the older
-  // cards a reader pulled in do not inflate it. The cards past the period are
-  // said apart, right beside it, and come in a page at a time.
-  const headCount = (status: ColumnStatus, list: BoardCard[]) =>
-    periodTotal(
-      period,
-      list.filter((card) => card.updatedAt >= windowSince).length,
-      list.length,
-      columnTotals?.[status],
-    );
-
-  // The window keeps the board to the period; the rest is one click away, a
-  // page at a time, above the cards already there.
-  const renderMore = (status: ColumnStatus) => {
-    const left = olderLeft[status];
-    if (!left || !onShowOlder) return null;
-    return (
-      <button
-        type="button"
-        className="btn-ghost col-more"
-        disabled={loadingOlder !== null}
-        onClick={() => onShowOlder(status)}
-      >
-        {loadingOlder === status
-          ? t.board.loadingOlder
-          : t.board.showOlder(Math.min(left, BOARD_PAGE_SIZE))}
-      </button>
-    );
-  };
 
   // The phone gets the same card reduced to a row: one component less to keep
   // in step, because both read the very same BoardCard.
@@ -1631,19 +1677,13 @@ export function Board({
                   size={14}
                   className="col-mark"
                 />
-                {colLabel[status]}{" "}
-                <span className="count">{headCount(status, list)}</span>
-                {period !== "all" && olderLeft[status] ? (
-                  <span className="older-hint">
-                    {t.board.olderBeyondPeriod(olderLeft[status])}
-                  </span>
-                ) : null}
+                <span className="col-title" title={colLabel[status]}>
+                  {colLabel[status]}
+                </span>
+                <span className="count">{list.length}</span>
               </div>
               <div className="col">
-                {/* The column reads oldest first, so the older cards land on
-                    top, right under the button that brought them. */}
-                {renderMore(status)}
-                {list.length === 0 && !olderLeft[status] ? (
+                {list.length === 0 ? (
                   <EmptyState status={status} t={t} />
                 ) : (
                   list.map(renderCard)
@@ -1660,14 +1700,23 @@ export function Board({
         labels={colLabel}
         renderRow={renderRow}
         renderEmpty={(status) => <EmptyState status={status} t={t} />}
-        renderMore={renderMore}
-        headCount={headCount}
         t={t}
       />
-      {open && detailLoading ? <DetailSkeleton /> : null}
-      {open && !detailLoading ? (
+      {openLine && (!detail.state || detail.state.status === "loading") ? (
+        <DetailSkeleton />
+      ) : null}
+      {openLine && detail.state?.status === "error" ? (
+        <DetailError
+          message={detail.state.error}
+          onRetry={detail.retry}
+          onClose={() => setOpen(null)}
+          t={t}
+        />
+      ) : null}
+      {openLine && detail.state?.status === "ready" ? (
         <Detail
-          card={open}
+          key={openLine.id}
+          card={{ ...openLine, ...detail.state.detail }}
           missions={missions}
           onMissionSelect={onMissionSelect}
           onClose={() => setOpen(null)}
