@@ -1,5 +1,8 @@
 import { loginCode, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/pglite";
+import * as schema from "@agent-board/db/schema";
+import type { McpDatabase } from "../mcp/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
 import { MAX_CODE_USER_FAILURES } from "./login-rate-limit";
@@ -180,6 +183,21 @@ describe("login codes", () => {
 
     expect(await issueLoginCode(world.db, EMAIL, T0)).toBeNull();
     expect(await world.db.select().from(loginCode)).toHaveLength(0);
+  });
+
+  it("writes the code with its columns named beside their values, never positionally from a select", async () => {
+    const statements: string[] = [];
+    const logged = drizzle(world.client, {
+      schema,
+      logger: { logQuery: (query) => void statements.push(query) },
+    }) as unknown as McpDatabase;
+
+    const issued = await issueLoginCode(logged, EMAIL, T0);
+
+    expect(issued).not.toBeNull();
+    const inserts = statements.filter((query) => /^insert into "login_code"/i.test(query));
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatch(/^insert into "login_code" \("[^)]*\) values \(/i);
   });
 
   describe("one live code per account, enforced by the database", () => {

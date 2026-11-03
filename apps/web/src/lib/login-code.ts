@@ -51,10 +51,6 @@ function accountId(db: McpDatabase, email: string) {
  * on its way into the email. Null when there is no active account there, and
  * also when the account has a live code under a minute old: that one stays,
  * and the ask is accepted without a new code.
- *
- * Both statements run whether or not the address has an account: they are
- * keyed by the email, not by a user row looked up first, so an address with
- * no account costs the same two round trips as a real one.
  */
 export async function issueLoginCode(
   db: McpDatabase,
@@ -81,20 +77,25 @@ export async function issueLoginCode(
       ),
     );
 
-    // Column order is the table's: id, user_id, code_hash, attempts,
-    // expires_at, consumed_at, created_at.
+    const [account] = await tx
+      .select({ id: user.id })
+      .from(user)
+      .where(and(eq(user.email, email), eq(user.active, true)));
+    if (!account) return null;
+
+    // Columns and values go in by name, not by position in a select. Anything
+    // still here is the live code the delete above spared, and the one-live-
+    // code-per-account index turns the insert into a no-op; so does losing a
+    // race with another ask.
     const rows = await tx
       .insert(loginCode)
-      .select(
-        sql`select gen_random_uuid(), ${user.id}, ${codeHash}, 0,
-          ${expiresAt.toISOString()}::timestamptz, null,
-          ${now.toISOString()}::timestamptz
-          from ${user} where ${user.email} = ${email} and ${user.active}
-          and not exists (select 1 from ${loginCode} where ${loginCode.userId} = ${user.id})`,
-      )
-      // Two asks racing past the check above meet the one-live-code-per-account
-      // index: the loser inserts nothing and is told so, like any ask that
-      // finds a live code already there.
+      .values({
+        userId: account.id,
+        codeHash,
+        attempts: 0,
+        expiresAt,
+        createdAt: now,
+      })
       .onConflictDoNothing()
       .returning({ id: loginCode.id });
     return rows.length > 0 ? { code } : null;
