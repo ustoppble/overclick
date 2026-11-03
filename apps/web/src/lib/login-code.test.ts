@@ -1,17 +1,20 @@
+import { createHmac, hkdfSync } from "node:crypto";
 import { loginCode, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "@agent-board/db/schema";
 import type { McpDatabase } from "../mcp/types";
 import { setMemberActive } from "./invitations";
+import * as session from "./session";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
 import { MAX_CODE_USER_FAILURES } from "./login-rate-limit";
 import {
   LOGIN_CODE_TTL_MS,
   MAX_LOGIN_CODE_ATTEMPTS,
-  generateLoginCode,
   clearLoginCodes,
+  generateLoginCode,
+  hashLoginCode,
   issueLoginCode,
   redeemLoginCode,
 } from "./login-code";
@@ -200,6 +203,30 @@ describe("login codes", () => {
     const inserts = statements.filter((query) => /^insert into "login_code"/i.test(query));
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toMatch(/^insert into "login_code" \("[^)]*\) values \(/i);
+  });
+
+  describe("the key that hashes codes", () => {
+    const message = `ovk-login-code:${EMAIL}:123456`;
+
+    it("is a subkey derived from AUTH_SECRET with HKDF and the info 'login-code', not the session key itself", () => {
+      const secret = process.env.AUTH_SECRET!;
+      const subkey = Buffer.from(hkdfSync("sha256", secret, "", "login-code", 32));
+      const expected = createHmac("sha256", subkey).update(message, "utf8").digest("hex");
+      const withSessionKey = createHmac("sha256", secret).update(message, "utf8").digest("hex");
+
+      expect(hashLoginCode(EMAIL, "123456")).toBe(expected);
+      expect(expected).not.toBe(withSessionKey);
+    });
+
+    it("changes with the secret", () => {
+      const before = hashLoginCode(EMAIL, "123456");
+      process.env.AUTH_SECRET = "t".repeat(32);
+      expect(hashLoginCode(EMAIL, "123456")).not.toBe(before);
+    });
+
+    it("leaves the session key private to the session module", () => {
+      expect(Object.keys(session)).not.toContain("secretKey");
+    });
   });
 
   describe("a code does not outlive the state of the account it was sent for", () => {

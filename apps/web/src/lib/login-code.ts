@@ -3,7 +3,7 @@ import { loginCode, user } from "@agent-board/db";
 import { and, eq, gt, inArray, isNull, lt, not, sql } from "drizzle-orm";
 import type { McpDatabase } from "../mcp/types";
 import { chargeCodeFailure, codeLoginLocked } from "./login-rate-limit";
-import { secretKey } from "./session";
+import { deriveKey } from "./session";
 
 /**
  * A live code this young is left alone by a new ask: whoever just received it
@@ -25,12 +25,13 @@ export function generateLoginCode(): string {
 
 /**
  * A million codes is nothing to brute-force from a leaked table, so a plain
- * digest would store the code in all but name. Keyed with the session
- * secret and bound to the address it was sent to, the hash is worthless
- * without the server's key, and a code cannot be replayed on another account.
+ * digest would store the code in all but name. Keyed with a subkey of the
+ * session secret (HKDF, info "login-code") and bound to the address it was
+ * sent to, the hash is worthless without the server's key, and a code cannot
+ * be replayed on another account.
  */
 export function hashLoginCode(email: string, code: string): string {
-  return createHmac("sha256", secretKey())
+  return createHmac("sha256", deriveKey("login-code"))
     .update(`ovk-login-code:${email}:${code}`, "utf8")
     .digest("hex");
 }

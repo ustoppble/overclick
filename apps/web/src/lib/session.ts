@@ -1,3 +1,4 @@
+import { hkdfSync } from "node:crypto";
 import { SignJWT, jwtVerify } from "jose";
 
 export const SESSION_COOKIE = "ab_session";
@@ -17,8 +18,7 @@ export type SessionPayload = SessionTokenPayload & {
 // every session, so the code enforces what the operator was told to provide.
 const MIN_SECRET_LENGTH = 32;
 
-/** Also keys the sign-in code hashes (`login-code.ts`). */
-export function secretKey(): Uint8Array {
+function secretKey(): Uint8Array {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < MIN_SECRET_LENGTH) {
     throw new Error(
@@ -26,6 +26,16 @@ export function secretKey(): Uint8Array {
     );
   }
   return new TextEncoder().encode(secret);
+}
+
+/**
+ * A key for one purpose, derived from AUTH_SECRET with HKDF (`info` names the
+ * purpose). The session key itself stays in this module: a feature that needs
+ * a secret of its own takes a subkey, so leaking what it computes with it
+ * says nothing about the key that signs sessions.
+ */
+export function deriveKey(info: string): Uint8Array {
+  return new Uint8Array(hkdfSync("sha256", secretKey(), "", info, 32));
 }
 
 export async function signSession(
