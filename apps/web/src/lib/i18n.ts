@@ -1296,7 +1296,7 @@ const ptBR: Dict = {
     errCreate: "Não foi possível criar a conta.",
     errCredentials: "Email ou senha inválidos.",
     codeLink: "Entrar com código por e-mail",
-    codeIntro: "Enviamos um código de 6 dígitos para o seu e-mail.",
+    codeIntro: "Vamos enviar um código de 6 dígitos para o seu e-mail.",
     codeSend: "Enviar código",
     codeSending: "Enviando…",
     codeSent: (email: string) =>
