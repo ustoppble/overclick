@@ -1,8 +1,10 @@
-import { boolean, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { task } from "./task";
 import { user } from "./user";
 
-export const taskComment = pgTable("task_comment", {
+export const taskComment = pgTable(
+  "task_comment",
+  {
   id: uuid("id").primaryKey().defaultRandom(),
   taskId: uuid("task_id")
     .notNull()
@@ -20,4 +22,7 @@ export const taskComment = pgTable("task_comment", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+  },
+  // The board reads every card's comments; without this each card is a scan.
+  (table) => [index("task_comment_task_idx").on(table.taskId)],
+);
