@@ -92,6 +92,10 @@ export async function issueLoginCode(
           from ${user} where ${user.email} = ${email} and ${user.active}
           and not exists (select 1 from ${loginCode} where ${loginCode.userId} = ${user.id})`,
       )
+      // Two asks racing past the check above meet the one-live-code-per-account
+      // index: the loser inserts nothing and is told so, like any ask that
+      // finds a live code already there.
+      .onConflictDoNothing()
       .returning({ id: loginCode.id });
     return rows.length > 0 ? { code } : null;
   });

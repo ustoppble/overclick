@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "login_code_one_live_per_user_idx" ON "login_code" USING btree ("user_id") WHERE "login_code"."consumed_at" is null;

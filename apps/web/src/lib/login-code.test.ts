@@ -182,6 +182,50 @@ describe("login codes", () => {
     expect(await world.db.select().from(loginCode)).toHaveLength(0);
   });
 
+  describe("one live code per account, enforced by the database", () => {
+    const row = (overrides: Partial<typeof loginCode.$inferInsert> = {}) => ({
+      userId,
+      codeHash: "0".repeat(64),
+      expiresAt: at(LOGIN_CODE_TTL_MS),
+      ...overrides,
+    });
+
+    it("refuses a second unused code for the same account", async () => {
+      await world.db.insert(loginCode).values(row());
+
+      await expect(world.db.insert(loginCode).values(row())).rejects.toThrow();
+    });
+
+    it("lets a used code sit beside a live one, and any number of used ones", async () => {
+      await world.db.insert(loginCode).values(row({ consumedAt: at(1000) }));
+      await world.db.insert(loginCode).values(row({ consumedAt: at(2000) }));
+      await world.db.insert(loginCode).values(row());
+
+      expect(await world.db.select().from(loginCode)).toHaveLength(3);
+    });
+
+    it("lets two accounts each have a live code", async () => {
+      const [other] = await world.db
+        .insert(user)
+        .values({ email: "other@local.test", passwordHash: "x" })
+        .returning({ id: user.id });
+      await world.db.insert(loginCode).values(row());
+      await world.db.insert(loginCode).values(row({ userId: other!.id }));
+
+      expect(await world.db.select().from(loginCode)).toHaveLength(2);
+    });
+
+    it("leaves exactly one live code when two asks race", async () => {
+      const results = await Promise.all([
+        issueLoginCode(world.db, EMAIL, T0),
+        issueLoginCode(world.db, EMAIL, T0),
+      ]);
+
+      expect(results.filter(Boolean).length).toBeLessThanOrEqual(2);
+      expect(await world.db.select().from(loginCode)).toHaveLength(1);
+    });
+  });
+
   describe("wrong guesses across new codes", () => {
     const MINUTE = 60 * 1000;
     const HOUR = 60 * MINUTE;

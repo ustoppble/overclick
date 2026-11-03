@@ -1,4 +1,13 @@
-import { index, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import {
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { user } from "./user";
 
 /**
@@ -6,7 +15,8 @@ import { user } from "./user";
  * of a password. Only a keyed hash of the code is stored, never the code, and
  * a row stops working at whichever comes first: `expiresAt`, its first use
  * (`consumedAt`), or `attempts` reaching the cap. Issuing a new code deletes
- * the account's previous ones, so at most one is ever live.
+ * the account's previous ones, and a partial unique index holds the line the
+ * code alone cannot: two asks racing past it still leave one live code.
  */
 export const loginCode = pgTable(
   "login_code",
@@ -24,5 +34,10 @@ export const loginCode = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [index("login_code_user_idx").on(table.userId)],
+  (table) => [
+    index("login_code_user_idx").on(table.userId),
+    uniqueIndex("login_code_one_live_per_user_idx")
+      .on(table.userId)
+      .where(sql`${table.consumedAt} is null`),
+  ],
 );
