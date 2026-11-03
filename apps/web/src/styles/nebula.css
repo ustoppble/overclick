@@ -470,6 +470,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    button stays hidden. */
 .nb .topbar-more { display: contents; }
 .nb .filters-btn { display: none; }
+.nb .ff-trigger .ff-label-sheet { display: none; }
 .nb .menu-backdrop { display: none; }
 .nb .logo {
   font-weight: var(--nebula-weight-medium);
@@ -2702,6 +2703,10 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   /* the one button level 2 keeps for the filters that left it; the panel
      hangs off the level, which sits inside the sticky wrap */
   .nb .filters-btn { display: inline-flex; }
+  /* the facet menu sits in the sheet this button opens: it must not share the
+     bar button's name */
+  .nb .ff-trigger .ff-label-bar { display: none; }
+  .nb .ff-trigger .ff-label-sheet { display: inline; }
   /* On a phone the remaining controls keep the Control anatomy (32px drawn)
      and the A1 utility grows their hit area to 44px without moving the box. */
   .nb .menu-backdrop { display: block; position: fixed; inset: 0; z-index: var(--oc-z-backdrop); }

@@ -151,6 +151,11 @@ const en = {
      * its panel (AGB-65, OCL-20).
      */
     filters: "Filters",
+    /**
+     * The facet menu's name inside the phone's filters sheet, where the bar
+     * button above it already says "Filters".
+     */
+    moreFilters: "More filters",
     typeFilter: "Type",
     priorityFilter: "Priority",
     releaseFilter: "Release",
@@ -814,6 +819,7 @@ const ptBR: Dict = {
     settings: "Configurações",
     logout: "Sair",
     filters: "Filtros",
+    moreFilters: "Mais filtros",
     typeFilter: "Tipo",
     priorityFilter: "Prioridade",
     releaseFilter: "Release",

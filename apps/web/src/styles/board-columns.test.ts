@@ -87,3 +87,15 @@ describe("the show-older button is one 32px control, the same in every column", 
     expect(text).not.toContain(".board:has(");
   });
 });
+
+describe("the facet menu trigger swaps its name on the phone", () => {
+  it("shows Filters on the bar and More filters in the sheet, one of the two at a time", () => {
+    expect(declared(rulesFor(".nb .ff-trigger .ff-label-sheet", false), "display")).toBe("none");
+    const inPhone = (selector: string) =>
+      rules.filter(
+        (rule) => rule.insideAtRule && splitSelectorList(rule.selector).includes(selector),
+      );
+    expect(declared(inPhone(".nb .ff-trigger .ff-label-bar"), "display")).toBe("none");
+    expect(declared(inPhone(".nb .ff-trigger .ff-label-sheet"), "display")).toBe("inline");
+  });
+});

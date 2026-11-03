@@ -97,6 +97,23 @@ export type SearchableBoardCard = FilterableCard & {
   comoConfirmo: readonly { step: string; expected: string }[];
 };
 
+/**
+ * How many choices narrow the board, one per business, project, mission, type,
+ * priority and release picked, the way the Filters menu counts its own. The
+ * period is a window the board always has, and the search words have a chip of
+ * their own, so neither is counted.
+ */
+export function activeFilterCount(filter: BoardFilter): number {
+  return (
+    filter.organizationIds.length +
+    filter.projectIds.length +
+    (filter.missionId !== null ? 1 : 0) +
+    filter.types.length +
+    filter.priorities.length +
+    (filter.resolvedIn !== undefined ? 1 : 0)
+  );
+}
+
 export function defaultProjectId(projects: { id: string }[]): string | null {
   return projects[0]?.id ?? null;
 }

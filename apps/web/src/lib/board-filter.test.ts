@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeFilterCount,
   ALL_ORGANIZATIONS,
   ALL_PROJECTS,
   NO_MISSION,
@@ -667,5 +668,39 @@ describe("the period filter", () => {
     };
     const filter = resolveBoardFilter({ ...none, period: "7d" }, projects, missions);
     expect(filterBoardCards([card], filter)).toHaveLength(1);
+  });
+});
+
+describe("active filter count", () => {
+  const none = {
+    organizationIds: [],
+    projectIds: [],
+    missionId: null,
+    types: [],
+    priorities: [],
+  };
+
+  it("is zero for a board that is not filtered, so the phone button wears no badge", () => {
+    expect(activeFilterCount(none)).toBe(0);
+    // The period is a window, not a filter: the default one does not count.
+    expect(activeFilterCount({ ...none, period: "30d" })).toBe(0);
+  });
+
+  it("counts every choice made, one each, the way the Filters menu counts its own", () => {
+    expect(
+      activeFilterCount({
+        organizationIds: ["o1"],
+        projectIds: ["p1", "p2"],
+        missionId: "m1",
+        types: ["bug"],
+        priorities: ["urgente", "alta"],
+        resolvedIn: "v1.2.0",
+      }),
+    ).toBe(8);
+  });
+
+  it("counts the cards without a release and the cards without a mission as choices", () => {
+    expect(activeFilterCount({ ...none, resolvedIn: null })).toBe(1);
+    expect(activeFilterCount({ ...none, missionId: NO_MISSION })).toBe(1);
   });
 });

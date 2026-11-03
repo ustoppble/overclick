@@ -75,4 +75,27 @@ describe("facet filter menu", () => {
     expect(html).toContain('class="badge ff-query-badge"');
     expect(html).toContain("Clear board search");
   });
+
+  it("names itself differently inside the phone's filters sheet, where the bar button already says Filters", () => {
+    const render = (lang: "en" | "pt-BR") =>
+      renderToStaticMarkup(
+        createElement(FacetFilters, {
+          types: [],
+          priorities: [],
+          releases: [],
+          resolvedIn: undefined,
+          onTypesChange: vi.fn(),
+          onPrioritiesChange: vi.fn(),
+          onReleaseChange: vi.fn(),
+          onClear: vi.fn(),
+          query: "",
+          onQueryChange: vi.fn(),
+          t: dict(lang),
+        }),
+      );
+    expect(render("en")).toContain('<span class="ff-label-bar">Filters</span>');
+    expect(render("en")).toContain('<span class="ff-label-sheet">More filters</span>');
+    expect(render("pt-BR")).toContain('<span class="ff-label-bar">Filtros</span>');
+    expect(render("pt-BR")).toContain('<span class="ff-label-sheet">Mais filtros</span>');
+  });
 });

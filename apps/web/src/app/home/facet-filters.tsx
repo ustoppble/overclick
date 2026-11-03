@@ -178,7 +178,10 @@ export function FacetFilters({
         {/* ux-v2 §3: the funnel is the Lucide filter mark at 14px, and an
             active filter set reads as a count badge, not as "· N" text. */}
         <Icon name="filter" label={null} size={14} />
-        <span>{t.board.filters}</span>
+        {/* On the phone this menu lives inside the sheet the bar's Filters
+            button opens: two buttons named alike, so the sheet's says More. */}
+        <span className="ff-label-bar">{t.board.filters}</span>
+        <span className="ff-label-sheet">{t.board.moreFilters}</span>
         {activeCount > 0 ? <span className="badge">{activeCount}</span> : null}
         {hasSearch ? (
           <span className="badge ff-query-badge" title={query.trim()}>

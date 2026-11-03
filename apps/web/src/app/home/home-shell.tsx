@@ -18,6 +18,7 @@ import { assignCardsToMissionAction } from "../../actions/missions";
 import {
   NO_MISSION,
   boardFilterToQuery,
+  activeFilterCount,
   boardViewKey,
   DEFAULT_BOARD_PERIOD,
   countLooseCards,
@@ -727,7 +728,11 @@ export function HomeShell({
           >
             <Icon name="filter" label={null} size={14} />
             <span>{t.board.filters}</span>
-            <span className="badge">{visible.length}</span>
+            {/* How many filters are on, not how many cards are left: that
+                count is a line of its own in the sheet. Nothing when none. */}
+            {activeFilterCount(filter) > 0 ? (
+              <span className="badge">{activeFilterCount(filter)}</span>
+            ) : null}
             {searchQuery.trim() ? (
               <span
                 className="badge ff-query-badge"
