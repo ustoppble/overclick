@@ -706,6 +706,11 @@ const en = {
     codeResend: "Send another code",
     errCode: "Invalid or expired code.",
     errCodeUnavailable: "Sign-in unavailable: email is not configured.",
+    /** The emergency link the server owner makes inside the container. */
+    emergencyTitle: "Emergency sign-in.",
+    emergencySub: "A single-use link made on the server. It signs its admin in once, within 10 minutes.",
+    emergencyEnter: "Sign in",
+    errEmergency: "This emergency link is not valid, was already used or expired. Make a new one on the server.",
     /** The invitation page (OCL-222): a person an admin invited proves the
         invited address with a code. The address is typed, never printed. */
     inviteTitle: "You were invited.",
@@ -1337,6 +1342,10 @@ const ptBR: Dict = {
     codeResend: "Enviar outro código",
     errCode: "Código inválido ou expirado.",
     errCodeUnavailable: "Login indisponível: e-mail não configurado.",
+    emergencyTitle: "Acesso de emergência.",
+    emergencySub: "Um link de uso único gerado no servidor. Ele entra com o admin dele uma vez, em até 10 minutos.",
+    emergencyEnter: "Entrar",
+    errEmergency: "Este link de emergência não é válido, já foi usado ou expirou. Gere outro no servidor.",
     inviteTitle: "Você foi convidado.",
     inviteSub: (organization: string) =>
       `Confirme o e-mail para o qual este convite foi enviado e entre em ${organization} neste board.`,

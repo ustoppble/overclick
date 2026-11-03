@@ -25,8 +25,8 @@ POSTGRES_PASSWORD=<a long random string>
 AUTH_SECRET=<32+ random characters>
 OVERCLICK_PORT=3100                      # optional, the loopback port the proxy talks to
 GITHUB_WEBHOOK_SECRET=<random string>    # optional, see "GitHub release webhook"
-RESEND_API_KEY=<your Resend API key>     # optional, see "Sign-in by email code"
-EMAIL_FROM=<Name <sender@your-domain>>   # optional, see "Sign-in by email code"
+RESEND_API_KEY=<your Resend API key>     # needed to sign in, see "Sign-in by email code"
+EMAIL_FROM=<Name <sender@your-domain>>   # needed to sign in, see "Sign-in by email code"
 ```
 
 Generate both with `openssl rand -hex 32`. The app listens on `127.0.0.1:3100`
@@ -53,10 +53,15 @@ it stays closed until you set it up:
 
 ## Sign-in by email code
 
-The login screen offers "Sign in with an email code" next to the password: the
-person types their address, receives a 6-digit code valid for 10 minutes, and
-types it back. It sets the same session as the password sign-in, and the
-password keeps working as before.
+Email codes are the only way in: there are no passwords. The person types their
+address, receives a 6-digit code valid for 10 minutes, and types it back.
+Creating the first admin (`/setup`) and accepting an invitation (`/invite/…`)
+work the same way: the account is only created once the code sent to the
+address has been typed back, and it is created without a password. On the
+invitation page the person types the invited address themselves (the page does
+not print it) and any other address gets the same answer and no code.
+Accounts created before this kept their old password hash in the database; it
+is no longer read.
 
 Mail goes out through [Resend](https://resend.com), from two variables in
 `deploy/.env`:
@@ -68,26 +73,32 @@ EMAIL_FROM=OverClick <login@your-domain>
 
 `EMAIL_FROM` has to be on a domain verified in your Resend account. Run
 `./deploy/deploy.sh` after setting them so the app container picks them up.
-While either is empty the login screen does not offer the code link at all;
-a direct call to the action answers that the option is not available on this
-instance and logs one line saying which variables are missing. Nothing else
-changes.
+**While either is empty nobody can sign in, set up or accept an invitation by
+the web**: the login, setup and invitation screens say "Sign-in unavailable:
+email is not configured." and the actions refuse with the same words, logging
+one line that says which variables are missing. The way in then is the
+emergency link below.
 
 Codes are stored only as a keyed hash (an HKDF subkey of `AUTH_SECRET`, so
 the session key itself is never used for it), work once, and die after 5 wrong
 attempts. An address can ask for 1 code a minute and 5 an hour (and one origin
 for 20 an hour, behind the trusted proxy), and the answer never says whether
 the address has an account. A live code under a minute old is never replaced
-by a new ask. Ten wrong codes in 24 hours, however many codes they were
-spread over, shut code sign-in for that account for 24 hours; the password
-keeps working. Passwords and codes have separate failed-attempt budgets, so
-running one out never locks the other. Each budget is 8 failures in 15 minutes
-per address typed and, behind the trusted proxy, per origin. The origin is
-charged before the password or code is checked, in one step, so a burst of
-parallel guesses cannot slip past it together; the charge is given back when
-the sign-in works, so people who sign in correctly are never counted against
-it. Switching a member off deletes the codes they were
-sent.
+by a new ask. The failed-attempt budget is 8 failures in 15 minutes per
+address typed and, behind the trusted proxy, per origin. The origin is
+charged before the code is checked, in one step, so a burst of parallel
+guesses cannot slip past it together; the charge is given back when the
+sign-in works, so people who sign in correctly are never counted against it.
+Switching a member off deletes the codes they were sent.
+
+**The lock on an account.** Ten wrong codes in 24 hours, however many codes
+they were spread over, shut code sign-in for that account for **1 hour** from
+the tenth. While the day is still running, each further wrong guess after the
+hour shuts it for another hour (guesses made during a lock do not count), so a
+guesser gets about 33 tries a day at most. The account gets one email per
+lock ("Seu login no overclick foi travado por 1 hora"), with no code in it.
+Anyone who knows an address can still keep its owner out of code sign-in an
+hour at a time; the emergency link ignores the lock.
 
 The whole instance also sends at most 60 code emails an hour, whoever asks;
 set `LOGIN_CODE_MAX_SENDS_PER_HOUR` in `deploy/.env` to change it. Past the cap
@@ -101,6 +112,39 @@ real people from getting theirs until the hour turns.
 **Next step, not done:** put a bot check (Cloudflare Turnstile or a captcha) in
 front of "send me a code". It needs a Cloudflare site key and secret, so it is
 the owner's call; until then the limits above are all there is.
+
+### Emergency sign-in (server owner only)
+
+When nobody can get in by email — no `RESEND_API_KEY`/`EMAIL_FROM`, Resend is
+down, or the admin is locked out — whoever has shell on the server makes a
+single-use link from inside the app container:
+
+```
+docker exec overclick-app-1 pnpm emergency-login <admin email>
+```
+
+(`overclick-app-1` is the app container of the `overclick` compose project; `docker ps` shows the name if yours differs.) It prints **only the path** of a file inside the container (mode 600, under
+`/tmp`; set `OVERCLICK_EMERGENCY_DIR` to put it elsewhere), never the link or
+the token. The file holds the link: `https://<this board's address>/login/emergency#<token>`.
+Open it in a browser within **10 minutes**; it works **once**. The token sits
+after the `#`, so it never reaches the proxy, Cloudflare or any access log, and
+the database keeps only its hash. Making a new link kills the previous one for
+that admin.
+
+Read the file without putting it on a screen that is being shared, for
+example copy it to a file on your own machine and open it there, then delete
+it in the container:
+
+```
+docker exec overclick-app-1 sh -c 'cat <path>' > ~/overclick-emergency.txt && chmod 600 ~/overclick-emergency.txt
+docker exec overclick-app-1 rm <path>
+```
+
+Only an **active admin** gets a link; a member, a switched-off account or an
+unknown address is refused and nothing is written. The one exception: on an
+instance nobody has set up yet (no accounts at all), the script creates the
+first admin with that address, with no password, since without mail there is
+no other way to set it up.
 
 ### Behind a proxy: which address counts as the origin
 

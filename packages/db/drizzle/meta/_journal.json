@@ -351,6 +351,13 @@
       "when": 1793745634240,
       "tag": "0049_signup_code",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793745640590,
+      "tag": "0050_emergency_login",
+      "breakpoints": true
     }
   ]
 }

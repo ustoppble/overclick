@@ -7,6 +7,7 @@ import { after } from "next/server";
 import { clearSession, setSession } from "../lib/cookies";
 import { db } from "../lib/db";
 import { emailConfigured, sendEmail } from "../lib/email";
+import { redeemEmergencyLogin } from "../lib/emergency-login";
 import { dict } from "../lib/i18n";
 import { countUsers, ensureWorkspace } from "../lib/instance";
 import { sweepLoginRows } from "../lib/login-housekeeping";
@@ -244,6 +245,23 @@ export async function loginWithCodeAction(
     userId: found.id,
     sessionVersion: found.sessionVersion,
   });
+  redirect("/home");
+}
+
+/**
+ * Signs the server owner in with the emergency link `pnpm emergency-login`
+ * wrote to a file inside the container. The token arrives in the form, read
+ * by the page from the part of the URL after `#`, which no proxy or access log
+ * ever sees. Single use, ten minutes, and it ignores the code sign-in lock.
+ */
+export async function emergencyLoginAction(
+  _prev: AuthState,
+  formData: FormData,
+): Promise<AuthState> {
+  const token = String(formData.get("token") ?? "").trim();
+  const admin = await redeemEmergencyLogin(db(), token);
+  if (!admin) return { error: (await authCopy()).errEmergency };
+  await setSession(admin);
   redirect("/home");
 }
 
