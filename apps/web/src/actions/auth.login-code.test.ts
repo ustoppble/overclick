@@ -5,6 +5,7 @@ import {
   CODE_REQUESTS_PER_HOUR,
   CODE_REQUESTS_PER_ORIGIN_HOUR,
   DEFAULT_LOGIN_CODE_MAX_SENDS_PER_HOUR,
+  MAX_CODE_USER_FAILURES,
   MAX_LOGIN_FAILURES,
   loginCodeSendCap,
 } from "../lib/login-rate-limit";
@@ -593,9 +594,75 @@ describe("signing in with a code sent by email", () => {
 
   });
 
+  describe("the account is told when code sign-in locks", () => {
+    /** `MAX_CODE_USER_FAILURES` wrong codes through the action, a fresh code every five. */
+    async function lockThroughTheAction(email: string, startMs = 0) {
+      const { issueLoginCode } = await import("../lib/login-code");
+      for (let round = 0; round < MAX_CODE_USER_FAILURES / 5; round++) {
+        at(startMs + round * 2 * MINUTE);
+        const issued = await issueLoginCode(world.db, email);
+        const guess = issued ? (issued.code === "000000" ? "111111" : "000000") : "000000";
+        for (let i = 0; i < 5; i++) {
+          // A new minute each time, so the address's own 8-per-15-minutes
+          // budget is not what stops the guessing.
+          await world.db.delete(loginFailure).where(eq(loginFailure.id, `logincode-email:${email}`));
+          await loginWithCodeAction(null, codeForm(email, guess));
+        }
+      }
+      await runAfter();
+    }
+
+    function lockNotices(email: string) {
+      return emailState.sendEmail.mock.calls.filter(
+        ([message]) => message.to === email && /travad/.test(message.subject),
+      );
+    }
+
+    it("emails the account once when the lock starts, never the code, and only after the response", async () => {
+      await lockThroughTheAction(EMAIL);
+
+      const notices = lockNotices(EMAIL);
+      expect(notices).toHaveLength(1);
+      const [message] = notices[0]!;
+      expect(message.text).toContain("1 hora");
+      expect(message.text).not.toMatch(/\b\d{6}\b/);
+    });
+
+    it("sends no second notice for guesses made while the same lock holds", async () => {
+      await lockThroughTheAction(EMAIL);
+      at(10 * MINUTE);
+      for (let i = 0; i < 5; i++) await loginWithCodeAction(null, codeForm(EMAIL, "000000"));
+      await runAfter();
+
+      expect(lockNotices(EMAIL)).toHaveLength(1);
+    });
+
+    it("sends a new notice for a new lock once the hour is over", async () => {
+      await lockThroughTheAction(EMAIL);
+      at(65 * MINUTE);
+      const { issueLoginCode } = await import("../lib/login-code");
+      const issued = await issueLoginCode(world.db, EMAIL);
+      await loginWithCodeAction(
+        null,
+        codeForm(EMAIL, issued!.code === "000000" ? "111111" : "000000"),
+      );
+      await runAfter();
+
+      expect(lockNotices(EMAIL)).toHaveLength(2);
+    });
+
+    it("sends nothing for an address with no account, however many wrong codes it gets", async () => {
+      for (let i = 0; i < 12; i++) {
+        await loginWithCodeAction(null, codeForm("ghost@local.test", "000000"));
+      }
+      await runAfter();
+
+      expect(emailState.sendEmail).not.toHaveBeenCalled();
+    });
+  });
+
   it("answers a locked account's right code the same generic way as a wrong one", async () => {
     const { redeemLoginCode, issueLoginCode } = await import("../lib/login-code");
-    const { MAX_CODE_USER_FAILURES } = await import("../lib/login-rate-limit");
     const wrong = "000000";
     for (let round = 0; round < MAX_CODE_USER_FAILURES / 5; round++) {
       at(round * 2 * MINUTE);

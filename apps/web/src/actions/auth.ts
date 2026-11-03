@@ -17,8 +17,10 @@ import { countUsers, ensureWorkspace } from "../lib/instance";
 import { sweepLoginRows } from "../lib/login-housekeeping";
 import {
   LOGIN_CODE_PATTERN,
+  claimLockNotice,
   issueLoginCode,
   loginCodeEmail,
+  lockNoticeEmail,
   redeemLoginCode,
 } from "../lib/login-code";
 import {
@@ -170,6 +172,18 @@ export async function loginWithCodeAction(
     ? await db().select().from(user).where(eq(user.id, redeemed.userId)).limit(1)
     : [];
   if (!found || !found.active) {
+    // A wrong guess may have just locked the account: its owner is told,
+    // once per lock, after the response, so the answer stays the same.
+    after(async () => {
+      try {
+        const notice = await claimLockNotice(db(), email);
+        if (notice) await sendEmail(lockNoticeEmail(notice.to));
+      } catch (err) {
+        console.error(
+          `[login-code] sending the lock notice failed (${err instanceof Error ? err.name : "unknown"})`,
+        );
+      }
+    });
     return { error: (await authCopy()).errCode };
   }
 

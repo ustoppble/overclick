@@ -2,7 +2,12 @@ import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { loginCode, user } from "@agent-board/db";
 import { and, eq, gt, inArray, isNull, lt, not, sql } from "drizzle-orm";
 import type { McpDatabase } from "../mcp/types";
-import { chargeCodeFailure, codeLoginLocked } from "./login-rate-limit";
+import {
+  chargeCodeFailure,
+  claimLockNoticeRow,
+  codeLoginLockStart,
+  codeLoginLocked,
+} from "./login-rate-limit";
 import { deriveKey } from "./session";
 
 /**
@@ -176,6 +181,40 @@ export async function redeemLoginCode(
     .where(and(eq(loginCode.id, matchId), isNull(loginCode.consumedAt)))
     .returning({ userId: loginCode.userId });
   return consumed ? { userId: consumed.userId } : null;
+}
+
+/**
+ * The address to warn, when the account at `email` is locked out of code
+ * sign-in and nobody has been told about this lock yet; null otherwise. Run
+ * after a failed sign-in, once the response is out, so whether it finds
+ * anything never shows in the response.
+ */
+export async function claimLockNotice(
+  db: McpDatabase,
+  email: string,
+  now: Date = new Date(),
+): Promise<{ to: string } | null> {
+  const [account] = await accountId(db, email);
+  if (!account) return null;
+  const lockStart = await codeLoginLockStart(db, account.id, now);
+  if (!lockStart) return null;
+  return (await claimLockNoticeRow(db, account.id, lockStart)) ? { to: email } : null;
+}
+
+/** The warning a lock sends: what happened, for how long, and what to do. No code in it. */
+export function lockNoticeEmail(to: string) {
+  return {
+    to,
+    subject: "Seu login no overclick foi travado por 1 hora",
+    text: [
+      "Alguém errou o código de acesso da sua conta no overclick 10 vezes,",
+      "então o login por código desta conta ficou travado por 1 hora.",
+      "",
+      "Se foi você, espere a hora passar e peça um código novo.",
+      "Se não foi, alguém conhece o seu e-mail e está tentando entrar: o código",
+      "só chega na sua caixa, então ele não entrou. Avise o admin do board.",
+    ].join("\n"),
+  };
 }
 
 /** The email that carries a code. Portuguese, short: the code and how long it lasts. */

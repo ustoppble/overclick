@@ -358,19 +358,48 @@ describe("login codes", () => {
       expect(await redeemLoginCode(world.db, EMAIL, fresh!.code, at(HOUR + 1000))).toBeNull();
     });
 
-    it("stays locked for a day from the tenth guess, then opens", async () => {
+    it("stays locked for an hour from the tenth guess, then opens", async () => {
       await guess(0, 5);
       await guess(2 * MINUTE, 5);
 
-      // A day after the FIRST guess is still inside a day after the tenth.
-      const early = await issueLoginCode(world.db, EMAIL, at(24 * HOUR + MINUTE));
+      // An hour after the FIRST guess is still inside an hour after the tenth.
+      const early = await issueLoginCode(world.db, EMAIL, at(HOUR + MINUTE));
       expect(
-        await redeemLoginCode(world.db, EMAIL, early!.code, at(24 * HOUR + MINUTE + 1000)),
+        await redeemLoginCode(world.db, EMAIL, early!.code, at(HOUR + MINUTE + 1000)),
       ).toBeNull();
 
-      const later = await issueLoginCode(world.db, EMAIL, at(24 * HOUR + 5 * MINUTE));
+      const later = await issueLoginCode(world.db, EMAIL, at(HOUR + 5 * MINUTE));
       expect(
-        await redeemLoginCode(world.db, EMAIL, later!.code, at(24 * HOUR + 5 * MINUTE + 1000)),
+        await redeemLoginCode(world.db, EMAIL, later!.code, at(HOUR + 5 * MINUTE + 1000)),
+      ).toEqual({ userId });
+    });
+
+    it("locks for another hour at the next wrong guess inside the day, instead of handing out ten more", async () => {
+      await guess(0, 5);
+      await guess(2 * MINUTE, 5);
+
+      // The hour is over; one wrong guess shuts it again.
+      await guess(HOUR + 5 * MINUTE, 1);
+      const relocked = await issueLoginCode(world.db, EMAIL, at(HOUR + 7 * MINUTE));
+      expect(
+        await redeemLoginCode(world.db, EMAIL, relocked!.code, at(HOUR + 7 * MINUTE + 1000)),
+      ).toBeNull();
+
+      const open = await issueLoginCode(world.db, EMAIL, at(2 * HOUR + 10 * MINUTE));
+      expect(
+        await redeemLoginCode(world.db, EMAIL, open!.code, at(2 * HOUR + 10 * MINUTE + 1000)),
+      ).toEqual({ userId });
+    });
+
+    it("does not count guesses made while it is locked, so they cannot stretch the hour", async () => {
+      await guess(0, 5);
+      await guess(2 * MINUTE, 5);
+      // Every one of these lands while the lock holds.
+      for (let i = 0; i < 5; i++) await guess(10 * MINUTE + i * 2 * MINUTE, 5);
+
+      const open = await issueLoginCode(world.db, EMAIL, at(HOUR + 5 * MINUTE));
+      expect(
+        await redeemLoginCode(world.db, EMAIL, open!.code, at(HOUR + 5 * MINUTE + 1000)),
       ).toEqual({ userId });
     });
 

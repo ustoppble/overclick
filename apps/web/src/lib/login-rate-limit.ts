@@ -294,14 +294,44 @@ export async function withinCodeRequestBudget(
  * request, every request — about 25 an hour for any address they know. This
  * bucket belongs to the account (by id, not by the email as typed) and is not
  * reset when a new code goes out: at 10 wrong guesses in 24 hours code
- * sign-in for that account is shut for 24 hours from the tenth. The password
- * keeps working, and the refusal is the same generic one as any wrong code.
+ * sign-in for that account is shut for an hour from the tenth.
+ *
+ * An hour, not a day, because there is no password to fall back on any more:
+ * whoever knows the admin's address could otherwise keep them out for good.
+ * The count still runs for the day, so once the hour is over the next wrong
+ * guess shuts it for another hour instead of handing out ten more — about 33
+ * guesses a day at most, a day restarting at each lock. Guesses made while it
+ * is shut are not counted (`redeemLoginCode` books them on a sink), so they
+ * cannot stretch it. The account is emailed once per lock
+ * (`claimLockNotice`), and the server owner's emergency link ignores it.
+ * The refusal is the same generic one as any wrong code.
  */
 export const CODE_USER_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const CODE_USER_LOCK_MS = 60 * 60 * 1000;
 export const MAX_CODE_USER_FAILURES = 10;
 
 function codeUserScope(userId: string): string {
   return `logincode-user:${userId}`;
+}
+
+/**
+ * When the lock that holds right now on `rowId` started, or null when there is
+ * none. The window restarts at the guess that reaches the cap (see
+ * `chargeCodeFailure`), so its start is when the lock began.
+ */
+export async function lockStartedAt(
+  db: McpDatabase,
+  rowId: string,
+  now: Date = new Date(),
+): Promise<Date | null> {
+  const [row] = await db
+    .select({ count: loginFailure.count, windowStartedAt: loginFailure.windowStartedAt })
+    .from(loginFailure)
+    .where(eq(loginFailure.id, rowId));
+  if (!row || row.count < MAX_CODE_USER_FAILURES) return null;
+  return row.windowStartedAt.getTime() >= now.getTime() - CODE_USER_LOCK_MS
+    ? row.windowStartedAt
+    : null;
 }
 
 /** Whether code sign-in is shut for this account right now. */
@@ -310,25 +340,35 @@ export async function codeLoginLocked(
   userId: string,
   now: Date = new Date(),
 ): Promise<boolean> {
-  const [row] = await db
-    .select({ count: loginFailure.count, windowStartedAt: loginFailure.windowStartedAt })
-    .from(loginFailure)
-    .where(eq(loginFailure.id, codeUserScope(userId)));
-  if (!row) return false;
-  return (
-    row.count >= MAX_CODE_USER_FAILURES &&
-    row.windowStartedAt.getTime() >= now.getTime() - CODE_USER_FAILURE_WINDOW_MS
-  );
+  return (await lockStartedAt(db, codeUserScope(userId), now)) !== null;
+}
+
+/** The start of the lock holding on this account right now, or null. */
+export async function codeLoginLockStart(
+  db: McpDatabase,
+  userId: string,
+  now: Date = new Date(),
+): Promise<Date | null> {
+  return lockStartedAt(db, codeUserScope(userId), now);
 }
 
 /**
  * Counts one wrong guess against the account. The window restarts at the
- * guess that reaches the cap, so the lock lasts a full day from then rather
- * than from whenever the first guess of the day happened.
+ * guess that reaches the cap, and at every one past it, so each of those
+ * starts a lock of its own an hour long.
  */
 export async function chargeCodeFailure(
   db: McpDatabase,
   userId: string,
+  now: Date = new Date(),
+): Promise<void> {
+  await chargeFailureRow(db, codeUserScope(userId), now);
+}
+
+/** `chargeCodeFailure` for any row id: signup codes keep a count of their own. */
+export async function chargeFailureRow(
+  db: McpDatabase,
+  rowId: string,
   now: Date = new Date(),
 ): Promise<void> {
   const floor = new Date(now.getTime() - CODE_USER_FAILURE_WINDOW_MS);
@@ -336,7 +376,7 @@ export async function chargeCodeFailure(
   const nowParam = sql`${now.toISOString()}::timestamptz`;
   await db
     .insert(loginFailure)
-    .values({ id: codeUserScope(userId), count: 1, windowStartedAt: now })
+    .values({ id: rowId, count: 1, windowStartedAt: now })
     .onConflictDoUpdate({
       target: loginFailure.id,
       set: {
@@ -348,4 +388,25 @@ export async function chargeCodeFailure(
           then ${nowParam} else ${loginFailure.windowStartedAt} end`,
       },
     });
+}
+
+/**
+ * Claims the one notice a lock gets: true the first time it is asked for the
+ * lock that started at `lockStart`, false every time after. The row is keyed
+ * by the lock itself, so a new lock gets a notice of its own and two failed
+ * sign-ins finishing at once cannot both send one.
+ */
+export async function claimLockNoticeRow(
+  db: McpDatabase,
+  userId: string,
+  lockStart: Date,
+): Promise<boolean> {
+  const charge = await chargeBudget(
+    db,
+    loginFailure,
+    `logincode-locknotice:${userId}:${lockStart.getTime()}`,
+    1,
+    CODE_USER_FAILURE_WINDOW_MS,
+  );
+  return charge.ok;
 }
