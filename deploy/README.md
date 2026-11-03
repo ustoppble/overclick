@@ -68,9 +68,10 @@ EMAIL_FROM=OverClick <login@your-domain>
 
 `EMAIL_FROM` has to be on a domain verified in your Resend account. Run
 `./deploy/deploy.sh` after setting them so the app container picks them up.
-While either is empty, asking for a code answers that the option is not
-available on this instance and logs one line saying which variables are
-missing; nothing else changes.
+While either is empty the login screen does not offer the code link at all;
+a direct call to the action answers that the option is not available on this
+instance and logs one line saying which variables are missing. Nothing else
+changes.
 
 Codes are stored only as a keyed hash (an HKDF subkey of `AUTH_SECRET`, so
 the session key itself is never used for it), work once, and die after 5 wrong
@@ -89,6 +90,10 @@ nobody gets an email, the answer stays the same neutral one, and the log gets
 one line (`hourly send cap reached`, no address in it) per hour. The cap is a
 kill switch, not a defence: someone asking for codes can use it up and keep
 real people from getting theirs until the hour turns.
+
+**Next step, not done:** put a bot check (Cloudflare Turnstile or a captcha) in
+front of "send me a code". It needs a Cloudflare site key and secret, so it is
+the owner's call; until then the limits above are all there is.
 
 ### Behind a proxy: which address counts as the origin
 
@@ -119,10 +124,6 @@ After a deploy, confirm it holds: a `POST` to the login page with a foreign
 `Origin` header must be refused, and the login form on your own domain must
 still work. Do not "fix" a failing check by widening `allowedOrigins` to
 `*`.
-
-**Next step, not done:** put a bot check (Cloudflare Turnstile or a captcha) in
-front of "send me a code". It needs a Cloudflare site key and secret, so it is
-the owner's call; until then the limits above are all there is.
 
 ## Reverse proxy
 
