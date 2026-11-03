@@ -677,6 +677,19 @@ const en = {
       "This instance already has an admin. Sign in with the existing account.",
     errCreate: "Could not create the account.",
     errCredentials: "Invalid email or password.",
+    /** Sign-in by a code sent by email (OCL login code). The "sent" words
+        are the same whether or not the address has an account. */
+    codeLink: "Sign in with an email code",
+    codeIntro: "We will email you a 6-digit code.",
+    codeSend: "Send code",
+    codeSending: "Sending…",
+    codeSent: (email: string) =>
+      `If ${email} has an account here, a code is on its way. It is valid for 10 minutes.`,
+    code: "Code",
+    codeResend: "Send another code",
+    usePassword: "Sign in with password",
+    errCode: "Invalid or expired code.",
+    errCodeUnavailable: "Sign-in by email code is not available on this instance.",
     /** The invitation page (OCL-222): a person an admin invited sets a password. */
     inviteTitle: "You were invited.",
     inviteSub: (email: string, organization: string) =>
@@ -1282,6 +1295,17 @@ const ptBR: Dict = {
       "Esta instância já tem um admin. Entre com a conta existente.",
     errCreate: "Não foi possível criar a conta.",
     errCredentials: "Email ou senha inválidos.",
+    codeLink: "Entrar com código por e-mail",
+    codeIntro: "Enviamos um código de 6 dígitos para o seu e-mail.",
+    codeSend: "Enviar código",
+    codeSending: "Enviando…",
+    codeSent: (email: string) =>
+      `Se ${email} tiver conta aqui, enviamos um código. Ele vale por 10 minutos.`,
+    code: "Código",
+    codeResend: "Enviar outro código",
+    usePassword: "Entrar com senha",
+    errCode: "Código inválido ou expirado.",
+    errCodeUnavailable: "O login com código por e-mail não está disponível nesta instância.",
     inviteTitle: "Você foi convidado.",
     inviteSub: (email: string, organization: string) =>
       `Defina uma senha para ${email} e entre em ${organization} neste board.`,

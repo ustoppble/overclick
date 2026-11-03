@@ -17,7 +17,8 @@ export type SessionPayload = SessionTokenPayload & {
 // every session, so the code enforces what the operator was told to provide.
 const MIN_SECRET_LENGTH = 32;
 
-function secretKey(): Uint8Array {
+/** Also keys the sign-in code hashes (`login-code.ts`). */
+export function secretKey(): Uint8Array {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < MIN_SECRET_LENGTH) {
     throw new Error(

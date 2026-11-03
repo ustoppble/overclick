@@ -10,11 +10,19 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { clearSession, setSession } from "../lib/cookies";
 import { db } from "../lib/db";
+import { emailConfigured, sendEmail } from "../lib/email";
 import { dict } from "../lib/i18n";
 import { countUsers, ensureWorkspace } from "../lib/instance";
 import {
+  LOGIN_CODE_PATTERN,
+  issueLoginCode,
+  loginCodeEmail,
+  redeemLoginCode,
+} from "../lib/login-code";
+import {
   clearLoginBudget,
   loginOrigin,
+  withinCodeRequestBudget,
   withinLoginBudget,
 } from "../lib/login-rate-limit";
 import {
@@ -24,6 +32,9 @@ import {
 } from "../lib/password";
 
 export type AuthState = { error: string } | null;
+
+/** `sent` is the one answer every address gets, account or not. */
+export type CodeRequestState = { sent: true } | { error: string } | null;
 
 function normalizeEmail(raw: string): string {
   return raw.trim().toLowerCase();
@@ -121,6 +132,80 @@ export async function loginAction(
   );
   if (!found || !found.active || !passwordOk) {
     return { error: (await authCopy()).errCredentials };
+  }
+
+  await clearLoginBudget(db(), email, origin);
+  await setSession({
+    userId: found.id,
+    sessionVersion: found.sessionVersion,
+  });
+  redirect("/home");
+}
+
+/**
+ * Asks for a sign-in code by email. The answer is the same `{ sent: true }`
+ * for an active account, a switched-off one, an address with no account and
+ * an address over its budget: whoever asks learns nothing from it but that,
+ * if the address has an account, a code is on its way.
+ */
+export async function requestLoginCodeAction(
+  _prev: CodeRequestState,
+  formData: FormData,
+): Promise<CodeRequestState> {
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  if (!isValidEmail(email)) {
+    return { error: (await authCopy()).errEmail };
+  }
+
+  // Decided before the address is looked at, so an instance without email
+  // refuses every address with the same words.
+  if (!emailConfigured()) {
+    console.error(
+      "[login-code] RESEND_API_KEY or EMAIL_FROM is not set; sign-in by code is unavailable",
+    );
+    return { error: (await authCopy()).errCodeUnavailable };
+  }
+
+  const origin = await loginOrigin();
+  if (await withinCodeRequestBudget(db(), email, origin)) {
+    const issued = await issueLoginCode(db(), email);
+    if (issued) {
+      // Not awaited: the round trip to Resend is the one cost only a real
+      // account pays, and waiting for it would hand back, as a delay, the
+      // very answer the words above refuse to give. sendEmail never throws.
+      void sendEmail(loginCodeEmail(email, issued.code));
+    }
+  }
+  return { sent: true };
+}
+
+/**
+ * Signs in with an emailed code. Same budget, same generic refusal and the
+ * same `setSession` as `loginAction`: the cookie it leaves is the password
+ * sign-in's, byte for byte.
+ */
+export async function loginWithCodeAction(
+  _prev: AuthState,
+  formData: FormData,
+): Promise<AuthState> {
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  const code = String(formData.get("code") ?? "").replace(/\s+/g, "");
+
+  if (!isValidEmail(email) || !LOGIN_CODE_PATTERN.test(code)) {
+    return { error: (await authCopy()).errCode };
+  }
+
+  const origin = await loginOrigin();
+  if (!(await withinLoginBudget(db(), email, origin))) {
+    return { error: (await authCopy()).errCode };
+  }
+
+  const redeemed = await redeemLoginCode(db(), email, code);
+  const [found] = redeemed
+    ? await db().select().from(user).where(eq(user.id, redeemed.userId)).limit(1)
+    : [];
+  if (!found || !found.active) {
+    return { error: (await authCopy()).errCode };
   }
 
   await clearLoginBudget(db(), email, origin);

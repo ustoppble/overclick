@@ -1,4 +1,4 @@
-import { loginFailure } from "@agent-board/db";
+import { loginCodeRequest, loginFailure } from "@agent-board/db";
 import { headers } from "next/headers";
 import { clearBudget, spendBudget } from "./attempt-budget";
 import type { McpDatabase } from "../mcp/types";
@@ -104,4 +104,65 @@ export async function clearLoginBudget(
   if (origin) {
     await clearBudget(db, loginFailure, loginFailureScope("origin", origin));
   }
+}
+
+/**
+ * Sign-in codes one address may ask for: one a minute, five an hour. Every
+ * ask costs an email the owner of the address did not necessarily request,
+ * so the cap is about their inbox as much as about guessing. Like the login
+ * budget, it is charged to the email as submitted, before anything looks at
+ * whether the account exists.
+ */
+export const CODE_REQUEST_MINUTE_MS = 60 * 1000;
+export const CODE_REQUESTS_PER_MINUTE = 1;
+export const CODE_REQUEST_HOUR_MS = 60 * 60 * 1000;
+export const CODE_REQUESTS_PER_HOUR = 5;
+/**
+ * Asks one origin may make in an hour across every address — wider than one
+ * address's five, since a team behind one NAT signs in from one origin.
+ * Only counted where `loginOrigin` can tell an origin at all.
+ */
+export const CODE_REQUESTS_PER_ORIGIN_HOUR = 20;
+
+function codeRequestScope(
+  kind: "minute-email" | "hour-email" | "hour-origin",
+  value: string,
+): string {
+  return `code-${kind}:${value}`;
+}
+
+/**
+ * Charges one code request to every bucket and says whether a code may be
+ * issued. All buckets are always spent, for the same reason as in
+ * `withinLoginBudget`.
+ */
+export async function withinCodeRequestBudget(
+  db: McpDatabase,
+  email: string,
+  origin: string | null,
+): Promise<boolean> {
+  const minuteOk = await spendBudget(
+    db,
+    loginCodeRequest,
+    codeRequestScope("minute-email", email),
+    CODE_REQUESTS_PER_MINUTE,
+    CODE_REQUEST_MINUTE_MS,
+  );
+  const hourOk = await spendBudget(
+    db,
+    loginCodeRequest,
+    codeRequestScope("hour-email", email),
+    CODE_REQUESTS_PER_HOUR,
+    CODE_REQUEST_HOUR_MS,
+  );
+  const originOk = origin
+    ? await spendBudget(
+        db,
+        loginCodeRequest,
+        codeRequestScope("hour-origin", origin),
+        CODE_REQUESTS_PER_ORIGIN_HOUR,
+        CODE_REQUEST_HOUR_MS,
+      )
+    : true;
+  return minuteOk && hourOk && originOk;
 }
