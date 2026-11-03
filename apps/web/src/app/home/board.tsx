@@ -34,6 +34,7 @@ import { Markdown } from "../../components/markdown";
 import { Icon, type IconName } from "../../components/icon";
 import { BoardMobileList } from "./board-mobile-list";
 import { DetailSkeleton } from "./detail-skeleton";
+import { OlderButton } from "./older-button";
 
 export type BoardMissionOption = {
   id: string;
@@ -1586,16 +1587,14 @@ export function Board({
     const left = olderLeft[status];
     if (!left || !onShowOlder) return null;
     return (
-      <button
-        type="button"
-        className="btn-ghost col-more"
+      <OlderButton
+        left={left}
+        pageSize={BOARD_PAGE_SIZE}
+        loading={loadingOlder === status}
         disabled={loadingOlder !== null}
         onClick={() => onShowOlder(status)}
-      >
-        {loadingOlder === status
-          ? t.board.loadingOlder
-          : t.board.showOlder(Math.min(left, BOARD_PAGE_SIZE))}
-      </button>
+        t={t}
+      />
     );
   };
 
@@ -1631,13 +1630,10 @@ export function Board({
                   size={14}
                   className="col-mark"
                 />
-                {colLabel[status]}{" "}
+                <span className="col-title" title={colLabel[status]}>
+                  {colLabel[status]}
+                </span>
                 <span className="count">{headCount(status, list)}</span>
-                {period !== "all" && olderLeft[status] ? (
-                  <span className="older-hint">
-                    {t.board.olderBeyondPeriod(olderLeft[status])}
-                  </span>
-                ) : null}
               </div>
               <div className="col">
                 {/* The column reads oldest first, so the older cards land on

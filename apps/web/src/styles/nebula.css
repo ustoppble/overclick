@@ -1396,19 +1396,21 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 /* The phone list is in the markup at every width and waits for its media
    query. Both layouts render the same cards, so only one may ever be on. */
 .nb .board-mobile { display: none; }
+/* One line, at every width: the mark, the title and the count. The title is
+   the one that gives way (an ellipsis, the whole word in its tooltip), never
+   the count and never into a second line, so the five heads are the same
+   height and the cards below start on one line. What lies past the period is
+   the number inside the "show older" button under the head, not a note here. */
 .nb .col-head {
-  display: flex; align-items: baseline; gap: var(--nebula-space-2);
-  padding: 2px 6px 10px;
+  display: flex; align-items: center; gap: var(--nebula-space-2);
+  padding: 2px 6px 10px; line-height: 16px; white-space: nowrap;
   font-family: var(--nebula-font-label); font-size: 11.5px;
   letter-spacing: var(--nebula-tracking-wide);
   text-transform: uppercase; color: var(--nebula-text-secondary);
 }
-.nb .col-head .count { color: var(--nebula-text-tertiary); }
-/* What lies past the period: said once, quietly, beside the count. */
-.nb .col-head .older-hint {
-  color: var(--nebula-text-tertiary); opacity: .7; font-size: 11px;
-  letter-spacing: 0.02em; text-transform: none; margin-left: auto;
-}
+.nb .col-head .col-mark { flex: none; }
+.nb .col-head .col-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb .col-head .count { flex: none; color: var(--nebula-text-tertiary); white-space: nowrap; }
 .nb .col { display: flex; flex-direction: column; gap: var(--nebula-space-3); min-height: 300px; padding-bottom: 48px; }
 
 .nb .empty-col {
@@ -2858,6 +2860,14 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
     cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
   .nb .ml-row:last-child { border-bottom: 0; }
+  /* the older cards' count is the list's first row, the way a card is one: it
+     spans the list and keeps the 44px, instead of sitting in its corner */
+  .nb .board-mobile .col .col-more {
+    display: flex; width: 100%; height: 44px; padding: 0 10px;
+    border: 0; border-bottom: 1px solid rgb(var(--oc-white-rgb) / 0.08);
+    border-radius: 0; background: transparent;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
   /* AGB-67: a hairline alone made every row look like the next one, so
      finding where a card ended was counting, not scanning. The zebra is the
      separation that costs no height at all: the row keeps its 44px and the
@@ -3895,5 +3905,17 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .alt-path[open] summary { color: var(--nebula-text-primary); margin-bottom: 10px; }
 
-/* The window's "show older" on a finished column (OCL board window). */
-.nb .col .col-more { align-self: center; }
+/* The window's "show older" at the top of a column (OCL board window): the
+   Control (32px, 1px border, 8px radius) across its column, one line, its
+   label the number of cards past the window. Fixed, not as wide as its label,
+   so it sits at the same place and size in all five columns whatever the
+   number, and a long one elides instead of running into the next column. */
+.nb .col .col-more {
+  align-self: stretch; justify-content: center; text-align: center;
+  height: 32px; min-width: 0; padding: 0 10px; box-sizing: border-box;
+  border-radius: var(--oc-radius-control); white-space: nowrap;
+  font-family: var(--nebula-font-label); font-size: 11px; line-height: 1;
+  color: var(--nebula-text-tertiary);
+}
+.nb .col .col-more > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb .col .col-more:hover:not(:disabled) { color: var(--nebula-text-primary); }
