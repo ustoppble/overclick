@@ -11,6 +11,9 @@ import type { ColumnStatus } from "./board-columns";
 /** One "show older" click. */
 export const BOARD_PAGE_SIZE = 50;
 
+/** Where an older page starts: right below this card's change. */
+export type OlderCursor = { updatedAt: string; id: string };
+
 type WindowCard = {
   id: string;
   status: ColumnStatus;
@@ -48,17 +51,33 @@ export function addExtraCards<T extends WindowCard>(
 }
 
 /**
- * Where the next page of a column starts: its oldest change on the board.
- * Everything newer than it is already held — the window up to this week, the
- * pages before this one below it.
+ * Where the first "show older" page of a column starts: the oldest change among
+ * the cards the window itself handed over. A card the page added for a link
+ * (?card=) rides with the window but is older than it, and a search hit lives
+ * in the extras; neither says what the window holds, so neither counts.
  */
-export function olderCursor(
-  cards: readonly WindowCard[],
+export function windowCursor(
+  windowCards: readonly WindowCard[],
   status: ColumnStatus,
-): { updatedAt: string; id: string } | null {
+  since: string,
+): OlderCursor | null {
+  return oldestChange(
+    windowCards.filter((card) => card.status === status && card.updatedAt >= since),
+  );
+}
+
+/**
+ * Where the next page starts once the server answered one: the oldest change
+ * of the page it returned. This is the only thing that moves the cursor past
+ * the window.
+ */
+export function pageCursor(page: readonly WindowCard[]): OlderCursor | null {
+  return oldestChange(page);
+}
+
+function oldestChange(cards: readonly WindowCard[]): OlderCursor | null {
   let oldest: WindowCard | null = null;
   for (const card of cards) {
-    if (card.status !== status) continue;
     if (
       !oldest ||
       card.updatedAt < oldest.updatedAt ||

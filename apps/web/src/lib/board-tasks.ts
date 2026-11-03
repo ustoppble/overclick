@@ -20,7 +20,7 @@ import {
   type BoardFilter,
 } from "./board-filter";
 import { COLUMN_STATUSES, type ColumnCounts } from "./board-columns";
-import { BOARD_PAGE_SIZE } from "./board-window";
+import { BOARD_PAGE_SIZE, type OlderCursor } from "./board-window";
 import {
   canSeeMission,
   canSeeTask,
@@ -54,8 +54,7 @@ export function boardWindowStart(now: Date): Date {
   return new Date(now.getTime() - BOARD_WINDOW_DAYS * 86_400_000);
 }
 
-/** Where an older page starts: right below the oldest card already loaded. */
-export type OlderCursor = { updatedAt: string; id: string };
+export type { OlderCursor };
 
 type BoardProject = { id: string; organizationId: string };
 

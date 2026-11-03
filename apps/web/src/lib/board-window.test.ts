@@ -3,8 +3,9 @@ import {
   addExtraCards,
   columnTotal,
   mergeBoardCards,
-  olderCursor,
+  pageCursor,
   searchWithServerHits,
+  windowCursor,
 } from "./board-window";
 
 type Card = {
@@ -48,17 +49,44 @@ describe("board window, client side", () => {
     expect(next.map((c) => c.id)).toEqual(["a", "b"]);
   });
 
-  it("starts the next page below the column's oldest change", () => {
+  it("starts the first page below the oldest change of the window", () => {
+    const since = "2026-10-03T00:00:00.000Z";
     const cards = [
       card("v1", "validado", 10),
       card("v2", "validado", 4),
       card("o1", "aberto", 1),
     ];
-    expect(olderCursor(cards, "validado")).toEqual({
+    expect(windowCursor(cards, "validado", since)).toEqual({
       updatedAt: "2026-10-04T00:00:00.000Z",
       id: "v2",
     });
-    expect(olderCursor(cards, "descartado")).toBeNull();
+    expect(windowCursor(cards, "descartado", since)).toBeNull();
+  });
+
+  it("does not let a search hit or a linked card pull the cursor past the window", () => {
+    const since = "2026-10-23T00:00:00.000Z";
+    const windowCards = [
+      card("v-new", "validado", 30),
+      card("v-edge", "validado", 25),
+      // ?card= of a three-month-old card rides along with the window.
+      card("v-linked", "validado", 2),
+    ];
+    // A search hit lives in the extras, which never reach the cursor.
+    const cursor = windowCursor(windowCards, "validado", since);
+    expect(cursor).toEqual({ updatedAt: "2026-10-25T00:00:00.000Z", id: "v-edge" });
+  });
+
+  it("moves the cursor only with the page the server returned", () => {
+    const page = [
+      card("p1", "validado", 20),
+      card("p2", "validado", 18),
+      card("p3", "validado", 16),
+    ];
+    expect(pageCursor(page)).toEqual({
+      updatedAt: "2026-10-16T00:00:00.000Z",
+      id: "p3",
+    });
+    expect(pageCursor([])).toBeNull();
   });
 
   it("shows a server search hit the local words did not match", () => {

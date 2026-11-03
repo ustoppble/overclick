@@ -11,6 +11,7 @@ import {
 } from "../../lib/board-filter";
 import { toBoardCards } from "../../lib/board-card";
 import {
+  boardWindowStart,
   countBoardColumns,
   findBoardTaskByShortId,
   loadBoardTasks,
@@ -232,7 +233,8 @@ export default async function HomePage({
   const projectIds = projects.map((item) => item.id);
   // The window, not the whole history (OCL): every live card, and the
   // finished ones that changed this week. The rest come in on demand.
-  const rows = await loadBoardTasks(db(), projectIds, principal);
+  const windowNow = new Date();
+  const rows = await loadBoardTasks(db(), projectIds, principal, { now: windowNow });
   // A link to one card (?card=OCL-12) opens it even when the window left it
   // out. Out of scope reads as no card, the same as an id that matches none.
   const params = await searchParams;
@@ -322,6 +324,7 @@ export default async function HomePage({
         initialTotals={initialTotals}
         columnCounts={columnCounts}
         openCardId={linkedRow?.id ?? null}
+        windowSince={boardWindowStart(windowNow).toISOString()}
       />
 
       <div className="nebula-glass-fade viewport-fade" aria-hidden="true" />

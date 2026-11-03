@@ -33,7 +33,9 @@ import { subscribeToBoardRefresh } from "../../lib/board-refresh";
 import {
   addExtraCards,
   mergeBoardCards,
-  olderCursor,
+  pageCursor,
+  windowCursor,
+  type OlderCursor,
   searchWithServerHits,
 } from "../../lib/board-window";
 import type { BoardTotals } from "../../lib/board-totals";
@@ -240,6 +242,7 @@ export function HomeShell({
   initialTotals,
   columnCounts,
   openCardId,
+  windowSince,
 }: {
   lang: string;
   organizations: BoardOrganizationOption[];
@@ -254,6 +257,8 @@ export function HomeShell({
   columnCounts: ColumnCounts;
   /** The card a link asked to open, already among the cards. */
   openCardId: string | null;
+  /** Where the window starts: the finished cards older than this are not in `cards`. */
+  windowSince: string;
 }) {
   const router = useRouter();
   const t = dict(lang);
@@ -286,6 +291,13 @@ export function HomeShell({
   }, [initialFilter, columnCounts]);
   // A column whose last page said "nothing more", for this filter.
   const [exhausted, setExhausted] = useState<Set<string>>(() => new Set());
+  // Where the next "show older" page of a column starts, per filter. It is
+  // born from the window and moves only with what loadOlder returns: a search
+  // hit or a linked card is older than the window and says nothing about what
+  // lies between.
+  const [pagedCursors, setPagedCursors] = useState<Map<string, OlderCursor>>(
+    () => new Map(),
+  );
   const [loadingOlder, setLoadingOlder] = useState<ColumnStatus | null>(null);
   const [serverHits, setServerHits] = useState<{
     query: string;
@@ -438,14 +450,17 @@ export function HomeShell({
   function showOlder(status: ColumnStatus) {
     if (loadingOlder) return;
     const key = `${filterKey}|${status}`;
+    const before =
+      pagedCursors.get(key) ??
+      windowCursor(filterBoardCards(windowCards, filter), status, windowSince);
     setLoadingOlder(status);
-    void loadOlderBoardCardsAction({
-      status,
-      filter,
-      before: olderCursor(inFilter, status),
-    })
+    void loadOlderBoardCardsAction({ status, filter, before })
       .then((page) => {
         setExtraCards((current) => addExtraCards(current, page.cards));
+        const next = pageCursor(page.cards);
+        if (next) {
+          setPagedCursors((current) => new Map(current).set(key, next));
+        }
         if (!page.hasMore) {
           setExhausted((current) => new Set(current).add(key));
         }
