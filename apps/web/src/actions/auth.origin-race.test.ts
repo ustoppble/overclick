@@ -1,7 +1,6 @@
 import { loginFailure, user } from "@agent-board/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_LOGIN_FAILURES } from "../lib/login-rate-limit";
-import { hashPassword, verifyPassword } from "../lib/password";
 import { issueLoginCode, redeemLoginCode } from "../lib/login-code";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
 
@@ -12,12 +11,8 @@ vi.mock("../lib/db", () => ({
   getDatabaseUrl: () => "pglite://test",
 }));
 
-// Both are the real functions, only counted: a guess that reaches either one
-// is a guess the origin's budget let through.
-vi.mock("../lib/password", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../lib/password")>();
-  return { ...actual, verifyPassword: vi.fn(actual.verifyPassword) };
-});
+// The real function, only counted: a guess that reaches it is a guess the
+// origin's budget let through.
 
 vi.mock("../lib/login-code", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/login-code")>();
@@ -33,16 +28,9 @@ vi.mock("next/headers", () => ({
 
 vi.mock("next/server", () => ({ after: () => undefined }));
 
-const { loginAction, loginWithCodeAction } = await import("./auth");
+const { loginWithCodeAction } = await import("./auth");
 
 const BURST = 30;
-
-function passwordForm(email: string, password: string): FormData {
-  const form = new FormData();
-  form.set("email", email);
-  form.set("password", password);
-  return form;
-}
 
 function codeForm(email: string, code: string): FormData {
   const form = new FormData();
@@ -62,10 +50,7 @@ describe("a parallel burst from one origin, one address per guess", () => {
     process.env.AUTH_SECRET = "s".repeat(32);
     process.env.OVERCLICK_TRUSTED_PROXY = "1";
     world = await createTestWorld();
-    await world.db
-      .insert(user)
-      .values({ email: "real@local.test", passwordHash: await hashPassword("right-one-123") });
-    vi.mocked(verifyPassword).mockClear();
+    await world.db.insert(user).values({ email: "real@local.test" });
     vi.mocked(redeemLoginCode).mockClear();
   });
 
@@ -73,16 +58,6 @@ describe("a parallel burst from one origin, one address per guess", () => {
     if (world) await closeTestWorld(world);
     delete process.env.AUTH_SECRET;
     delete process.env.OVERCLICK_TRUSTED_PROXY;
-  });
-
-  it("lets at most the failure budget of wrong passwords reach verification", async () => {
-    await Promise.all(
-      Array.from({ length: BURST }, (_, i) =>
-        loginAction(null, passwordForm(`ghost${i}@local.test`, "nope-nope")),
-      ),
-    );
-
-    expect(verifyPassword).toHaveBeenCalledTimes(MAX_LOGIN_FAILURES);
   });
 
   it("lets at most the failure budget of wrong codes reach verification", async () => {
@@ -97,37 +72,34 @@ describe("a parallel burst from one origin, one address per guess", () => {
 
   it("does not charge the origin for a guess turned away by the address's own budget", async () => {
     await world.db.insert(loginFailure).values({
-      id: "login-email:real@local.test",
+      id: "logincode-email:real@local.test",
       count: MAX_LOGIN_FAILURES,
       windowStartedAt: new Date(),
     });
 
     for (let i = 0; i < 5; i++) {
-      await loginAction(null, passwordForm("real@local.test", "nope-nope"));
+      await loginWithCodeAction(null, codeForm("real@local.test", "123456"));
     }
 
-    expect(verifyPassword).not.toHaveBeenCalled();
+    expect(redeemLoginCode).not.toHaveBeenCalled();
     const origin = (await world.db.select().from(loginFailure)).find(
-      (row) => row.id === "login-origin:198.51.100.7",
+      (row) => row.id === "logincode-origin:198.51.100.7",
     );
     expect(origin?.count ?? 0).toBe(0);
   });
 });
 
-const ORIGIN_PASSWORD = "login-origin:198.51.100.7";
 const ORIGIN_CODE = "logincode-origin:198.51.100.7";
-const PASSWORD = "right-one-123";
 
 async function originCount(id: string): Promise<number> {
   const rows = await world.db.select().from(loginFailure);
   return rows.find((row) => row.id === id)?.count ?? 0;
 }
 
-/** `n` accounts that all sign in with `PASSWORD`, one address each. */
+/** `n` accounts, one address each. */
 async function seedAccounts(n: number): Promise<string[]> {
-  const passwordHash = await hashPassword(PASSWORD);
   const emails = Array.from({ length: n }, (_, i) => `ok${i}@local.test`);
-  await world.db.insert(user).values(emails.map((email) => ({ email, passwordHash })));
+  await world.db.insert(user).values(emails.map((email) => ({ email })));
   return emails;
 }
 
@@ -168,20 +140,6 @@ describe.each([12, 30])("a parallel burst of %i right sign-ins from one origin",
     delete process.env.OVERCLICK_TRUSTED_PROXY;
   });
 
-  it("leaves the origin's password budget untouched", async () => {
-    const emails = await seedAccounts(burst);
-    const answers = await Promise.all(
-      emails.map((email) => loginAction(null, passwordForm(email, PASSWORD))),
-    );
-
-    // The budget is what bounds how many guesses are in flight at once.
-    expect(signedIn(answers)).toBeGreaterThanOrEqual(MAX_LOGIN_FAILURES);
-    expect(await originCount(ORIGIN_PASSWORD)).toBe(0);
-    // And nobody is shut out afterwards.
-    const [again] = await Promise.all([loginAction(null, passwordForm(emails[0]!, PASSWORD))]);
-    expect(again).toBeUndefined();
-  });
-
   it("leaves the origin's code budget untouched", async () => {
     // One account more than the burst, kept out of it: the one to sign in
     // with afterwards.
@@ -191,8 +149,10 @@ describe.each([12, 30])("a parallel burst of %i right sign-ins from one origin",
       emails.map((email, i) => loginWithCodeAction(null, codeForm(email, codes[i + 1]!))),
     );
 
+    // The budget is what bounds how many guesses are in flight at once.
     expect(signedIn(answers)).toBeGreaterThanOrEqual(MAX_LOGIN_FAILURES);
     expect(await originCount(ORIGIN_CODE)).toBe(0);
+    // And nobody is shut out afterwards.
     expect(await loginWithCodeAction(null, codeForm(afterwards!, codes[0]!))).toBeUndefined();
   });
 });
@@ -208,15 +168,6 @@ describe("right sign-ins from one origin, one after the other", () => {
     if (world) await closeTestWorld(world);
     delete process.env.AUTH_SECRET;
     delete process.env.OVERCLICK_TRUSTED_PROXY;
-  });
-
-  it("never run out of password budget, however many there are", async () => {
-    const emails = await seedAccounts(14);
-    const answers: Array<{ error: string } | null | undefined> = [];
-    for (const email of emails) answers.push(await loginAction(null, passwordForm(email, PASSWORD)));
-
-    expect(signedIn(answers)).toBe(14);
-    expect(await originCount(ORIGIN_PASSWORD)).toBe(0);
   });
 
   it("never run out of code budget, however many there are", async () => {
@@ -245,18 +196,6 @@ describe("what a right sign-in gives back", () => {
     delete process.env.OVERCLICK_TRUSTED_PROXY;
   });
 
-  it("is its own charge on the password budget, never the wrong guesses before it", async () => {
-    const [email] = await seedAccounts(1);
-    for (let i = 0; i < 3; i++) {
-      await loginAction(null, passwordForm(`ghost${i}@local.test`, "nope-nope"));
-    }
-    expect(await originCount(ORIGIN_PASSWORD)).toBe(3);
-
-    expect(await loginAction(null, passwordForm(email!, PASSWORD))).toBeUndefined();
-
-    expect(await originCount(ORIGIN_PASSWORD)).toBe(3);
-  });
-
   it("is its own charge on the code budget, never the wrong guesses before it", async () => {
     const [email] = await seedAccounts(1);
     const [code] = await seedCodes([email!]);
@@ -271,16 +210,20 @@ describe("what a right sign-in gives back", () => {
   });
 
   it("does not let right sign-ins wipe the wrong ones: eight failures still lock, then none gets in", async () => {
-    const emails = await seedAccounts(3);
+    // A fresh account and code for every right sign-in, so nothing but the
+    // origin's count stands between each one and the board.
+    const emails = await seedAccounts(MAX_LOGIN_FAILURES + 1);
+    const codes = await seedCodes(emails);
     for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
-      await loginAction(null, passwordForm(`ghost${i}@local.test`, "nope-nope"));
-      await loginAction(null, passwordForm(emails[i % 3]!, PASSWORD));
+      await loginWithCodeAction(null, codeForm(`ghost${i}@local.test`, "123456"));
+      await loginWithCodeAction(null, codeForm(emails[i]!, codes[i]!));
     }
-    vi.mocked(verifyPassword).mockClear();
+    vi.mocked(redeemLoginCode).mockClear();
 
-    expect(await loginAction(null, passwordForm(emails[0]!, PASSWORD))).toEqual({
+    const last = MAX_LOGIN_FAILURES;
+    expect(await loginWithCodeAction(null, codeForm(emails[last]!, codes[last]!))).toEqual({
       error: expect.any(String),
     });
-    expect(verifyPassword).not.toHaveBeenCalled();
+    expect(redeemLoginCode).not.toHaveBeenCalled();
   });
 });

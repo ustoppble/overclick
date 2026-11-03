@@ -8,7 +8,7 @@ import {
   MAX_LOGIN_FAILURES,
   loginCodeSendCap,
 } from "../lib/login-rate-limit";
-import { hashPassword } from "../lib/password";
+import { setSession } from "../lib/cookies";
 import { SESSION_COOKIE } from "../lib/session";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
 
@@ -61,7 +61,7 @@ vi.mock("next/server", () => ({
 }));
 
 const actions = await import("./auth");
-const { loginAction, loginWithCodeAction } = actions;
+const { loginWithCodeAction } = actions;
 
 /** Runs, in order, what the action handed to `after`. */
 async function runAfter(): Promise<void> {
@@ -80,7 +80,6 @@ const requestLoginCodeAction: typeof actions.requestLoginCodeAction = async (
   return answer;
 };
 
-const PASSWORD = "correct-horse-battery";
 const EMAIL = "person@local.test";
 const T0 = new Date("2026-11-03T12:00:00.000Z");
 const MINUTE = 60 * 1000;
@@ -95,13 +94,6 @@ function codeForm(email: string, code: string): FormData {
   const form = new FormData();
   form.set("email", email);
   form.set("code", code);
-  return form;
-}
-
-function passwordForm(email: string, password: string): FormData {
-  const form = new FormData();
-  form.set("email", email);
-  form.set("password", password);
   return form;
 }
 
@@ -132,13 +124,9 @@ describe("signing in with a code sent by email", () => {
     delete process.env.OVERCLICK_TRUSTED_PROXY;
     requestState.headers = {};
     world = await createTestWorld();
-    const passwordHash = await hashPassword(PASSWORD);
     const [row] = await world.db
       .insert(user)
-      .values([
-        { email: EMAIL, passwordHash },
-        { email: "off@local.test", passwordHash, active: false },
-      ])
+      .values([{ email: EMAIL }, { email: "off@local.test", active: false }])
       .returning({ id: user.id });
     userId = row!.id;
     emailState.configured = true;
@@ -243,7 +231,7 @@ describe("signing in with a code sent by email", () => {
       for (let i = 0; i <= CODE_REQUESTS_PER_ORIGIN_HOUR; i++) {
         const email = `p${i}@local.test`;
         emails.push(email);
-        await world.db.insert(user).values({ email, passwordHash: "x" });
+        await world.db.insert(user).values({ email });
       }
 
       for (const email of emails) {
@@ -292,7 +280,7 @@ describe("signing in with a code sent by email", () => {
       async function addAccounts(count: number): Promise<string[]> {
         const emails = Array.from({ length: count }, (_, i) => `g${i}@local.test`);
         for (const email of emails) {
-          await world.db.insert(user).values({ email, passwordHash: "x" });
+          await world.db.insert(user).values({ email });
         }
         return emails;
       }
@@ -407,11 +395,10 @@ describe("signing in with a code sent by email", () => {
   });
 
   describe("entering the code", () => {
-    it("signs in with the exact same cookie the password sign-in sets", async () => {
-      await loginAction(null, passwordForm(EMAIL, PASSWORD));
-      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
+    it("signs in with the exact cookie setSession writes for the account", async () => {
+      await setSession({ userId, sessionVersion: 1 });
       expect(requestState.cookieSet).toHaveBeenCalledTimes(1);
-      const passwordCookie = requestState.cookieSet.mock.calls[0];
+      const sessionCookie = requestState.cookieSet.mock.calls[0];
 
       await requestLoginCodeAction(null, emailForm(EMAIL));
       await loginWithCodeAction(null, codeForm(EMAIL, lastSentCode()));
@@ -421,8 +408,8 @@ describe("signing in with a code sent by email", () => {
       const codeCookie = requestState.cookieSet.mock.calls[1];
       expect(codeCookie?.[0]).toBe(SESSION_COOKIE);
       // Same clock, same user, same session version: the signed token and
-      // every cookie option are byte for byte the password sign-in's.
-      expect(codeCookie).toEqual(passwordCookie);
+      // every cookie option are byte for byte the ones every session gets.
+      expect(codeCookie).toEqual(sessionCookie);
     });
 
     it("answers a wrong code, an unknown address and a malformed code with the same words, and sets no cookie", async () => {
@@ -548,29 +535,6 @@ describe("signing in with a code sent by email", () => {
   });
 
   describe("budgets", () => {
-    it("keeps a spent password budget from touching code sign-in", async () => {
-      for (let i = 0; i < MAX_LOGIN_FAILURES + 2; i++) {
-        await loginAction(null, passwordForm(EMAIL, "not-the-password"));
-      }
-      await requestLoginCodeAction(null, emailForm(EMAIL));
-
-      await loginWithCodeAction(null, codeForm(EMAIL, lastSentCode()));
-
-      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
-      expect(requestState.cookieSet).toHaveBeenCalledTimes(1);
-    });
-
-    it("keeps a spent code budget from touching password sign-in", async () => {
-      for (let i = 0; i < MAX_LOGIN_FAILURES + 2; i++) {
-        await loginWithCodeAction(null, codeForm(EMAIL, "123456"));
-      }
-
-      await loginAction(null, passwordForm(EMAIL, PASSWORD));
-
-      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
-      expect(requestState.cookieSet).toHaveBeenCalledTimes(1);
-    });
-
     async function originRows(): Promise<{ id: string; count: number }[]> {
       const rows = await world.db.select().from(loginFailure);
       return rows.filter((row) => row.id.includes("origin:198.51.100.7"));
@@ -580,28 +544,6 @@ describe("signing in with a code sent by email", () => {
       beforeEach(() => {
         process.env.OVERCLICK_TRUSTED_PROXY = "1";
         requestState.headers = { "x-forwarded-for": "198.51.100.7" };
-      });
-
-      it("lets more than the failure budget of correct password sign-ins through from one origin", async () => {
-        for (let i = 0; i < MAX_LOGIN_FAILURES + 4; i++) {
-          redirectSpy.mockClear();
-          const answer = await loginAction(null, passwordForm(EMAIL, PASSWORD));
-          expect(answer?.error).toBeUndefined();
-          expect(redirectSpy).toHaveBeenCalledWith("/home");
-        }
-        expect(await originRows()).toHaveLength(0);
-      });
-
-      it("locks an origin after as many wrong passwords as the budget, for a correct one too", async () => {
-        for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
-          await loginAction(null, passwordForm(`ghost${i}@local.test`, "nope-nope"));
-        }
-
-        const refused = await loginAction(null, passwordForm(EMAIL, PASSWORD));
-
-        expect(refused?.error).toBeTruthy();
-        expect(redirectSpy).not.toHaveBeenCalled();
-        expect(requestState.cookieSet).not.toHaveBeenCalled();
       });
 
       it("lets more than the failure budget of correct code sign-ins through from one origin", async () => {
@@ -649,24 +591,9 @@ describe("signing in with a code sent by email", () => {
       expect(after).toBeGreaterThanOrEqual(before);
     });
 
-    it("does not let a successful password sign-in wipe what its origin has spent", async () => {
-      process.env.OVERCLICK_TRUSTED_PROXY = "1";
-      requestState.headers = { "x-forwarded-for": "198.51.100.7" };
-      for (let i = 0; i < 5; i++) {
-        await loginAction(null, passwordForm(`ghost${i}@local.test`, "nope-nope"));
-      }
-      const before = (await originRows()).reduce((sum, row) => sum + row.count, 0);
-      expect(before).toBeGreaterThanOrEqual(5);
-
-      await loginAction(null, passwordForm(EMAIL, PASSWORD));
-      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
-
-      const after = (await originRows()).reduce((sum, row) => sum + row.count, 0);
-      expect(after).toBeGreaterThanOrEqual(before);
-    });
   });
 
-  it("keeps the password sign-in working while code sign-in is locked for the account, and answers the code the same generic way", async () => {
+  it("answers a locked account's right code the same generic way as a wrong one", async () => {
     const { redeemLoginCode, issueLoginCode } = await import("../lib/login-code");
     const { MAX_CODE_USER_FAILURES } = await import("../lib/login-rate-limit");
     const wrong = "000000";
@@ -684,18 +611,6 @@ describe("signing in with a code sent by email", () => {
     expect(refused?.error).toBeTruthy();
     expect(refused).toEqual(wrongCodeAnswer);
     expect(requestState.cookieSet).not.toHaveBeenCalled();
-
-    await loginAction(null, passwordForm(EMAIL, PASSWORD));
-    expect(redirectSpy).toHaveBeenCalledWith("/home");
-    expect(requestState.cookieSet).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps the password sign-in working", async () => {
-    const wrong = await loginAction(null, passwordForm(EMAIL, "not-the-password"));
-    expect(wrong?.error).toBeTruthy();
-
-    await loginAction(null, passwordForm(EMAIL, PASSWORD));
-    expect(redirectSpy).toHaveBeenCalledWith("/home");
-    expect(requestState.cookieSet).toHaveBeenCalledTimes(1);
+    expect(redirectSpy).not.toHaveBeenCalled();
   });
 });

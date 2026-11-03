@@ -12,21 +12,15 @@ import {
 import type { McpDatabase } from "../mcp/types";
 
 /**
- * Failed logins one identifier may spend inside a window before the endpoint
- * stops paying for the scrypt call at all.
+ * Failed sign-ins one identifier may spend inside a window before the
+ * endpoint stops checking codes for it at all.
  *
- * OCL-99 made every failing login pay for one scrypt verification, real
- * account or not, to close a timing gap that told a caller which addresses
- * exist. That is the right trade, but it turned "no rate limit" from
- * inconvenient into a CPU-exhaustion vector: verifyPassword runs on the
- * libuv threadpool (4 threads by default), so unauthenticated garbage now
- * occupies the same threads real logins need.
- *
- * 8 failures in 15 minutes is picked to survive a genuine mistyped-password
- * afternoon (a human retyping a forgotten password, an old saved credential
- * in a second browser) without giving a guesser more than a token number of
- * scrypt calls per identifier. It is a product call, not a security
- * invariant — see the PR description for the number actually shipped.
+ * The number was picked for the password sign-in this replaced (OCL-100):
+ * enough to survive a person mistyping a few times, without giving a guesser
+ * more than a token number of checks per identifier. A code also dies after
+ * five wrong guesses of its own, and the account has a count that outlives
+ * codes (`MAX_CODE_USER_FAILURES`). It is a product call, not a security
+ * invariant.
  */
 export const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 export const MAX_LOGIN_FAILURES = 8;
@@ -41,12 +35,8 @@ export const MAX_LOGIN_FAILURES = 8;
  * (`OVERCLICK_TRUSTED_PROXY` unset) everyone shares one shared bucket, which
  * still refuses a burst without being able to single a caller out.
  */
-function loginFailureScope(
-  flow: "login" | "logincode",
-  kind: "email" | "origin",
-  value: string,
-): string {
-  return `${flow}-${kind}:${value}`;
+function loginFailureScope(kind: "email" | "origin", value: string): string {
+  return `logincode-${kind}:${value}`;
 }
 
 /**
@@ -79,44 +69,24 @@ export async function loginOrigin(): Promise<string | null> {
 /**
  * What an attempt was charged: whether it may go on to be checked, and the
  * window of the origin's bucket the charge landed in, which is what gives it
- * back (`refundLoginOrigin`) to that window and no other. `originWindow` is
+ * back (`refundCodeLoginOrigin`) to that window and no other. `originWindow` is
  * null when there is no origin to charge, or when the attempt was turned away
  * and nothing is left to give back.
  */
 export type LoginCharge = { ok: boolean; originWindow: Date | null };
 
 /**
- * Lets a password attempt proceed to `verifyPassword`, or not. Both buckets
- * are charged now, before anything is verified, and the email's as
- * submitted. Neither looks at whether the account exists, so which one
- * refuses says nothing about it. The origin's charge is given back by
- * `refundLoginOrigin` if the attempt turns out to be a sign-in that works.
- */
-export async function withinLoginBudget(
-  db: McpDatabase,
-  email: string,
-  origin: string | null,
-): Promise<LoginCharge> {
-  return spendLoginBuckets(db, "login", email, origin);
-}
-
-/**
- * The same budget for signing in with an emailed code, in buckets of its own.
- * Sharing the password's meant that anyone who knew an address could spend 8
- * malformed codes and lock the owner out of both ways in, so each way in has
- * its own allowance and running out of one leaves the other alone.
+ * Lets an attempt at signing in with an emailed code go on to be checked, or
+ * not. Both buckets are charged now, before anything is checked, and the
+ * email's as submitted. Neither looks at whether the account exists, so which
+ * one refuses says nothing about it. The origin's charge is given back by
+ * `refundCodeLoginOrigin` if the attempt turns out to be a sign-in that works.
+ *
+ * The buckets keep the `logincode-` names they had when a password sign-in
+ * sat beside this one with buckets of its own (`login-`, unused since).
  */
 export async function withinCodeLoginBudget(
   db: McpDatabase,
-  email: string,
-  origin: string | null,
-): Promise<LoginCharge> {
-  return spendLoginBuckets(db, "logincode", email, origin);
-}
-
-async function spendLoginBuckets(
-  db: McpDatabase,
-  flow: "login" | "logincode",
   email: string,
   origin: string | null,
 ): Promise<LoginCharge> {
@@ -128,7 +98,7 @@ async function spendLoginBuckets(
   // the origin has no room for is not taken at all, so a burst of sign-ins
   // that work and are turned away only for being too many at once leaves
   // nothing behind to lock the origin out afterwards. The charge is given
-  // back on success (`refundLoginOrigin`), because behind a NAT or an edge
+  // back on success (`refundCodeLoginOrigin`), because behind a NAT or an edge
   // proxy the origin is shared by everyone, and sign-ins that work must not
   // lock out the people it serves.
   let originWindow: Date | null = null;
@@ -136,7 +106,7 @@ async function spendLoginBuckets(
     const charge = await chargeBudget(
       db,
       loginFailure,
-      loginFailureScope(flow, "origin", origin),
+      loginFailureScope("origin", origin),
       MAX_LOGIN_FAILURES,
       LOGIN_ATTEMPT_WINDOW_MS,
     );
@@ -146,7 +116,7 @@ async function spendLoginBuckets(
   const emailOk = await spendBudget(
     db,
     loginFailure,
-    loginFailureScope(flow, "email", email),
+    loginFailureScope("email", email),
     MAX_LOGIN_FAILURES,
     LOGIN_ATTEMPT_WINDOW_MS,
   );
@@ -154,37 +124,27 @@ async function spendLoginBuckets(
   // origin, so a stranger hammering one address cannot use up the allowance
   // of the people sharing its origin.
   if (!emailOk) {
-    await refundOriginCharge(db, flow, origin, originWindow);
+    await refundOriginCharge(db, origin, originWindow);
     return { ok: false, originWindow: null };
   }
   return { ok: true, originWindow };
 }
 
 /**
- * Gives back the origin's charge for a password sign-in that worked. The
- * charge stays for every way an attempt can fail — no such account, switched
- * off, wrong password — so what is kept says nothing about the account.
+ * Gives back the origin's charge for a code sign-in that worked. The charge
+ * stays for every way an attempt can fail — no such account, switched off,
+ * wrong code — so what is kept says nothing about the account.
  */
-export async function refundLoginOrigin(
-  db: McpDatabase,
-  origin: string | null,
-  charge: LoginCharge,
-): Promise<void> {
-  await refundOriginCharge(db, "login", origin, charge.originWindow);
-}
-
-/** Same as `refundLoginOrigin`, for a code sign-in that worked. */
 export async function refundCodeLoginOrigin(
   db: McpDatabase,
   origin: string | null,
   charge: LoginCharge,
 ): Promise<void> {
-  await refundOriginCharge(db, "logincode", origin, charge.originWindow);
+  await refundOriginCharge(db, origin, charge.originWindow);
 }
 
 async function refundOriginCharge(
   db: McpDatabase,
-  flow: "login" | "logincode",
   origin: string | null,
   originWindow: Date | null,
 ): Promise<void> {
@@ -192,28 +152,23 @@ async function refundOriginCharge(
   await refundBudget(
     db,
     loginFailure,
-    loginFailureScope(flow, "origin", origin),
+    loginFailureScope("origin", origin),
     originWindow,
   );
 }
 
 /**
- * A successful login clears the email's budget, nobody there was guessing.
+ * A successful sign-in clears the email's budget, nobody there was guessing.
  * It never clears the origin's: that bucket is shared by everyone behind the
  * address, so anyone with an account of their own could otherwise wipe it
  * between rounds of guessing at somebody else's. A success gives back only
- * its own charge (`refundLoginOrigin`), never what other attempts spent.
+ * its own charge (`refundCodeLoginOrigin`), never what other attempts spent.
  */
-export async function clearLoginBudget(db: McpDatabase, email: string): Promise<void> {
-  await clearBudget(db, loginFailure, loginFailureScope("login", "email", email));
-}
-
-/** Same as `clearLoginBudget`, for the sign-in-by-code buckets. */
 export async function clearCodeLoginBudget(
   db: McpDatabase,
   email: string,
 ): Promise<void> {
-  await clearBudget(db, loginFailure, loginFailureScope("logincode", "email", email));
+  await clearBudget(db, loginFailure, loginFailureScope("email", email));
 }
 
 /**

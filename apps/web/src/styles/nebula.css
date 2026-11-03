@@ -3168,9 +3168,8 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb-auth .auth-rule.ok { color: rgb(var(--oc-ok-rgb) / .8); }
 .nb-auth .auth-rule.bad { color: var(--oc-danger); }
 
-/* The other way in (password <-> emailed code), and asking for another
-   code: quiet text under the primary button, never a second pill competing
-   with it. */
+/* Asking for another code: quiet text under the primary button, never a
+   second pill competing with it. */
 .nb-auth .auth-switch {
   align-self: center;
   margin: 12px 0 0; padding: 4px 6px;

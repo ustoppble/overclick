@@ -23,19 +23,12 @@ import {
 } from "../lib/login-code";
 import {
   clearCodeLoginBudget,
-  clearLoginBudget,
   loginOrigin,
   refundCodeLoginOrigin,
-  refundLoginOrigin,
   withinCodeLoginBudget,
   withinCodeRequestBudget,
-  withinLoginBudget,
 } from "../lib/login-rate-limit";
-import {
-  ABSENT_USER_HASH,
-  hashPassword,
-  verifyPassword,
-} from "../lib/password";
+import { hashPassword } from "../lib/password";
 
 export type AuthState = { error: string } | null;
 
@@ -100,59 +93,6 @@ export async function signupAction(
   redirect("/onboarding");
 }
 
-export async function loginAction(
-  _prev: AuthState,
-  formData: FormData,
-): Promise<AuthState> {
-  const email = normalizeEmail(String(formData.get("email") ?? ""));
-  const password = String(formData.get("password") ?? "");
-
-  if (!isValidEmail(email) || !password) {
-    return { error: (await authCopy()).errCredentials };
-  }
-
-  // Charged before anything below looks at whether the account exists, and
-  // by the email as submitted rather than a user id, so the refusal cannot
-  // become a second oracle for account existence on top of the one OCL-99
-  // closed. Over budget, the answer is the exact same generic message and
-  // skips verifyPassword entirely — that is the point: a drained budget
-  // must not pay for scrypt either. The origin is charged here too, before
-  // the check and atomically, so parallel guesses cannot all slip past it;
-  // it is shared by everyone behind one NAT or edge proxy, so a sign-in
-  // that works gives its charge back below.
-  const origin = await loginOrigin();
-  const charge = await withinLoginBudget(db(), email, origin);
-  if (!charge.ok) {
-    return { error: (await authCopy()).errCredentials };
-  }
-
-  const [found] = await db()
-    .select()
-    .from(user)
-    .where(eq(user.email, email))
-    .limit(1);
-
-  // Same work on every branch. Short-circuiting on `found` or on `active`
-  // skipped scrypt entirely, and answering that much sooner told a caller
-  // which addresses have an account, and which of those are switched off,
-  // however generic the message is.
-  const passwordOk = await verifyPassword(
-    password,
-    found?.passwordHash ?? ABSENT_USER_HASH,
-  );
-  if (!found || !found.active || !passwordOk) {
-    return { error: (await authCopy()).errCredentials };
-  }
-
-  await refundLoginOrigin(db(), origin, charge);
-  await clearLoginBudget(db(), email);
-  await setSession({
-    userId: found.id,
-    sessionVersion: found.sessionVersion,
-  });
-  redirect("/home");
-}
-
 /**
  * Asks for a sign-in code by email. The answer is the same `{ sent: true }`
  * for an active account, a switched-off one, an address with no account and
@@ -201,9 +141,11 @@ export async function requestLoginCodeAction(
 }
 
 /**
- * Signs in with an emailed code. Its own budget (see `withinCodeLoginBudget`),
- * the same generic refusal and the same `setSession` as `loginAction`: the cookie it leaves is the password
- * sign-in's, byte for byte.
+ * Signs in with an emailed code: the only way in there is. There is no
+ * password sign-in any more, and nothing here reads one: a form that carries a
+ * password and no code is a malformed code like any other. Budgeted per
+ * address and per origin (`withinCodeLoginBudget`), one generic refusal for
+ * every way it can fail, and the same `setSession` every session comes from.
  */
 export async function loginWithCodeAction(
   _prev: AuthState,

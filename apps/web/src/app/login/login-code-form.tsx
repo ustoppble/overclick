@@ -14,13 +14,7 @@ import { dict } from "../../lib/i18n";
  * address, then the six digits. The "sent" line is the server's neutral
  * answer, said the same way whether or not the address has an account.
  */
-export function LoginCodeForm({
-  lang,
-  onUsePassword,
-}: {
-  lang: string;
-  onUsePassword: () => void;
-}) {
+export function LoginCodeForm({ lang }: { lang: string }) {
   const t = dict(lang);
   const [email, setEmail] = useState("");
   const [requested, request, requesting] = useActionState<
@@ -42,12 +36,6 @@ export function LoginCodeForm({
 
   const sent = current !== null && "sent" in current;
   const requestError = current !== null && "error" in current ? current.error : null;
-
-  const switchToPassword = (
-    <button className="auth-switch" type="button" onClick={onUsePassword}>
-      {t.auth.usePassword}
-    </button>
-  );
 
   if (!sent) {
     return (
@@ -78,7 +66,6 @@ export function LoginCodeForm({
         <button className="btn-next" type="submit" disabled={requesting}>
           {requesting ? t.auth.codeSending : t.auth.codeSend}
         </button>
-        {switchToPassword}
       </form>
     );
   }
@@ -119,7 +106,6 @@ export function LoginCodeForm({
       <button className="auth-switch" type="button" onClick={() => setDismissed(requested)}>
         {t.auth.codeResend}
       </button>
-      {switchToPassword}
     </form>
   );
 }

@@ -1,8 +1,8 @@
 import { loginFailure, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { issueLoginCode, redeemLoginCode } from "../lib/login-code";
 import { MAX_LOGIN_FAILURES } from "../lib/login-rate-limit";
-import { hashPassword, verifyPassword } from "../lib/password";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
 
 let world: TestWorld;
@@ -12,9 +12,11 @@ vi.mock("../lib/db", () => ({
   getDatabaseUrl: () => "pglite://test",
 }));
 
-vi.mock("../lib/password", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../lib/password")>();
-  return { ...actual, verifyPassword: vi.fn(actual.verifyPassword) };
+// The real function, only counted: a guess that reaches it is a guess the
+// budget let through.
+vi.mock("../lib/login-code", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/login-code")>();
+  return { ...actual, redeemLoginCode: vi.fn(actual.redeemLoginCode) };
 });
 
 const redirectSpy = vi.fn();
@@ -31,33 +33,37 @@ vi.mock("next/headers", () => ({
   headers: async () => new Headers(),
 }));
 
-const { loginAction } = await import("./auth");
+vi.mock("next/server", () => ({ after: () => undefined }));
 
-const PASSWORD = "correct-horse-battery";
+const { loginWithCodeAction } = await import("./auth");
 
-function credentials(email: string, password: string): FormData {
+function codeForm(email: string, code: string): FormData {
   const form = new FormData();
   form.set("email", email);
-  form.set("password", password);
+  form.set("code", code);
   return form;
 }
 
+/** Six digits that are not `code`. */
+function wrongCode(code: string): string {
+  return code === "000000" ? "111111" : "000000";
+}
+
 /**
- * OCL-100: closing the rate limit gap left after OCL-99. Each `it` uses its
- * own email so one test's spent budget cannot bleed into the next; the
- * fixture rows are seeded once and never touched by the guessing itself.
+ * OCL-100, carried over from the password sign-in to the code that replaced
+ * it: failed attempts are budgeted per identifier, the address as typed, so
+ * an address with no account is turned away the same way and no refusal costs
+ * the check it is meant to spare.
  */
-describe("loginAction rate limits failed attempts per identifier", () => {
-  let storedHash: string;
+describe("loginWithCodeAction rate limits failed attempts per identifier", () => {
+  let code = "";
 
   beforeEach(async () => {
     process.env.AUTH_SECRET = "s".repeat(32);
     world = await createTestWorld();
-    storedHash = await hashPassword(PASSWORD);
-    await world.db.insert(user).values([
-      { email: "exists@local.test", passwordHash: storedHash },
-    ]);
-    vi.mocked(verifyPassword).mockClear();
+    await world.db.insert(user).values([{ email: "exists@local.test" }]);
+    code = (await issueLoginCode(world.db, "exists@local.test"))!.code;
+    vi.mocked(redeemLoginCode).mockClear();
     redirectSpy.mockClear();
   });
 
@@ -66,97 +72,79 @@ describe("loginAction rate limits failed attempts per identifier", () => {
     delete process.env.AUTH_SECRET;
   });
 
-  it("refuses the attempt past the budget for an email that has an account, without paying for scrypt", async () => {
+  it("refuses the attempt past the budget for an email that has an account, without checking the code", async () => {
     for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
-      const result = await loginAction(
+      const result = await loginWithCodeAction(
         null,
-        credentials("exists@local.test", "wrong-password"),
+        codeForm("exists@local.test", wrongCode(code)),
       );
       expect(result?.error).toBeTruthy();
     }
-    expect(verifyPassword).toHaveBeenCalledTimes(MAX_LOGIN_FAILURES);
+    expect(redeemLoginCode).toHaveBeenCalledTimes(MAX_LOGIN_FAILURES);
 
-    const overBudget = await loginAction(
-      null,
-      credentials("exists@local.test", "wrong-password"),
-    );
+    const overBudget = await loginWithCodeAction(null, codeForm("exists@local.test", code));
     expect(overBudget?.error).toBeTruthy();
-    // The refusal happened before scrypt ran again: the call count from the
-    // budgeted attempts above did not grow.
-    expect(verifyPassword).toHaveBeenCalledTimes(MAX_LOGIN_FAILURES);
+    // Turned away before the code was looked at: the count did not grow.
+    expect(redeemLoginCode).toHaveBeenCalledTimes(MAX_LOGIN_FAILURES);
+    expect(redirectSpy).not.toHaveBeenCalled();
   });
 
-  it("refuses the same way for an email with no account at all, without paying for scrypt on the overflow attempt either", async () => {
+  it("refuses the same way for an email with no account at all", async () => {
     for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
-      const result = await loginAction(
-        null,
-        credentials("ghost@local.test", "whatever"),
-      );
+      const result = await loginWithCodeAction(null, codeForm("ghost@local.test", "123456"));
       expect(result?.error).toBeTruthy();
     }
-    expect(verifyPassword).toHaveBeenCalledTimes(MAX_LOGIN_FAILURES);
+    expect(redeemLoginCode).toHaveBeenCalledTimes(MAX_LOGIN_FAILURES);
 
-    const overBudget = await loginAction(
-      null,
-      credentials("ghost@local.test", "whatever"),
-    );
+    const overBudget = await loginWithCodeAction(null, codeForm("ghost@local.test", "123456"));
     expect(overBudget?.error).toBeTruthy();
-    expect(verifyPassword).toHaveBeenCalledTimes(MAX_LOGIN_FAILURES);
+    expect(redeemLoginCode).toHaveBeenCalledTimes(MAX_LOGIN_FAILURES);
   });
 
   it("answers a real account over budget and a fake account over budget with the exact same words", async () => {
     for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
-      await loginAction(null, credentials("exists@local.test", "wrong-password"));
-      await loginAction(null, credentials("nobody@local.test", "whatever"));
+      await loginWithCodeAction(null, codeForm("exists@local.test", wrongCode(code)));
+      await loginWithCodeAction(null, codeForm("nobody@local.test", "123456"));
     }
 
     const [realOverBudget, fakeOverBudget] = await Promise.all([
-      loginAction(null, credentials("exists@local.test", "wrong-password")),
-      loginAction(null, credentials("nobody@local.test", "whatever")),
+      loginWithCodeAction(null, codeForm("exists@local.test", wrongCode(code))),
+      loginWithCodeAction(null, codeForm("nobody@local.test", "123456")),
     ]);
 
     expect(realOverBudget?.error).toBeTruthy();
-    expect(fakeOverBudget?.error).toBeTruthy();
     expect(realOverBudget?.error).toBe(fakeOverBudget?.error);
   });
 
-  it("lets a correct login through while still under budget, and clears the counter on success", async () => {
-    for (let i = 0; i < MAX_LOGIN_FAILURES - 1; i++) {
-      const result = await loginAction(
+  it("lets a right code through while still under budget, and clears the counter on success", async () => {
+    // Four wrong on this code is all it survives before the right one.
+    for (let i = 0; i < 4; i++) {
+      const result = await loginWithCodeAction(
         null,
-        credentials("exists@local.test", "wrong-password"),
+        codeForm("exists@local.test", wrongCode(code)),
       );
       expect(result?.error).toBeTruthy();
     }
 
-    // The correct password, still inside the budget, redirects home.
-    await loginAction(null, credentials("exists@local.test", PASSWORD));
+    await loginWithCodeAction(null, codeForm("exists@local.test", code));
     expect(redirectSpy).toHaveBeenCalledWith("/home");
 
     const [row] = await world.db
       .select()
       .from(loginFailure)
-      .where(eq(loginFailure.id, "login-email:exists@local.test"));
+      .where(eq(loginFailure.id, "logincode-email:exists@local.test"));
     expect(row).toBeUndefined();
   });
 
-  it("keeps one identifier's budget from blocking another's login", async () => {
+  it("keeps one identifier's budget from blocking another's sign-in", async () => {
     for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
-      await loginAction(null, credentials("exists@local.test", "wrong-password"));
+      await loginWithCodeAction(null, codeForm("exists@local.test", "123456"));
     }
 
-    const [otherFound] = await world.db
-      .select()
-      .from(user)
-      .where(eq(user.email, "exists@local.test"));
-    expect(otherFound).toBeDefined();
+    await world.db.insert(user).values({ email: "neighbour@local.test" });
+    const theirs = (await issueLoginCode(world.db, "neighbour@local.test"))!.code;
 
-    await world.db.insert(user).values({
-      email: "neighbour@local.test",
-      passwordHash: await hashPassword(PASSWORD),
-    });
-
-    await loginAction(null, credentials("neighbour@local.test", PASSWORD));
+    await loginWithCodeAction(null, codeForm("neighbour@local.test", theirs));
     expect(redirectSpy).toHaveBeenCalledWith("/home");
   });
 });
