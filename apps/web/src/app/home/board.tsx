@@ -22,8 +22,10 @@ import {
 } from "../../actions/review";
 import {
   COLUMN_STATUSES,
+  type ColumnCounts,
   type ColumnStatus,
 } from "../../lib/board-columns";
+import { BOARD_PAGE_SIZE, columnTotal } from "../../lib/board-window";
 import { pickRowNumber, typeInitial } from "../../lib/board-row";
 import { dict, type Dict } from "../../lib/i18n";
 import { CliMark } from "../../components/cli-mark";
@@ -101,6 +103,9 @@ export type TimelineEntry = {
 export type BoardCard = {
   id: string;
   shortId: string;
+  /** ISO timestamps: the column order, and where a page of older cards starts. */
+  createdAt: string;
+  updatedAt: string;
   title: string;
   tipo: "feature" | "bug" | "rfc";
   priority: "urgente" | "alta" | "media" | "baixa";
@@ -1491,6 +1496,11 @@ export function Board({
   selectedIds = [],
   onToggleSelect,
   onMissionSelect,
+  columnTotals = null,
+  olderLeft = {},
+  loadingOlder = null,
+  onShowOlder,
+  initialOpen = null,
 }: {
   cards: BoardCard[];
   lang: string;
@@ -1501,10 +1511,21 @@ export function Board({
   selectedIds?: string[];
   onToggleSelect?: (id: string) => void;
   onMissionSelect?: (missionId: string) => void;
+  /**
+   * Every card of each column, loaded or not, counted on the server. Null
+   * while a search narrows the board: then the column is what it shows.
+   */
+  columnTotals?: ColumnCounts | null;
+  /** How many older cards each finished column still holds back. */
+  olderLeft?: Partial<Record<ColumnStatus, number>>;
+  loadingOlder?: ColumnStatus | null;
+  onShowOlder?: (status: ColumnStatus) => void;
+  /** The card a link asked to open on arrival. */
+  initialOpen?: BoardCard | null;
 }) {
   const t = dict(lang);
   const colLabel = columnLabels(t);
-  const [open, setOpen] = useState<BoardCard | null>(null);
+  const [open, setOpen] = useState<BoardCard | null>(initialOpen);
   const [detailLoading, setDetailLoading] = useState(false);
   const picked = new Set(selectedIds);
 
@@ -1541,6 +1562,25 @@ export function Board({
     />
   );
 
+  // The window keeps finished columns to this week; the rest is one click
+  // away, a page at a time, above the cards already there.
+  const renderMore = (status: ColumnStatus) => {
+    const left = olderLeft[status];
+    if (!left || !onShowOlder) return null;
+    return (
+      <button
+        type="button"
+        className="btn-ghost col-more"
+        disabled={loadingOlder !== null}
+        onClick={() => onShowOlder(status)}
+      >
+        {loadingOlder === status
+          ? t.board.loadingOlder
+          : t.board.showOlder(Math.min(left, BOARD_PAGE_SIZE))}
+      </button>
+    );
+  };
+
   // The phone gets the same card reduced to a row: one component less to keep
   // in step, because both read the very same BoardCard.
   const renderRow = (card: BoardCard) => (
@@ -1573,10 +1613,16 @@ export function Board({
                   size={14}
                   className="col-mark"
                 />
-                {colLabel[status]} <span className="count">{list.length}</span>
+                {colLabel[status]}{" "}
+                <span className="count">
+                  {columnTotal(list.length, columnTotals?.[status])}
+                </span>
               </div>
               <div className="col">
-                {list.length === 0 ? (
+                {/* The column reads oldest first, so the older cards land on
+                    top, right under the button that brought them. */}
+                {renderMore(status)}
+                {list.length === 0 && !olderLeft[status] ? (
                   <EmptyState status={status} t={t} />
                 ) : (
                   list.map(renderCard)
@@ -1593,6 +1639,8 @@ export function Board({
         labels={colLabel}
         renderRow={renderRow}
         renderEmpty={(status) => <EmptyState status={status} t={t} />}
+        renderMore={renderMore}
+        columnTotals={columnTotals}
         t={t}
       />
       {open && detailLoading ? <DetailSkeleton /> : null}

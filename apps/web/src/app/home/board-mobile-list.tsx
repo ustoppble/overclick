@@ -5,8 +5,10 @@ import {
   COLUMN_STATUSES,
   countByStatus,
   firstStatusWithCards,
+  type ColumnCounts,
   type ColumnStatus,
 } from "../../lib/board-columns";
+import { columnTotal } from "../../lib/board-window";
 import type { Dict } from "../../lib/i18n";
 import { Icon } from "../../components/icon";
 import type { BoardCard } from "./board";
@@ -39,6 +41,8 @@ export function BoardMobileList({
   labels,
   renderRow,
   renderEmpty,
+  renderMore,
+  columnTotals = null,
   t,
 }: {
   /** Already through the board filters, exactly what the columns render. */
@@ -47,6 +51,10 @@ export function BoardMobileList({
   /** The card as one dense row, rendered by the board that owns the detail. */
   renderRow: (card: BoardCard) => ReactNode;
   renderEmpty: (status: ColumnStatus) => ReactNode;
+  /** The "show older" button of a finished column, when it has older cards. */
+  renderMore?: (status: ColumnStatus) => ReactNode;
+  /** Every card of each column, counted on the server; null under a search. */
+  columnTotals?: ColumnCounts | null;
   t: Dict;
 }) {
   const counts = useMemo(() => countByStatus(cards), [cards]);
@@ -56,6 +64,7 @@ export function BoardMobileList({
     firstStatusWithCards(countByStatus(cards)),
   );
   const list = cards.filter((card) => card.status === status);
+  const more = renderMore?.(status) ?? null;
 
   return (
     <div className="board-mobile">
@@ -79,10 +88,13 @@ export function BoardMobileList({
         <span className="ml-caret">
           <Icon name="chevronDown" label={null} size={13} />
         </span>
-        <span className="count">{counts[status]}</span>
+        <span className="count">
+          {columnTotal(counts[status], columnTotals?.[status])}
+        </span>
       </label>
       <div className="col">
-        {list.length === 0 ? renderEmpty(status) : list.map(renderRow)}
+        {more}
+        {list.length === 0 && !more ? renderEmpty(status) : list.map(renderRow)}
       </div>
     </div>
   );

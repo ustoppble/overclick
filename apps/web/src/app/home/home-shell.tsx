@@ -8,22 +8,37 @@ import {
   boardTotalsAction,
   setBoardFilterAction,
 } from "../../actions/board-filter";
+import {
+  boardColumnCountsAction,
+  loadOlderBoardCardsAction,
+  searchBoardCardsAction,
+} from "../../actions/board-cards";
 import { assignCardsToMissionAction } from "../../actions/missions";
 import {
   NO_MISSION,
+  boardFilterToQuery,
   countLooseCards,
   filterBoardCards,
   missionFilterOptions,
   organizationFilterOptions,
   projectFilterOptions,
   releaseFilterOptions,
-  searchBoardCards,
   toggleOrganization,
   selectOnly,
   toggleProject,
   type BoardFilter,
 } from "../../lib/board-filter";
+import type { ColumnCounts, ColumnStatus } from "../../lib/board-columns";
 import { subscribeToBoardRefresh } from "../../lib/board-refresh";
+import { createBoardSearchRunner } from "../../lib/board-search-runner";
+import {
+  addExtraCards,
+  mergeBoardCards,
+  pageCursor,
+  windowCursor,
+  type OlderCursor,
+  searchWithServerHits,
+} from "../../lib/board-window";
 import type { BoardTotals } from "../../lib/board-totals";
 import { dict, type Dict } from "../../lib/i18n";
 import { Icon } from "../../components/icon";
@@ -223,9 +238,12 @@ export function HomeShell({
   projects,
   missions,
   releases,
-  cards,
+  cards: windowCards,
   initialFilter,
   initialTotals,
+  columnCounts,
+  openCardId,
+  windowSince,
 }: {
   lang: string;
   organizations: BoardOrganizationOption[];
@@ -236,6 +254,12 @@ export function HomeShell({
   initialFilter: BoardFilter;
   /** What the initial filter consumed, already aggregated on the server. */
   initialTotals: BoardTotals;
+  /** Every card of each column under the initial filter, loaded or not. */
+  columnCounts: ColumnCounts;
+  /** The card a link asked to open, already among the cards. */
+  openCardId: string | null;
+  /** Where the window starts: the finished cards older than this are not in `cards`. */
+  windowSince: string;
 }) {
   const router = useRouter();
   const t = dict(lang);
@@ -249,9 +273,74 @@ export function HomeShell({
   // one button. On the desktop the panel never opens because the button is
   // hidden and the wrapper is transparent to the bar.
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // What the reader pulled in past the window: older pages, search hits. The
+  // refresh replaces the window and leaves these alone (OCL board window).
+  const [extraCards, setExtraCards] = useState<BoardCard[]>([]);
+  const cards = useMemo(
+    () => mergeBoardCards(windowCards, extraCards),
+    [windowCards, extraCards],
+  );
+  // The column counts answer one filter. The page's answer is for the stored
+  // filter, so it only counts once the filter on screen is that one again.
+  const filterKey = boardFilterToQuery(filter);
+  const [counts, setCounts] = useState({
+    key: boardFilterToQuery(initialFilter),
+    counts: columnCounts,
+  });
+  useEffect(() => {
+    setCounts({ key: boardFilterToQuery(initialFilter), counts: columnCounts });
+  }, [initialFilter, columnCounts]);
+  // A column whose last page said "nothing more", for this filter.
+  const [exhausted, setExhausted] = useState<Set<string>>(() => new Set());
+  // Where the next "show older" page of a column starts, per filter. It is
+  // born from the window and moves only with what loadOlder returns: a search
+  // hit or a linked card is older than the window and says nothing about what
+  // lies between.
+  const [pagedCursors, setPagedCursors] = useState<Map<string, OlderCursor>>(
+    () => new Map(),
+  );
+  const [loadingOlder, setLoadingOlder] = useState<ColumnStatus | null>(null);
+  const [serverHits, setServerHits] = useState<{
+    query: string;
+    ids: Set<string>;
+  }>({ query: "", ids: new Set() });
+  const [searching, setSearching] = useState(false);
+  // The server turned the search away for good; the board shows only what it has.
+  const [searchLimited, setSearchLimited] = useState(false);
+  const searchRunner = useRef<ReturnType<typeof createBoardSearchRunner<BoardCard>>>(null);
+  if (!searchRunner.current) {
+    searchRunner.current = createBoardSearchRunner<BoardCard>({
+      search: searchBoardCardsAction,
+    });
+  }
+  const inFilter = useMemo(() => filterBoardCards(cards, filter), [cards, filter]);
   const visible = useMemo(
-    () => searchBoardCards(filterBoardCards(cards, filter), debouncedSearchQuery),
-    [cards, filter, debouncedSearchQuery],
+    () =>
+      searchWithServerHits(
+        inFilter,
+        debouncedSearchQuery,
+        serverHits.query === debouncedSearchQuery ? serverHits.ids : new Set<string>(),
+      ),
+    [inFilter, debouncedSearchQuery, serverHits],
+  );
+  const searchActive = debouncedSearchQuery.trim().length > 0;
+  const columnTotals =
+    !searchActive && counts.key === filterKey ? counts.counts : null;
+  const olderLeft = useMemo(() => {
+    const left: Partial<Record<ColumnStatus, number>> = {};
+    if (!columnTotals) return left;
+    for (const status of ["validado", "descartado"] as const) {
+      const loaded = inFilter.filter((card) => card.status === status).length;
+      const remaining = columnTotals[status] - loaded;
+      if (remaining > 0 && !exhausted.has(`${filterKey}|${status}`)) {
+        left[status] = remaining;
+      }
+    }
+    return left;
+  }, [columnTotals, inFilter, exhausted, filterKey]);
+  // Only the first render opens it: the link is an arrival, not a pin.
+  const [openCard] = useState(() =>
+    openCardId ? (windowCards.find((card) => card.id === openCardId) ?? null) : null,
   );
   // What the mission filter may offer: the scope is the projects on screen, so
   // the options and their counts follow the selection, not the mission.
@@ -342,12 +431,66 @@ export function HomeShell({
   // of the board observes one consistent snapshot without a manual reload.
   useEffect(() => subscribeToBoardRefresh(() => router.refresh()), [router]);
 
+  // The search also asks the server, so a card the window left out still
+  // answers its words. Whatever it finds stays on the board like a page of
+  // older cards would.
+  useEffect(() => {
+    const query = debouncedSearchQuery.trim();
+    if (query.length < 2) {
+      setSearching(false);
+      setSearchLimited(false);
+      return;
+    }
+    setSearching(true);
+    setSearchLimited(false);
+    // A refusal from the server is not an answer: the runner asks again for
+    // the latest query and tells us only when it has hits or has given up.
+    return searchRunner.current?.start(query, {
+      onResult: (_query, found) => {
+        setExtraCards((current) => addExtraCards(current, found));
+        setServerHits({
+          query: debouncedSearchQuery,
+          ids: new Set(found.map((card) => card.id)),
+        });
+      },
+      onState: (state) => {
+        setSearching(state === "searching");
+        setSearchLimited(state === "limited");
+      },
+    });
+  }, [debouncedSearchQuery]);
+
+  function showOlder(status: ColumnStatus) {
+    if (loadingOlder) return;
+    const key = `${filterKey}|${status}`;
+    const before =
+      pagedCursors.get(key) ??
+      windowCursor(filterBoardCards(windowCards, filter), status, windowSince);
+    setLoadingOlder(status);
+    void loadOlderBoardCardsAction({ status, filter, before })
+      .then((page) => {
+        setExtraCards((current) => addExtraCards(current, page.cards));
+        const next = pageCursor(page.cards);
+        if (next) {
+          setPagedCursors((current) => new Map(current).set(key, next));
+        }
+        if (!page.hasMore) {
+          setExhausted((current) => new Set(current).add(key));
+        }
+      })
+      .finally(() => setLoadingOlder(null));
+  }
+
   function apply(next: BoardFilter) {
     setFilter(next);
     void setBoardFilterAction(next);
     // The total is aggregated where Insights aggregates it, so a new filter
     // asks the server for its numbers instead of adding cards up here.
     void boardTotalsAction(next).then(setTotals);
+    const key = boardFilterToQuery(next);
+    void boardColumnCountsAction(next).then((nextCounts) => {
+      if (nextCounts) setCounts({ key, counts: nextCounts });
+    });
   }
 
   function toggleSelect(id: string) {
@@ -494,7 +637,12 @@ export function HomeShell({
               }}
               t={t}
             />
-            <span className="filter-result">{t.board.cardsShown(visible.length)}</span>
+            <span className="filter-result">
+              {searching ? t.board.searchingOlder : t.board.cardsShown(visible.length)}
+              {searchLimited && !searching ? (
+                <> · {t.board.searchLimited}</>
+              ) : null}
+            </span>
             {hasActiveFilters ? (
               <button
                 className="btn-ghost clear-board-filters"
@@ -579,6 +727,11 @@ export function HomeShell({
         selectedIds={selected}
         onToggleSelect={toggleSelect}
         onMissionSelect={(missionId) => apply({ ...filter, missionId })}
+        columnTotals={columnTotals}
+        olderLeft={olderLeft}
+        loadingOlder={loadingOlder}
+        onShowOlder={showOlder}
+        initialOpen={openCard}
       />
 
       {picking ? (

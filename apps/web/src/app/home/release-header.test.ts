@@ -11,6 +11,8 @@ function card(overrides: Partial<BoardCard>): BoardCard {
     id: "card-1",
     organizationId: "o1",
     shortId: "OCL-1",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    updatedAt: "2026-11-01T00:00:00.000Z",
     title: "Release card",
     tipo: "feature",
     priority: "alta",
