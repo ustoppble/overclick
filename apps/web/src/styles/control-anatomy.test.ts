@@ -25,7 +25,7 @@ import {
  * property; responsive folds are a separate concern). That is enough for
  * this codebase, where every trigger selector is class-based.
  */
-const TRIGGER_CLASSES = ["am-trigger", "pf-trigger", "mf-trigger", "ff-trigger"];
+const TRIGGER_CLASSES = ["am-trigger", "pf-trigger", "mf-trigger", "ff-trigger", "period-trigger"];
 
 const STATEFUL_PSEUDO = /:hover|:focus|:active|:disabled/;
 
@@ -108,4 +108,71 @@ describe("every bar trigger keeps the Control anatomy (ux-v2 §3)", () => {
       expect(["8px", "var(--oc-radius-control)"]).toContain(radius);
     });
   }
+});
+
+/**
+ * The stat on level 1 is not a bordered Control, but it shares the row with
+ * two of them, so it owes them the same centre line. It hung ~8px above the
+ * pill and the menu while it aligned on the text baseline inside a box that
+ * was only a minimum, and its overflow clip cut a long figure mid-digit.
+ */
+function topLevel(selector: string): CssRule[] {
+  return allRulesInSourceOrder
+    .map(({ rule }) => rule)
+    .filter((rule) => !rule.insideAtRule && splitSelectorList(rule.selector).includes(selector));
+}
+
+function declared(rules: CssRule[], prop: string): string | null {
+  let value: string | null = null;
+  for (const rule of rules) {
+    for (const decl of parseDeclarations(rule.body)) {
+      if (decl.prop === prop) value = decl.value.trim();
+    }
+  }
+  return value;
+}
+
+describe("the running total sits on the row's centre line (level 1)", () => {
+  const stat = topLevel(".nb .board-total");
+
+  it("is the 32px of the Control beside it, not a minimum", () => {
+    expect(declared(stat, "height")).toBe("32px");
+    expect(declared(stat, "min-height")).toBeNull();
+  });
+
+  it("centres its text instead of aligning it on the baseline", () => {
+    expect(declared(stat, "align-items")).toBe("center");
+  });
+
+  it("never clips its own figure", () => {
+    expect(declared(stat, "overflow")).toBeNull();
+  });
+
+  it("sets itself off with a straight stroke, not a border-left on a rounded box", () => {
+    expect(declared(stat, "border-left")).toBeNull();
+    expect(declared(topLevel(".nb .board-total::before"), "height")).toBe("16px");
+  });
+});
+
+describe("level 2 holds every control at its size at the widths between the phone and the desktop", () => {
+  it("wraps between 769px and 1099px instead of crushing the names", () => {
+    const wraps = allRulesInSourceOrder.some(
+      ({ rule }) =>
+        rule.insideAtRule &&
+        splitSelectorList(rule.selector).includes(".nb .topbar-l2") &&
+        parseDeclarations(rule.body).some((d) => d.prop === "flex-wrap" && d.value.trim() === "wrap"),
+    );
+    expect(wraps).toBe(true);
+  });
+
+  it("keeps a floor under the project and mission triggers", () => {
+    const floor = allRulesInSourceOrder
+      .map(({ rule }) => rule)
+      .filter(
+        (rule) =>
+          !rule.insideAtRule &&
+          splitSelectorList(rule.selector).some((s) => /\.topbar-l2 \.(pf|mf)-trigger$/.test(s)),
+      );
+    expect(declared(floor, "min-width")).toBe("96px");
+  });
 });
