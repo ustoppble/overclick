@@ -1,10 +1,25 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { loginAction, type AuthState } from "../../actions/auth";
 import { dict } from "../../lib/i18n";
+import { LoginCodeForm } from "./login-code-form";
 
 export function LoginForm({ lang }: { lang: string }) {
+  const [withCode, setWithCode] = useState(false);
+  if (withCode) {
+    return <LoginCodeForm lang={lang} onUsePassword={() => setWithCode(false)} />;
+  }
+  return <PasswordForm lang={lang} onUseCode={() => setWithCode(true)} />;
+}
+
+function PasswordForm({
+  lang,
+  onUseCode,
+}: {
+  lang: string;
+  onUseCode: () => void;
+}) {
   const t = dict(lang);
   const [state, action, pending] = useActionState<AuthState, FormData>(
     loginAction,
@@ -54,6 +69,9 @@ export function LoginForm({ lang }: { lang: string }) {
       ) : null}
       <button className="btn-next" type="submit" disabled={pending}>
         {pending ? t.auth.signingIn : t.auth.signIn}
+      </button>
+      <button className="auth-switch" type="button" onClick={onUseCode}>
+        {t.auth.codeLink}
       </button>
     </form>
   );
