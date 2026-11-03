@@ -30,6 +30,7 @@ import {
 } from "../../lib/board-filter";
 import type { ColumnCounts, ColumnStatus } from "../../lib/board-columns";
 import { subscribeToBoardRefresh } from "../../lib/board-refresh";
+import { createBoardSearchRunner } from "../../lib/board-search-runner";
 import {
   addExtraCards,
   mergeBoardCards,
@@ -304,6 +305,14 @@ export function HomeShell({
     ids: Set<string>;
   }>({ query: "", ids: new Set() });
   const [searching, setSearching] = useState(false);
+  // The server turned the search away for good; the board shows only what it has.
+  const [searchLimited, setSearchLimited] = useState(false);
+  const searchRunner = useRef<ReturnType<typeof createBoardSearchRunner<BoardCard>>>(null);
+  if (!searchRunner.current) {
+    searchRunner.current = createBoardSearchRunner<BoardCard>({
+      search: searchBoardCardsAction,
+    });
+  }
   const inFilter = useMemo(() => filterBoardCards(cards, filter), [cards, filter]);
   const visible = useMemo(
     () =>
@@ -429,22 +438,26 @@ export function HomeShell({
     const query = debouncedSearchQuery.trim();
     if (query.length < 2) {
       setSearching(false);
+      setSearchLimited(false);
       return;
     }
-    let cancelled = false;
     setSearching(true);
-    void searchBoardCardsAction(query).then((result) => {
-      if (cancelled) return;
-      setSearching(false);
-      setExtraCards((current) => addExtraCards(current, result.cards));
-      setServerHits({
-        query: debouncedSearchQuery,
-        ids: new Set(result.cards.map((card) => card.id)),
-      });
+    setSearchLimited(false);
+    // A refusal from the server is not an answer: the runner asks again for
+    // the latest query and tells us only when it has hits or has given up.
+    return searchRunner.current?.start(query, {
+      onResult: (_query, found) => {
+        setExtraCards((current) => addExtraCards(current, found));
+        setServerHits({
+          query: debouncedSearchQuery,
+          ids: new Set(found.map((card) => card.id)),
+        });
+      },
+      onState: (state) => {
+        setSearching(state === "searching");
+        setSearchLimited(state === "limited");
+      },
     });
-    return () => {
-      cancelled = true;
-    };
   }, [debouncedSearchQuery]);
 
   function showOlder(status: ColumnStatus) {
@@ -626,6 +639,9 @@ export function HomeShell({
             />
             <span className="filter-result">
               {searching ? t.board.searchingOlder : t.board.cardsShown(visible.length)}
+              {searchLimited && !searching ? (
+                <> · {t.board.searchLimited}</>
+              ) : null}
             </span>
             {hasActiveFilters ? (
               <button

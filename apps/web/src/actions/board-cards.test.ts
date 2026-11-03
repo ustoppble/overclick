@@ -62,27 +62,29 @@ describe("board search action", () => {
     expect(searched).toEqual(["abc abc abc abc abc abc", "x".repeat(100)]);
   });
 
-  it("holds a second search while the first is still running", async () => {
+  it("runs two searches at once and tells the third to come back", async () => {
     let release = () => {};
     holdSearch = new Promise<void>((resolve) => {
       release = resolve;
     });
     const first = searchBoardCardsAction("first words");
-    await vi.waitFor(() => expect(searched).toHaveLength(1));
-    const second = await searchBoardCardsAction("second words");
-    expect(second.cards).toEqual([]);
-    expect(searched).toEqual(["first words"]);
+    const second = searchBoardCardsAction("second words");
+    await vi.waitFor(() => expect(searched).toHaveLength(2));
+    const third = await searchBoardCardsAction("third words");
+    expect(third).toEqual({ query: "third words", cards: [], limited: "busy" });
+    expect(searched).toEqual(["first words", "second words"]);
     release();
-    await first;
-    await searchBoardCardsAction("third words");
-    expect(searched).toEqual(["first words", "third words"]);
+    await Promise.all([first, second]);
+    const retried = await searchBoardCardsAction("third words");
+    expect(retried.limited).toBeUndefined();
+    expect(searched).toEqual(["first words", "second words", "third words"]);
   });
 
-  it("answers empty from the 31st search in a minute", async () => {
+  it("flags the 31st search in a minute as rate limited", async () => {
     for (let i = 0; i < 30; i += 1) await searchBoardCardsAction(`words ${i}`);
     expect(searched).toHaveLength(30);
     const refused = await searchBoardCardsAction("one more");
-    expect(refused.cards).toEqual([]);
+    expect(refused).toEqual({ query: "one more", cards: [], limited: "rate" });
     expect(searched).toHaveLength(30);
   });
 });

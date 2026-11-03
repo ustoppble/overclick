@@ -10,6 +10,7 @@ export const BOARD_SEARCH_MIN_CHARS = 2;
 export const BOARD_SEARCH_MAX_CHARS = 100;
 export const BOARD_SEARCH_MAX_TERMS = 6;
 export const BOARD_SEARCH_MAX_PER_MINUTE = 30;
+export const BOARD_SEARCH_MAX_IN_FLIGHT = 2;
 
 const MINUTE_MS = 60_000;
 
@@ -26,40 +27,74 @@ export function normalizeBoardSearch(raw: unknown): string | null {
   return query.length >= BOARD_SEARCH_MIN_CHARS ? query : null;
 }
 
+/** Why `acquire` said no: another search holds the slots, or the minute is spent. */
+export type BoardSearchRefusal = "busy" | "rate";
+
+export type BoardSearchSlot =
+  | { ok: true; release: () => void }
+  | { ok: false; reason: BoardSearchRefusal };
+
 /**
- * One search in flight per person and at most 30 a minute, kept in this
- * process. Null from `acquire` means refuse; otherwise call the returned
- * function when the search is over. A refused call costs nothing against the
- * minute. The limits are per process: a restart or a second instance starts
- * from zero, which is fine for a guard against a runaway client.
+ * Two searches in flight per person (a second tab) and at most 30 a minute,
+ * kept in this process. A refusal says why, so the caller can tell "try again
+ * in a moment" from "enough for this minute"; call `release` when a granted
+ * search is over. A refused call costs nothing against the minute. The limits
+ * are per process: a restart or a second instance starts from zero, which is
+ * fine for a guard against a runaway client.
  */
 export function createBoardSearchLimiter(
   perMinute: number = BOARD_SEARCH_MAX_PER_MINUTE,
+  maxInFlight: number = BOARD_SEARCH_MAX_IN_FLIGHT,
 ) {
-  const inFlight = new Set<string>();
+  const inFlight = new Map<string, number>();
   const recent = new Map<string, number[]>();
+  let prunedAt = 0;
+
+  // Someone who stopped searching leaves their timestamps behind; sweep them
+  // once a minute so the map follows who is active, not who ever was.
+  function prune(now: number) {
+    if (now - prunedAt < MINUTE_MS) return;
+    prunedAt = now;
+    for (const [userId, times] of recent) {
+      const kept = times.filter((at) => now - at < MINUTE_MS);
+      if (kept.length === 0) recent.delete(userId);
+      else recent.set(userId, kept);
+    }
+  }
 
   return {
-    acquire(userId: string, now: number = Date.now()): (() => void) | null {
-      if (inFlight.has(userId)) return null;
+    acquire(userId: string, now: number = Date.now()): BoardSearchSlot {
+      prune(now);
+      if ((inFlight.get(userId) ?? 0) >= maxInFlight) {
+        return { ok: false, reason: "busy" };
+      }
       const kept = (recent.get(userId) ?? []).filter((at) => now - at < MINUTE_MS);
       if (kept.length >= perMinute) {
         recent.set(userId, kept);
-        return null;
+        return { ok: false, reason: "rate" };
       }
       kept.push(now);
       recent.set(userId, kept);
-      inFlight.add(userId);
+      inFlight.set(userId, (inFlight.get(userId) ?? 0) + 1);
       let released = false;
-      return () => {
-        if (released) return;
-        released = true;
-        inFlight.delete(userId);
+      return {
+        ok: true,
+        release: () => {
+          if (released) return;
+          released = true;
+          const left = (inFlight.get(userId) ?? 1) - 1;
+          if (left <= 0) inFlight.delete(userId);
+          else inFlight.set(userId, left);
+        },
       };
+    },
+    size() {
+      return recent.size;
     },
     reset() {
       inFlight.clear();
       recent.clear();
+      prunedAt = 0;
     },
   };
 }

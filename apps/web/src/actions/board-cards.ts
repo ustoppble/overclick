@@ -5,7 +5,11 @@ import { project, workspace } from "@agent-board/db";
 import type { BoardCard } from "../app/home/board";
 import { toBoardCards } from "../lib/board-card";
 import { parseBoardFilter, parseOlderRequest } from "../lib/board-input";
-import { boardSearchLimiter, normalizeBoardSearch } from "../lib/board-search-guard";
+import {
+  boardSearchLimiter,
+  normalizeBoardSearch,
+  type BoardSearchRefusal,
+} from "../lib/board-search-guard";
 import type { BoardFilter } from "../lib/board-filter";
 import type { ColumnCounts } from "../lib/board-columns";
 import {
@@ -83,13 +87,19 @@ export async function loadOlderBoardCardsAction(input: {
  */
 export async function searchBoardCardsAction(
   query: string,
-): Promise<{ query: string; cards: BoardCard[] }> {
+): Promise<{
+  query: string;
+  cards: BoardCard[];
+  /** The server turned the search away: "busy" is worth asking again, "rate" is not. */
+  limited?: BoardSearchRefusal;
+}> {
   const wanted = normalizeBoardSearch(query);
   const reader = await boardReader();
   if (!reader || !wanted) return { query, cards: [] };
-  // One search at a time and a few a minute per person; past that, nothing.
-  const release = boardSearchLimiter.acquire(reader.session.userId);
-  if (!release) return { query, cards: [] };
+  // Two searches at a time and a few a minute per person. A refusal says so
+  // instead of answering "found nothing", which the UI would take for a result.
+  const slot = boardSearchLimiter.acquire(reader.session.userId);
+  if (!slot.ok) return { query, cards: [], limited: slot.reason };
   try {
     const ids = await searchBoardTaskIds(db(), reader.ws.id, reader.principal, wanted);
     const rows = await loadBoardTasksByIds(
@@ -100,7 +110,7 @@ export async function searchBoardCardsAction(
     );
     return { query, cards: await asCards(reader, rows) };
   } finally {
-    release();
+    slot.release();
   }
 }
 

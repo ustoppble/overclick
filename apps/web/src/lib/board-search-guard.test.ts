@@ -38,44 +38,62 @@ describe("board search query", () => {
 });
 
 describe("board search limiter", () => {
-  it("allows one search in flight per person", () => {
+  it("allows two searches in flight per person and says busy to the third", () => {
     const limiter = createBoardSearchLimiter();
     const first = limiter.acquire("u1", 0);
-    expect(first).not.toBeNull();
-    expect(limiter.acquire("u1", 1)).toBeNull();
+    const second = limiter.acquire("u1", 1);
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(limiter.acquire("u1", 2)).toEqual({ ok: false, reason: "busy" });
     // Someone else is not held up by it.
-    expect(limiter.acquire("u2", 1)).not.toBeNull();
-    first?.();
-    expect(limiter.acquire("u1", 2)).not.toBeNull();
+    expect(limiter.acquire("u2", 1).ok).toBe(true);
+    if (first.ok) first.release();
+    expect(limiter.acquire("u1", 3).ok).toBe(true);
   });
 
-  it("allows 30 a minute and answers nothing to the 31st", () => {
+  it("allows 30 a minute and says rate to the 31st", () => {
     const limiter = createBoardSearchLimiter();
     for (let i = 0; i < BOARD_SEARCH_MAX_PER_MINUTE; i += 1) {
-      const release = limiter.acquire("u1", i * 1000);
-      expect(release).not.toBeNull();
-      release?.();
+      const slot = limiter.acquire("u1", i * 1000);
+      expect(slot.ok).toBe(true);
+      if (slot.ok) slot.release();
     }
-    expect(limiter.acquire("u1", 31_000)).toBeNull();
+    expect(limiter.acquire("u1", 31_000)).toEqual({ ok: false, reason: "rate" });
     // A minute after the first one, room opens again.
-    expect(limiter.acquire("u1", 60_001)).not.toBeNull();
+    expect(limiter.acquire("u1", 60_001).ok).toBe(true);
   });
 
   it("does not charge a refused search against the minute", () => {
-    const limiter = createBoardSearchLimiter();
+    const limiter = createBoardSearchLimiter(30, 1);
     const held = limiter.acquire("u1", 0);
-    for (let i = 0; i < 100; i += 1) expect(limiter.acquire("u1", 1 + i)).toBeNull();
-    held?.();
-    expect(limiter.acquire("u1", 200)).not.toBeNull();
+    for (let i = 0; i < 100; i += 1) {
+      expect(limiter.acquire("u1", 1 + i)).toEqual({ ok: false, reason: "busy" });
+    }
+    if (held.ok) held.release();
+    expect(limiter.acquire("u1", 200).ok).toBe(true);
   });
 
   it("releases a slot only once", () => {
-    const limiter = createBoardSearchLimiter();
-    const release = limiter.acquire("u1", 0);
-    release?.();
-    release?.();
+    const limiter = createBoardSearchLimiter(30, 1);
+    const slot = limiter.acquire("u1", 0);
+    if (slot.ok) {
+      slot.release();
+      slot.release();
+    }
     const second = limiter.acquire("u1", 1);
-    expect(second).not.toBeNull();
-    expect(limiter.acquire("u1", 2)).toBeNull();
+    expect(second.ok).toBe(true);
+    expect(limiter.acquire("u1", 2).ok).toBe(false);
+  });
+
+  it("forgets a person who has not searched for a minute", () => {
+    const limiter = createBoardSearchLimiter();
+    for (let i = 0; i < 50; i += 1) {
+      const slot = limiter.acquire(`u${i}`, 0);
+      if (slot.ok) slot.release();
+    }
+    expect(limiter.size()).toBe(50);
+    const slot = limiter.acquire("late", 120_000);
+    if (slot.ok) slot.release();
+    expect(limiter.size()).toBe(1);
   });
 });
