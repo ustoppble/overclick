@@ -25,7 +25,7 @@ import {
  * property; responsive folds are a separate concern). That is enough for
  * this codebase, where every trigger selector is class-based.
  */
-const TRIGGER_CLASSES = ["am-trigger", "pf-trigger", "mf-trigger", "ff-trigger"];
+const TRIGGER_CLASSES = ["am-trigger", "pf-trigger", "mf-trigger", "ff-trigger", "period-trigger"];
 
 const STATEFUL_PSEUDO = /:hover|:focus|:active|:disabled/;
 

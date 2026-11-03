@@ -683,6 +683,36 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .mf-create-error { margin: 0; color: var(--oc-danger); font-size: 11px; line-height: 1.4; }
 
+/* ---------- period filter ----------
+   Same family as the project and mission triggers: a 32px Control with a
+   chevron (the anatomy block below owns the box), and a single-choice panel
+   under it. The picked answer carries a check, never a colour of its own. */
+.nb .period-filter { position: relative; display: inline-flex; flex: 0 0 auto; }
+.nb .period-trigger { appearance: none; cursor: pointer; display: inline-flex; }
+.nb .period-label { white-space: nowrap; }
+.nb .period-trigger svg { opacity: .6; }
+.nb .period-panel {
+  position: absolute; z-index: var(--oc-z-panel); top: calc(100% + 6px); left: 0;
+  min-width: 100%; width: max-content; max-width: min(320px, calc(100vw - 32px));
+  padding: 6px; background: var(--oc-panel-bg);
+}
+.nb .period-list { display: flex; flex-direction: column; gap: 2px; }
+.nb .period-opt {
+  display: flex; flex-direction: row; align-items: center; justify-content: space-between;
+  gap: 12px; width: 100%; min-height: 32px; padding: 0 10px;
+  background: transparent; border: 0; border-radius: var(--oc-radius-control);
+  color: var(--nebula-text-secondary); font-family: var(--nebula-font-sans);
+  font-size: 13px; font-weight: var(--nebula-weight-medium); letter-spacing: 0;
+  text-align: left; white-space: nowrap; cursor: pointer;
+}
+.nb .period-opt:hover { background: var(--oc-surface-hover); color: var(--nebula-text-primary); }
+.nb .period-opt.on { color: var(--nebula-text-primary); }
+.nb .period-opt:focus-visible { outline: none; box-shadow: var(--nebula-focus-ring-inset); }
+.nb .period-opt svg { flex: none; }
+@media (pointer: coarse) {
+  .nb .period-opt { min-height: var(--oc-tap); }
+}
+
 /* ---------- type + priority facets (OCL-31) ----------
    The seven choices live in one vertical menu. This keeps the scarce topbar
    width for scope while preserving multi-select semantics inside each facet. */
@@ -967,6 +997,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .topbar-l1 .am-trigger,
 .nb .topbar-l2 .pf-trigger,
 .nb .topbar-l2 .mf-trigger,
+.nb .topbar-l2 .period-trigger,
 .nb .topbar-l2 .ff-trigger,
 .nb .topbar-l2 .filters-btn,
 .nb .topbar-l2 .btn-ghost {
@@ -987,6 +1018,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .topbar-l1 .am-trigger:hover,
 .nb .topbar-l2 .pf-trigger:hover,
 .nb .topbar-l2 .mf-trigger:hover,
+.nb .topbar-l2 .period-trigger:hover,
 .nb .topbar-l2 .ff-trigger:hover,
 .nb .topbar-l2 .filters-btn:hover,
 .nb .topbar-l2 .btn-ghost:hover {
@@ -1005,6 +1037,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .topbar-l1 .board-total:focus-visible,
 .nb .topbar-l2 .pf-trigger:focus-visible,
 .nb .topbar-l2 .mf-trigger:focus-visible,
+.nb .topbar-l2 .period-trigger:focus-visible,
 .nb .topbar-l2 .mf-clear:focus-visible,
 .nb .topbar-l2 .ff-trigger:focus-visible,
 .nb .topbar-l2 .filters-btn:focus-visible,
@@ -1043,6 +1076,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .topbar-l2 .mf-clear { color: var(--nebula-text-secondary); }
 .nb .topbar-l2 .pf-trigger svg,
 .nb .topbar-l2 .mf-trigger svg,
+.nb .topbar-l2 .period-trigger svg,
 .nb .topbar-l2 .ff-trigger svg { flex: none; }
 /* Both names on the level truncate rather than wrap, but they do not give
    room back at the same rate: the mission is the long one and the one whose
@@ -2653,6 +2687,9 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .topbar-more .mf-label { max-width: none; }
   .nb .topbar-more .filter-chip { display: flex; width: 100%; max-width: none; }
   .nb .topbar-more .filter-chip select { max-width: none; flex: 1; }
+  .nb .topbar-more .period-filter { display: flex; width: 100%; }
+  .nb .topbar-more .period-trigger { width: 100%; justify-content: space-between; text-align: left; }
+  .nb .topbar-more .period-panel { right: 0; width: auto; min-width: 0; max-width: none; }
   .nb .topbar-more .facet-filters, .nb .topbar-more .ff-trigger { width: 100%; }
   .nb .topbar-more .ff-trigger { text-align: left; }
   .nb .ff-panel {
