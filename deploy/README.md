@@ -107,6 +107,19 @@ nginx with `$proxy_add_x_forwarded_for`). Two things to know:
   can send itself unless your proxy overwrites or strips it. Make it do one or
   the other.
 
+### Behind a proxy: the Origin check on forms
+
+Sign-in (like every form in the app) is a Next.js Server Action. Next accepts
+one only when the request's `Origin` header matches `Host` (or
+`X-Forwarded-Host`), and aborts it otherwise; that check is what keeps another
+site from signing a visitor in or sending them code emails. The app sets no
+`serverActions.allowedOrigins`, so the proxy must pass the original `Host`
+(Caddy and Traefik do by default; nginx needs `proxy_set_header Host $host`).
+After a deploy, confirm it holds: a `POST` to the login page with a foreign
+`Origin` header must be refused, and the login form on your own domain must
+still work. Do not "fix" a failing check by widening `allowedOrigins` to
+`*`.
+
 **Next step, not done:** put a bot check (Cloudflare Turnstile or a captcha) in
 front of "send me a code". It needs a Cloudflare site key and secret, so it is
 the owner's call; until then the limits above are all there is.
