@@ -3778,3 +3778,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .sk-ins-grid { grid-template-columns: 1fr; }
 }
 .nb .alt-path[open] summary { color: var(--nebula-text-primary); margin-bottom: 10px; }
+
+/* The window's "show older" on a finished column (OCL board window). */
+.nb .col .col-more { align-self: center; }
