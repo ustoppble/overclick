@@ -90,6 +90,23 @@ one line (`hourly send cap reached`, no address in it) per hour. The cap is a
 kill switch, not a defence: someone asking for codes can use it up and keep
 real people from getting theirs until the hour turns.
 
+### Behind a proxy: which address counts as the origin
+
+The per-origin limit (and the failed-attempt budget by origin) reads the **last**
+hop of `X-Forwarded-For`, and only when `OVERCLICK_TRUSTED_PROXY=1`. That is
+right for one proxy that **appends** the address it saw (Caddy, Traefik,
+nginx with `$proxy_add_x_forwarded_for`). Two things to know:
+
+- With another proxy in front of yours (Cloudflare, a load balancer), the last
+  hop is that proxy's address, not the visitor's: everyone behind the same
+  edge shares one bucket of 20 requests an hour, and real people can be
+  refused. Make the proxy nearest the app write the visitor's real address as
+  the last hop, or leave `OVERCLICK_TRUSTED_PROXY` off and rely on the
+  per-address and global limits.
+- Without `X-Forwarded-For` the app falls back to `X-Real-IP`, which a client
+  can send itself unless your proxy overwrites or strips it. Make it do one or
+  the other.
+
 **Next step, not done:** put a bot check (Cloudflare Turnstile or a captcha) in
 front of "send me a code". It needs a Cloudflare site key and secret, so it is
 the owner's call; until then the limits above are all there is.
