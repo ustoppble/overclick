@@ -170,8 +170,6 @@ const en = {
     priorityLow: "low",
     clearFilters: "Clear filters",
     cardsShown: (n: number) => `${n} card${n === 1 ? "" : "s"}`,
-    showOlder: (n: number) => `Show older (${n} more)`,
-    loadingOlder: "Loading…",
     periodLabel: "Period",
     periodOptions: {
       "7d": "Last 7 days",
@@ -179,7 +177,11 @@ const en = {
       "30d": "30 days",
       all: "All time",
     },
-    olderCount: (n: number) => `+${n.toLocaleString("en-US")} older`,
+    periodByLabel: "Period date",
+    periodByOptions: {
+      updated: "Updated",
+      created: "Created",
+    },
     searchingOlder: "Searching older cards…",
     searchLimited: "Showing what is already on screen; the search of older cards is busy.",
     missionLabel: "Mission",
@@ -834,8 +836,6 @@ const ptBR: Dict = {
     priorityLow: "baixa",
     clearFilters: "Limpar filtros",
     cardsShown: (n: number) => `${n} card${n === 1 ? "" : "s"}`,
-    showOlder: (n: number) => `Ver mais antigos (mais ${n})`,
-    loadingOlder: "Carregando…",
     periodLabel: "Período",
     periodOptions: {
       "7d": "Últimos 7 dias",
@@ -843,7 +843,11 @@ const ptBR: Dict = {
       "30d": "30 dias",
       all: "Todo o período",
     },
-    olderCount: (n: number) => `+${n.toLocaleString("pt-BR")} antigos`,
+    periodByLabel: "Data do período",
+    periodByOptions: {
+      updated: "Atualizado",
+      created: "Criado",
+    },
     searchingOlder: "Buscando nos cards antigos…",
     searchLimited: "Mostrando só o que já está na tela; a busca nos cards antigos está ocupada.",
     missionLabel: "Missão",

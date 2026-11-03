@@ -1,37 +1,15 @@
-import { mission, project, task, type Database } from "@agent-board/db";
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gte,
-  inArray,
-  isNull,
-  lt,
-  notInArray,
-  or,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { project, task, type Database } from "@agent-board/db";
+import { and, asc, eq, gte, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   DEFAULT_BOARD_PERIOD,
-  NO_MISSION,
+  DEFAULT_BOARD_PERIOD_FIELD,
   periodDays,
-  projectsInOrganizations,
-  type BoardFilter,
   type BoardPeriod,
+  type BoardPeriodField,
 } from "./board-filter";
-import {
-  COLUMN_STATUSES,
-  type ColumnCounts,
-  type ColumnStatus,
-} from "./board-columns";
-import { BOARD_PAGE_SIZE, type OlderCursor } from "./board-window";
 import {
   canSeeMission,
   canSeeTask,
-  isAdmin,
   projectScope,
   taskScope,
   type MaybePrincipal,
@@ -39,47 +17,16 @@ import {
 import { invokeTool } from "../mcp/tools";
 
 /**
- * How far back the board reaches without being asked, by a card's last
- * activity (updated_at), for the periods that name no days: all time keeps
- * live work (open and running) whatever its age and the finished columns
- * (done, validated, discarded) only from this many days. Done is among the
- * finished ones because in production it is where cards pile up unreviewed
- * (2.672 of 3.580, none touched in 30 days), and a window that always carried
- * them was 97% of the board.
- */
-export const BOARD_WINDOW_DAYS = 7;
-export { BOARD_PAGE_SIZE };
-
-export const LIVE_STATUSES = ["aberto", "em_execucao"] as const;
-
-/** Any column can be paged: with a period, the cards past it come the same way. */
-export function isColumnStatus(value: string): value is ColumnStatus {
-  return (COLUMN_STATUSES as readonly string[]).includes(value);
-}
-
-/**
- * Where the window starts: the period back from now, or for all time the
- * week the finished columns keep.
+ * Where the window starts: the period back from now. Null for all time, which
+ * has no start: every card of every column.
  */
 export function boardWindowStart(
   now: Date,
   period: BoardPeriod = DEFAULT_BOARD_PERIOD,
-): Date {
-  const days = periodDays(period) ?? BOARD_WINDOW_DAYS;
-  return new Date(now.getTime() - days * 86_400_000);
+): Date | null {
+  const days = periodDays(period);
+  return days === null ? null : new Date(now.getTime() - days * 86_400_000);
 }
-
-export type { OlderCursor, ColumnStatus };
-
-type BoardProject = { id: string; organizationId: string };
-
-/**
- * The cursor travels as an ISO string, which stops at the millisecond while
- * Postgres keeps microseconds. Paging compares and orders at the cursor's own
- * precision, or a card a few microseconds older than the cursor would be
- * skipped as if it were newer.
- */
-const updatedAtMs = sql<Date>`date_trunc('milliseconds', ${task.updatedAt})`;
 
 /**
  * The cards themselves are filtered by scope in the query. What they point at
@@ -92,13 +39,11 @@ async function queryBoardTasks(
   database: Database,
   principal: MaybePrincipal,
   where: SQL | undefined,
-  options: { newestChangeFirst?: boolean; limit?: number } = {},
+  options: { limit?: number } = {},
 ) {
   const rows = await database.query.task.findMany({
     where: and(where, taskScope(principal)),
-    orderBy: options.newestChangeFirst
-      ? [desc(updatedAtMs), desc(task.id)]
-      : asc(task.createdAt),
+    orderBy: asc(task.createdAt),
     ...(options.limit !== undefined ? { limit: options.limit } : {}),
     with: {
       mission: { columns: { id: true, title: true, createdByUserId: true } },
@@ -134,26 +79,28 @@ export type BoardTaskRow = Awaited<ReturnType<typeof queryBoardTasks>>[number];
 
 /**
  * The board's cards with everything the card line and detail panel read: the
- * ones that changed inside the period, whatever their column. All time is the
- * v0.4.2 window: every live card, and the finished ones from the last week.
+ * ones inside the period, whatever their column, by the date the reader picked
+ * (last activity unless they asked for the creation date). All time is every
+ * card. Nothing else decides what a column holds; the search reaches past it.
  */
 export async function loadBoardTasks(
   database: Database,
   projectIds: string[],
   principal: MaybePrincipal,
-  options: { now?: Date; period?: BoardPeriod } = {},
+  options: { now?: Date; period?: BoardPeriod; periodBy?: BoardPeriodField } = {},
 ) {
   if (projectIds.length === 0) return [];
-  const period = options.period ?? DEFAULT_BOARD_PERIOD;
-  const since = boardWindowStart(options.now ?? new Date(), period);
+  const since = boardWindowStart(options.now ?? new Date(), options.period);
+  const column =
+    (options.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD) === "created"
+      ? task.createdAt
+      : task.updatedAt;
   return queryBoardTasks(
     database,
     principal,
     and(
       inArray(task.projectId, projectIds),
-      period === "all"
-        ? or(inArray(task.status, [...LIVE_STATUSES]), gte(task.updatedAt, since))
-        : gte(task.updatedAt, since),
+      since ? gte(column, since) : undefined,
     ),
   );
 }
@@ -200,148 +147,6 @@ export async function findBoardTaskByShortId(
     if (row) return row;
   }
   return null;
-}
-
-/**
- * The board filter as SQL, so a page of older cards and a column count answer
- * the same selection the client applies to the cards it holds
- * (`filterBoardCards`). Null when the selection leaves no project at all.
- */
-export function boardFilterWhere(
-  projects: BoardProject[],
-  filter: BoardFilter,
-  principal: MaybePrincipal,
-): SQL | null {
-  const projectIds = projectsInOrganizations(projects, filter.organizationIds)
-    .map((item) => item.id)
-    .filter(
-      (id) => filter.projectIds.length === 0 || filter.projectIds.includes(id),
-    );
-  if (projectIds.length === 0) return null;
-  const conditions: (SQL | undefined)[] = [inArray(task.projectId, projectIds)];
-  if (filter.missionId === NO_MISSION) {
-    // A member's card in someone else's mission reads as loose on the board,
-    // because the mission is not theirs to see (OCL-227).
-    conditions.push(
-      isAdmin(principal) || !principal
-        ? isNull(task.missionId)
-        : or(
-            isNull(task.missionId),
-            notInArray(task.missionId, missionsAuthoredBy(principal.userId)),
-          ),
-    );
-  } else if (filter.missionId) {
-    conditions.push(eq(task.missionId, filter.missionId));
-  }
-  if (filter.types.length > 0) conditions.push(inArray(task.tipo, filter.types));
-  if (filter.priorities.length > 0) {
-    conditions.push(inArray(task.priority, filter.priorities));
-  }
-  if (filter.resolvedIn === null) conditions.push(isNull(task.resolvedIn));
-  else if (filter.resolvedIn !== undefined) {
-    conditions.push(eq(task.resolvedIn, filter.resolvedIn));
-  }
-  return and(...conditions) ?? null;
-}
-
-/** The ids of the missions a member authored, as a subquery. */
-function missionsAuthoredBy(userId: string) {
-  return sql`(select ${mission.id} from ${mission} where ${mission.createdByUserId} = ${userId})`;
-}
-
-/**
- * A page of the finished cards of one column, newest change first, starting
- * below the cursor: the oldest card of that column the board already holds.
- */
-export async function loadOlderBoardTasks(
-  database: Database,
-  projects: BoardProject[],
-  principal: MaybePrincipal,
-  input: {
-    status: ColumnStatus;
-    filter: BoardFilter;
-    before: OlderCursor | null;
-    limit?: number;
-  },
-) {
-  const limit = input.limit ?? BOARD_PAGE_SIZE;
-  const inFilter = boardFilterWhere(projects, input.filter, principal);
-  if (!inFilter) return { tasks: [], hasMore: false };
-  const parsed = input.before ? new Date(input.before.updatedAt) : null;
-  // Bound as text with a cast: a Date compared to an expression (not to a
-  // column) reaches the driver unmapped, and postgres-js refuses it.
-  const before =
-    parsed && !Number.isNaN(parsed.getTime())
-      ? sql`${parsed.toISOString()}::timestamptz`
-      : null;
-  const rows = await queryBoardTasks(
-    database,
-    principal,
-    and(
-      inFilter,
-      eq(task.status, input.status),
-      before && input.before
-        ? or(
-            lt(updatedAtMs, before),
-            and(eq(updatedAtMs, before), lt(task.id, input.before.id)),
-          )
-        : undefined,
-    ),
-    // One more than asked says whether the button stays.
-    { newestChangeFirst: true, limit: limit + 1 },
-  );
-  return { tasks: rows.slice(0, limit), hasMore: rows.length > limit };
-}
-
-export type BoardColumnCounts = {
-  /** Each column inside the period; for all time, the whole column. */
-  counts: ColumnCounts;
-  /** Each column past the period: what "show older" has to give. Zero for all time. */
-  older: ColumnCounts;
-};
-
-function emptyCounts(): ColumnCounts {
-  return { aberto: 0, em_execucao: 0, feito: 0, validado: 0, descartado: 0 };
-}
-
-/**
- * How many cards each column holds under the filter, loaded or not: the
- * number on a column head is the column inside the period, not what this tab
- * fetched of it, and what lies past the period is counted apart so the head
- * can say so.
- */
-export async function countBoardColumns(
-  database: Database,
-  projects: BoardProject[],
-  principal: MaybePrincipal,
-  filter: BoardFilter,
-  options: { now?: Date } = {},
-): Promise<BoardColumnCounts> {
-  const result: BoardColumnCounts = { counts: emptyCounts(), older: emptyCounts() };
-  const inFilter = boardFilterWhere(projects, filter, principal);
-  if (!inFilter) return result;
-  const period = filter.period ?? DEFAULT_BOARD_PERIOD;
-  const since = boardWindowStart(options.now ?? new Date(), period);
-  const rows = await database
-    .select({
-      status: task.status,
-      n: count(),
-      recent: sql<number>`count(*) filter (where ${task.updatedAt} >= ${since.toISOString()}::timestamptz)`,
-    })
-    .from(task)
-    .where(and(inFilter, taskScope(principal)))
-    .groupBy(task.status);
-  for (const row of rows) {
-    if (!isColumnStatus(row.status)) continue;
-    const total = Number(row.n);
-    if (period === "all") {
-      result.counts[row.status] = total;
-    } else {
-      result.counts[row.status] = Number(row.recent);
-      result.older[row.status] = total - Number(row.recent);
-    }
-  }
-  return result;
 }
 
 /** A query that reads as a card's short id ("OCL-12"), not as words. */

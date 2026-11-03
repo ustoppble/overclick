@@ -5,12 +5,14 @@ import { mission, organization, project, task, user } from "@agent-board/db";
 import { isReleaseVersion } from "@agent-board/mcp-core";
 import {
   DEFAULT_BOARD_PERIOD,
+  DEFAULT_BOARD_PERIOD_FIELD,
   NO_MISSION,
   encodeFacetSelection,
   encodeOrganizationSelection,
   encodeProjectSelection,
   encodeReleaseSelection,
   isBoardPeriod,
+  isBoardPeriodField,
   isTaskPriority,
   isTaskType,
   type BoardFilter,
@@ -77,6 +79,9 @@ export async function setBoardFilterAction(
   if (input.period !== undefined && !isBoardPeriod(input.period)) {
     return { ok: false, error: "Period not found." };
   }
+  if (input.periodBy !== undefined && !isBoardPeriodField(input.periodBy)) {
+    return { ok: false, error: "Period date not found." };
+  }
   if (typeof input.resolvedIn === "string") {
     // The filter offers releases only, so only a release can be stored as
     // one — a branch name in resolved_in is not a selection (OCL-128).
@@ -113,6 +118,7 @@ export async function setBoardFilterAction(
       boardPriorities: encodeFacetSelection([...new Set(input.priorities)]),
       boardResolvedIn: encodeReleaseSelection(input.resolvedIn),
       boardPeriod: input.period ?? DEFAULT_BOARD_PERIOD,
+      boardPeriodBy: input.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD,
     })
     .where(eq(user.id, session.userId));
 

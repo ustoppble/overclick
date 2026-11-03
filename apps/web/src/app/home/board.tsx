@@ -20,13 +20,7 @@ import {
   tickValidationStepAction,
   validateTaskAction,
 } from "../../actions/review";
-import {
-  COLUMN_STATUSES,
-  type ColumnCounts,
-  type ColumnStatus,
-} from "../../lib/board-columns";
-import { BOARD_PAGE_SIZE, periodTotal } from "../../lib/board-window";
-import type { BoardPeriod } from "../../lib/board-filter";
+import { COLUMN_STATUSES, type ColumnStatus } from "../../lib/board-columns";
 import { pickRowNumber, typeInitial } from "../../lib/board-row";
 import { dict, type Dict } from "../../lib/i18n";
 import { CliMark } from "../../components/cli-mark";
@@ -34,7 +28,6 @@ import { Markdown } from "../../components/markdown";
 import { Icon, type IconName } from "../../components/icon";
 import { BoardMobileList } from "./board-mobile-list";
 import { DetailSkeleton } from "./detail-skeleton";
-import { OlderButton } from "./older-button";
 
 export type BoardMissionOption = {
   id: string;
@@ -105,7 +98,7 @@ export type TimelineEntry = {
 export type BoardCard = {
   id: string;
   shortId: string;
-  /** ISO timestamps: the column order, and where a page of older cards starts. */
+  /** ISO timestamps: the column order, and the dates the period reads. */
   createdAt: string;
   updatedAt: string;
   title: string;
@@ -1498,12 +1491,6 @@ export function Board({
   selectedIds = [],
   onToggleSelect,
   onMissionSelect,
-  columnTotals = null,
-  period = "all",
-  windowSince = "",
-  olderLeft = {},
-  loadingOlder = null,
-  onShowOlder,
   initialOpen = null,
 }: {
   cards: BoardCard[];
@@ -1515,19 +1502,6 @@ export function Board({
   selectedIds?: string[];
   onToggleSelect?: (id: string) => void;
   onMissionSelect?: (missionId: string) => void;
-  /**
-   * Every card of each column, loaded or not, counted on the server. Null
-   * while a search narrows the board: then the column is what it shows.
-   */
-  columnTotals?: ColumnCounts | null;
-  /** How far back the board reaches; a column head counts inside it. */
-  period?: BoardPeriod;
-  /** Where the period starts: cards changed since then are inside it. */
-  windowSince?: string;
-  /** How many older cards each column still holds back past the board. */
-  olderLeft?: Partial<Record<ColumnStatus, number>>;
-  loadingOlder?: ColumnStatus | null;
-  onShowOlder?: (status: ColumnStatus) => void;
   /** The card a link asked to open on arrival. */
   initialOpen?: BoardCard | null;
 }) {
@@ -1570,34 +1544,6 @@ export function Board({
     />
   );
 
-  // The number on a column head: the column inside the period, so the older
-  // cards a reader pulled in do not inflate it. The cards past the period are
-  // said apart, right beside it, and come in a page at a time.
-  const headCount = (status: ColumnStatus, list: BoardCard[]) =>
-    periodTotal(
-      period,
-      list.filter((card) => card.updatedAt >= windowSince).length,
-      list.length,
-      columnTotals?.[status],
-    );
-
-  // The window keeps the board to the period; the rest is one click away, a
-  // page at a time, above the cards already there.
-  const renderMore = (status: ColumnStatus) => {
-    const left = olderLeft[status];
-    if (!left || !onShowOlder) return null;
-    return (
-      <OlderButton
-        left={left}
-        pageSize={BOARD_PAGE_SIZE}
-        loading={loadingOlder === status}
-        disabled={loadingOlder !== null}
-        onClick={() => onShowOlder(status)}
-        t={t}
-      />
-    );
-  };
-
   // The phone gets the same card reduced to a row: one component less to keep
   // in step, because both read the very same BoardCard.
   const renderRow = (card: BoardCard) => (
@@ -1633,13 +1579,10 @@ export function Board({
                 <span className="col-title" title={colLabel[status]}>
                   {colLabel[status]}
                 </span>
-                <span className="count">{headCount(status, list)}</span>
+                <span className="count">{list.length}</span>
               </div>
               <div className="col">
-                {/* The column reads oldest first, so the older cards land on
-                    top, right under the button that brought them. */}
-                {renderMore(status)}
-                {list.length === 0 && !olderLeft[status] ? (
+                {list.length === 0 ? (
                   <EmptyState status={status} t={t} />
                 ) : (
                   list.map(renderCard)
@@ -1656,8 +1599,6 @@ export function Board({
         labels={colLabel}
         renderRow={renderRow}
         renderEmpty={(status) => <EmptyState status={status} t={t} />}
-        renderMore={renderMore}
-        headCount={headCount}
         t={t}
       />
       {open && detailLoading ? <DetailSkeleton /> : null}

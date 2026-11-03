@@ -6,26 +6,16 @@ import {
   createTestWorld,
   type TestWorld,
 } from "../mcp/test-db";
-import type { BoardFilter } from "./board-filter";
+import type { BoardPeriod, BoardPeriodField } from "./board-filter";
 import {
-  BOARD_PAGE_SIZE,
-  countBoardColumns,
   findBoardTaskByShortId,
   loadBoardTasks,
-  loadOlderBoardTasks,
   searchBoardTaskIds,
 } from "./board-tasks";
 import type { Principal } from "./scope";
 
 const DAY = 86_400_000;
 const NOW = new Date("2026-11-03T12:00:00Z");
-const ALL: BoardFilter = {
-  organizationIds: [],
-  projectIds: [],
-  missionId: null,
-  types: [],
-  priorities: [],
-};
 
 describe("board window", () => {
   let world: TestWorld;
@@ -37,10 +27,6 @@ describe("board window", () => {
 
   function database(): Database {
     return world.db as unknown as Database;
-  }
-
-  function projects() {
-    return [{ id: world.projectId, organizationId: world.organizationId }];
   }
 
   async function card(
@@ -83,84 +69,6 @@ describe("board window", () => {
     return { userId: row.id, role: "member", organizationId: world.organizationId };
   }
 
-  it("always loads open and running cards, however old", async () => {
-    world = await createTestWorld();
-    await card("open and ancient", "aberto", 120);
-    await card("running for weeks", "em_execucao", 40);
-
-    const rows = await loadBoardTasks(
-      database(),
-      [world.projectId],
-      adminPrincipal(world),
-      { now: NOW, period: "all" },
-    );
-    expect(rows.map((row) => row.title).sort()).toEqual([
-      "open and ancient",
-      "running for weeks",
-    ]);
-  });
-
-  it("keeps done cards only from the last 7 days, like validated and discarded", async () => {
-    world = await createTestWorld();
-    await card("done today", "feito", 0);
-    await card("done 6 days ago", "feito", 6);
-    await card("done a month ago", "feito", 30);
-    await card("done a year ago", "feito", 365);
-
-    const rows = await loadBoardTasks(
-      database(),
-      [world.projectId],
-      adminPrincipal(world),
-      { now: NOW, period: "all" },
-    );
-    expect(rows.map((row) => row.title).sort()).toEqual([
-      "done 6 days ago",
-      "done today",
-    ]);
-  });
-
-  it("hands older done cards out 50 at a time, and counts the whole column", async () => {
-    world = await createTestWorld();
-    await card("done yesterday", "feito", 1);
-    for (let i = 0; i < BOARD_PAGE_SIZE + 3; i += 1) {
-      await card(`stale ${i}`, "feito", 10 + i);
-    }
-
-    const first = await loadOlderBoardTasks(
-      database(),
-      projects(),
-      adminPrincipal(world),
-      { status: "feito", filter: ALL, before: null },
-    );
-    expect(first.tasks).toHaveLength(BOARD_PAGE_SIZE);
-    expect(first.hasMore).toBe(true);
-    expect(first.tasks.every((row) => row.status === "feito")).toBe(true);
-
-    const last = first.tasks.at(-1)!;
-    const second = await loadOlderBoardTasks(
-      database(),
-      projects(),
-      adminPrincipal(world),
-      {
-        status: "feito",
-        filter: ALL,
-        before: { updatedAt: last.updatedAt.toISOString(), id: last.id },
-      },
-    );
-    expect(second.tasks).toHaveLength(BOARD_PAGE_SIZE + 4 - BOARD_PAGE_SIZE);
-    expect(second.hasMore).toBe(false);
-
-    // The head still shows the real total, not the 1 card the window holds.
-    const counts = await countBoardColumns(
-      database(),
-      projects(),
-      adminPrincipal(world),
-      { ...ALL, period: "all" },
-      { now: NOW },
-    );
-    expect(counts.counts.feito).toBe(BOARD_PAGE_SIZE + 4);
-  });
-
   it("finds an old done card through the search and the short id link", async () => {
     world = await createTestWorld();
     const old = await card("Review queue stuck forever", "feito", 200);
@@ -180,110 +88,6 @@ describe("board window", () => {
       old.shortId,
     );
     expect(linked?.id).toBe(old.id);
-  });
-
-  it("keeps validated and discarded cards only from the last 7 days", async () => {
-    world = await createTestWorld();
-    await card("validated yesterday", "validado", 1);
-    await card("validated last month", "validado", 30);
-    await card("discarded today", "descartado", 0);
-    await card("discarded long ago", "descartado", 90);
-
-    const rows = await loadBoardTasks(
-      database(),
-      [world.projectId],
-      adminPrincipal(world),
-      { now: NOW, period: "all" },
-    );
-    expect(rows.map((row) => row.title).sort()).toEqual([
-      "discarded today",
-      "validated yesterday",
-    ]);
-  });
-
-  it("hands older finished cards out 50 at a time, newest change first", async () => {
-    world = await createTestWorld();
-    await card("validated yesterday", "validado", 1);
-    for (let i = 0; i < BOARD_PAGE_SIZE + 3; i += 1) {
-      await card(`old ${i}`, "validado", 10 + i);
-    }
-    await card("old discarded", "descartado", 20);
-
-    const first = await loadOlderBoardTasks(
-      database(),
-      projects(),
-      adminPrincipal(world),
-      { status: "validado", filter: ALL, before: null },
-    );
-    expect(first.tasks).toHaveLength(BOARD_PAGE_SIZE);
-    expect(first.hasMore).toBe(true);
-    // Newest change first: the first page starts where the window ended.
-    expect(first.tasks[0]?.title).toBe("validated yesterday");
-    expect(first.tasks.every((row) => row.status === "validado")).toBe(true);
-
-    const last = first.tasks.at(-1)!;
-    const second = await loadOlderBoardTasks(
-      database(),
-      projects(),
-      adminPrincipal(world),
-      {
-        status: "validado",
-        filter: ALL,
-        before: { updatedAt: last.updatedAt.toISOString(), id: last.id },
-      },
-    );
-    expect(second.tasks.map((row) => row.title)).toEqual([
-      "old 49",
-      "old 50",
-      "old 51",
-      "old 52",
-    ]);
-    expect(second.hasMore).toBe(false);
-  });
-
-  it("pages older cards inside the board filter", async () => {
-    world = await createTestWorld();
-    await card("old bug", "validado", 30, world.adminUserId, { tipo: "bug" });
-    await card("old feature", "validado", 31, world.adminUserId, { tipo: "feature" });
-
-    const page = await loadOlderBoardTasks(
-      database(),
-      projects(),
-      adminPrincipal(world),
-      { status: "validado", filter: { ...ALL, types: ["bug"] }, before: null },
-    );
-    expect(page.tasks.map((row) => row.title)).toEqual(["old bug"]);
-  });
-
-  it("counts every card of each column, not only the loaded ones", async () => {
-    world = await createTestWorld();
-    await card("open", "aberto", 100);
-    await card("validated yesterday", "validado", 1);
-    await card("validated long ago", "validado", 60);
-    await card("validated longer ago", "validado", 200);
-    await card("discarded long ago", "descartado", 50);
-
-    const counts = await countBoardColumns(
-      database(),
-      projects(),
-      adminPrincipal(world),
-      { ...ALL, period: "all" },
-      { now: NOW },
-    );
-    expect(counts.counts).toEqual({
-      aberto: 1,
-      em_execucao: 0,
-      feito: 0,
-      validado: 3,
-      descartado: 1,
-    });
-    expect(counts.older).toEqual({
-      aberto: 0,
-      em_execucao: 0,
-      feito: 0,
-      validado: 0,
-      descartado: 0,
-    });
   });
 
   it("finds an old card through the server search", async () => {
@@ -371,11 +175,12 @@ describe("board window", () => {
       await card("discarded 40 days", "descartado", 40);
     }
 
-    const titles = async (period?: "7d" | "14d" | "30d" | "all") =>
+    const titles = async (period?: BoardPeriod, periodBy?: BoardPeriodField) =>
       (
         await loadBoardTasks(database(), [world.projectId], adminPrincipal(world), {
           now: NOW,
           ...(period ? { period } : {}),
+          ...(periodBy ? { periodBy } : {}),
         })
       )
         .map((row) => row.title)
@@ -403,69 +208,48 @@ describe("board window", () => {
       ]);
     });
 
-    it("with all time keeps the v0.4.2 window and the cut of old done cards", async () => {
+    it("with all time loads every card of every column, old finished ones included", async () => {
       await mixed();
       expect(await titles("all")).toEqual([
+        "discarded 40 days",
         "done 3 days",
+        "done 60 days",
         "open 10 days",
         "open ancient",
         "open today",
         "running 20 days",
+        "validated 12 days",
       ]);
     });
 
-    it("counts each column inside the period, and what lies beyond it", async () => {
-      await mixed();
-      const week = await countBoardColumns(database(), projects(), adminPrincipal(world), ALL, {
-        now: NOW,
-      });
-      expect(week.counts).toEqual({
-        aberto: 1,
-        em_execucao: 0,
-        feito: 1,
-        validado: 0,
-        descartado: 0,
-      });
-      expect(week.older).toEqual({
-        aberto: 2,
-        em_execucao: 1,
-        feito: 1,
-        validado: 1,
-        descartado: 1,
-      });
-      const month = await countBoardColumns(
-        database(),
-        projects(),
-        adminPrincipal(world),
-        { ...ALL, period: "30d" },
-        { now: NOW },
-      );
-      expect(month.counts.aberto).toBe(2);
-      expect(month.older.aberto).toBe(1);
-      const everything = await countBoardColumns(
-        database(),
-        projects(),
-        adminPrincipal(world),
-        { ...ALL, period: "all" },
-        { now: NOW },
-      );
-      expect(everything.counts.aberto).toBe(3);
-      expect(everything.older.aberto).toBe(0);
-    });
+    describe("by the date it reads", () => {
+      // Created long ago and touched today, created this week, created and
+      // touched three weeks ago: the three cases the two dates disagree on.
+      async function dated() {
+        world = await createTestWorld();
+        await card("old, touched today", "feito", 60, world.adminUserId, {
+          updatedAt: new Date(NOW.getTime() - 2 * 3_600_000),
+        });
+        await card("new this week", "aberto", 2);
+        await card("three weeks", "validado", 20);
+      }
 
-    it("pages the open column's cards past the period, newest change first", async () => {
-      await mixed();
-      const inWindow = await loadBoardTasks(database(), [world.projectId], adminPrincipal(world), {
-        now: NOW,
+      it("reads the last activity by default (Updated)", async () => {
+        await dated();
+        expect(await titles("7d")).toEqual(["new this week", "old, touched today"]);
+        expect(await titles("7d", "updated")).toEqual(["new this week", "old, touched today"]);
       });
-      const oldestOpen = inWindow.filter((row) => row.status === "aberto").at(-1)!;
-      const page = await loadOlderBoardTasks(database(), projects(), adminPrincipal(world), {
-        status: "aberto",
-        filter: ALL,
-        before: { updatedAt: oldestOpen.updatedAt.toISOString(), id: oldestOpen.id },
+
+      it("reads when the card was created when asked (Created)", async () => {
+        await dated();
+        expect(await titles("7d", "created")).toEqual(["new this week"]);
+        expect(await titles("30d", "created")).toEqual(["new this week", "three weeks"]);
+        expect(await titles("all", "created")).toEqual([
+          "new this week",
+          "old, touched today",
+          "three weeks",
+        ]);
       });
-      expect(page.tasks.map((row) => row.title)).toEqual(["open 10 days", "open ancient"]);
-      expect(page.hasMore).toBe(false);
     });
 
     it("still finds a card of any age by search and by link, whatever the period", async () => {
@@ -491,19 +275,20 @@ describe("board window", () => {
 
       const week = await loadBoardTasks(database(), [world.projectId], member, { now: NOW });
       expect(week.map((row) => row.title)).toEqual(["member recent"]);
-      const counts = await countBoardColumns(database(), projects(), member, ALL, { now: NOW });
-      expect(counts.counts.aberto).toBe(1);
-      expect(counts.older.aberto).toBe(1);
-      const older = await loadOlderBoardTasks(database(), projects(), member, {
-        status: "aberto",
-        filter: ALL,
-        before: null,
+      const created = await loadBoardTasks(database(), [world.projectId], member, {
+        now: NOW,
+        periodBy: "created",
       });
-      expect(older.tasks.map((row) => row.title).sort()).toEqual(["member old", "member recent"]);
+      expect(created.map((row) => row.title)).toEqual(["member recent"]);
+      const everything = await loadBoardTasks(database(), [world.projectId], member, {
+        now: NOW,
+        period: "all",
+      });
+      expect(everything.map((row) => row.title).sort()).toEqual(["member old", "member recent"]);
     });
   });
 
-  it("never shows a member the admin's cards: window, older pages, counts, search, link", async () => {
+  it("never shows a member the admin's cards: window, search, link", async () => {
     world = await createTestWorld();
     const member = await memberPrincipal();
     await card("admin open", "aberto", 1);
@@ -513,27 +298,16 @@ describe("board window", () => {
     const adminDone = await card("admin done stale", "feito", 30);
     const memberDone = await card("member done stale", "feito", 30, member.userId);
 
-    const window = await loadBoardTasks(database(), [world.projectId], member, { now: NOW, period: "all" });
-    expect(window.map((row) => row.title)).toEqual(["member open"]);
+    const week = await loadBoardTasks(database(), [world.projectId], member, { now: NOW });
+    expect(week.map((row) => row.title)).toEqual(["member open"]);
 
-    const older = await loadOlderBoardTasks(database(), projects(), member, {
-      status: "validado",
-      filter: ALL,
-      before: null,
+    const everything = await loadBoardTasks(database(), [world.projectId], member, {
+      now: NOW,
+      period: "all",
     });
-    expect(older.tasks.map((row) => row.id)).toEqual([memberOld.id]);
-
-    const counts = await countBoardColumns(database(), projects(), member, { ...ALL, period: "all" }, { now: NOW });
-    expect(counts.counts.aberto).toBe(1);
-    expect(counts.counts.validado).toBe(1);
-    expect(counts.counts.feito).toBe(1);
-
-    const olderDone = await loadOlderBoardTasks(database(), projects(), member, {
-      status: "feito",
-      filter: ALL,
-      before: null,
-    });
-    expect(olderDone.tasks.map((row) => row.id)).toEqual([memberDone.id]);
+    expect(everything.map((row) => row.id).sort()).toEqual(
+      [memberDone.id, memberOld.id, week[0]!.id].sort(),
+    );
     expect(
       await findBoardTaskByShortId(database(), [world.projectId], member, adminDone.shortId),
     ).toBeNull();

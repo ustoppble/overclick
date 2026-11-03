@@ -6,21 +6,12 @@ import type { BoardCard } from "../app/home/board";
 import { toBoardCards } from "../lib/board-card";
 import { loadBoardSignature } from "../lib/board-signature";
 import { boardSignatureLimiter } from "../lib/board-signature-guard";
-import { parseBoardFilter, parseOlderRequest } from "../lib/board-input";
 import {
   boardSearchLimiter,
   normalizeBoardSearch,
   type BoardSearchRefusal,
 } from "../lib/board-search-guard";
-import type { BoardFilter } from "../lib/board-filter";
-import {
-  countBoardColumns,
-  type BoardColumnCounts,
-  loadBoardTasksByIds,
-  loadOlderBoardTasks,
-  searchBoardTaskIds,
-  type OlderCursor,
-} from "../lib/board-tasks";
+import { loadBoardTasksByIds, searchBoardTaskIds } from "../lib/board-tasks";
 import { getSession } from "../lib/cookies";
 import { db } from "../lib/db";
 import { dict } from "../lib/i18n";
@@ -29,17 +20,16 @@ import { projectScope, type Principal } from "../lib/scope";
 import { sessionPrincipal } from "../lib/web-scope";
 
 /**
- * The cards the board's window leaves out, fetched on demand: a page of older
- * finished cards per column, the hits of a search, and the real size of each
- * column. Every one of them reads through the same scope as the page itself,
- * so a member gets their own cards here and nothing else.
+ * The cards the board's window leaves out, fetched on demand: the hits of a
+ * search, whatever the period. It reads through the same scope as the page
+ * itself, so a member gets their own cards here and nothing else.
  */
 
 type BoardReader = {
   principal: Principal;
   session: { userId: string };
   ws: typeof workspace.$inferSelect;
-  projects: { id: string; organizationId: string }[];
+  projects: { id: string }[];
 };
 
 async function boardReader(
@@ -52,7 +42,7 @@ async function boardReader(
   const ws = await db().query.workspace.findFirst();
   if (!ws) return null;
   const projects = await db()
-    .select({ id: project.id, organizationId: project.organizationId })
+    .select({ id: project.id })
     .from(project)
     .where(and(eq(project.workspaceId, ws.id), projectScope(principal)));
   return { principal, session, ws, projects };
@@ -70,19 +60,6 @@ async function asCards(
     viewerId: reader.session.userId,
     claimTimeoutMinutes: reader.ws.claimTimeoutMinutes,
   });
-}
-
-/** One "show older" click on a column: the cards past what the board shows. */
-export async function loadOlderBoardCardsAction(input: {
-  status: string;
-  filter: BoardFilter;
-  before: OlderCursor | null;
-}): Promise<{ cards: BoardCard[]; hasMore: boolean }> {
-  const request = parseOlderRequest(input);
-  const reader = await boardReader();
-  if (!reader || !request) return { cards: [], hasMore: false };
-  const page = await loadOlderBoardTasks(db(), reader.projects, reader.principal, request);
-  return { cards: await asCards(reader, page.tasks), hasMore: page.hasMore };
 }
 
 /**
@@ -116,19 +93,6 @@ export async function searchBoardCardsAction(
   } finally {
     slot.release();
   }
-}
-
-/**
- * How many cards each column holds under a filter the client just picked,
- * inside its period and past it.
- */
-export async function boardColumnCountsAction(
-  filter: BoardFilter,
-): Promise<BoardColumnCounts | null> {
-  const wanted = parseBoardFilter(filter);
-  const reader = await boardReader();
-  if (!reader || !wanted) return null;
-  return countBoardColumns(db(), reader.projects, reader.principal, wanted);
 }
 
 /**

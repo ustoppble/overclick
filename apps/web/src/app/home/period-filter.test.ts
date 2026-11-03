@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { dict } from "../../lib/i18n";
-import { PeriodFilter } from "./period-filter";
+import { PeriodByFilter, PeriodFilter } from "./period-filter";
 
 describe("period filter", () => {
   it("is a menu trigger that shows the picked period and keeps the list closed", () => {
@@ -27,5 +27,22 @@ describe("period filter", () => {
     expect(html).toContain("All time");
     expect(html).not.toContain("Last 7 days");
     expect(html).toContain('aria-label="Period"');
+  });
+
+  it("has a sibling that says which date the period reads, the same 32px control", () => {
+    const html = renderToStaticMarkup(
+      createElement(PeriodByFilter, { value: "updated", onChange: () => {}, t: dict("pt-BR") }),
+    );
+    expect(html).toContain('class="period-filter period-by-filter"');
+    expect(html).toContain('class="period-trigger oc-tappable"');
+    expect(html).toContain('aria-haspopup="listbox"');
+    expect(html).toContain('aria-label="Data do período"');
+    expect(html).toContain("Atualizado");
+    expect(html).not.toContain("<select");
+    const created = renderToStaticMarkup(
+      createElement(PeriodByFilter, { value: "created", onChange: () => {}, t: dict("en") }),
+    );
+    expect(created).toContain("Created");
+    expect(created).toContain('aria-label="Period date"');
   });
 });

@@ -39,13 +39,7 @@ vi.mock("../lib/board-tasks", async (original) => {
   };
 });
 
-const {
-  boardColumnCountsAction,
-  boardSignatureAction,
-  loadOlderBoardCardsAction,
-  searchBoardCardsAction,
-} =
-  await import("./board-cards");
+const { boardSignatureAction, searchBoardCardsAction } = await import("./board-cards");
 
 describe("board search action", () => {
   beforeEach(async () => {
@@ -100,16 +94,6 @@ describe("board search action", () => {
 });
 
 describe("board actions, malformed input", () => {
-  const ID = "6f1c1c1e-9a53-4c52-8d4e-3f2f5a1b7c10";
-  const base = {
-    organizationIds: [],
-    projectIds: [],
-    missionId: null,
-    types: [],
-    priorities: [],
-  };
-  const none = { cards: [], hasMore: false };
-
   beforeEach(async () => {
     world = await createTestWorld();
     sessionUserId = world.adminUserId;
@@ -119,67 +103,6 @@ describe("board actions, malformed input", () => {
   afterEach(async () => {
     sessionUserId = "";
     if (world) await closeTestWorld(world);
-  });
-
-  const older = (input: Record<string, unknown>) =>
-    loadOlderBoardCardsAction({
-      status: "validado",
-      filter: base,
-      before: null,
-      ...input,
-    } as Parameters<typeof loadOlderBoardCardsAction>[0]);
-
-  it("answers a valid page request", async () => {
-    expect(
-      await older({
-        filter: { ...base, projectIds: [world.projectId], missionId: world.missionId },
-        before: { updatedAt: "2026-10-04T00:00:00.000Z", id: ID },
-      }),
-    ).toEqual(none);
-  });
-
-  it("answers empty, not an error, to what is not a uuid", async () => {
-    expect(await older({ filter: { ...base, missionId: "not-a-uuid" } })).toEqual(none);
-    expect(await older({ filter: { ...base, projectIds: ["nope"] } })).toEqual(none);
-    expect(await older({ filter: { ...base, organizationIds: [7] } })).toEqual(none);
-    expect(await older({ before: { updatedAt: "2026-10-04T00:00:00.000Z", id: "x" } })).toEqual(none);
-  });
-
-  it("answers empty to a cursor, status, type or priority out of shape", async () => {
-    expect(await older({ before: { updatedAt: "yesterday", id: ID } })).toEqual(none);
-    expect(await older({ before: { id: ID } })).toEqual(none);
-    expect(await older({ status: "archived" })).toEqual(none);
-    expect(await older({ filter: { ...base, period: "90d" } })).toEqual(none);
-    expect(await older({ status: { $ne: 1 } })).toEqual(none);
-    expect(await older({ filter: { ...base, types: ["epic"] } })).toEqual(none);
-    expect(await older({ filter: { ...base, priorities: ["asap"] } })).toEqual(none);
-    expect(await older({ filter: null })).toEqual(none);
-    expect(await older({ filter: { ...base, types: "bug" } })).toEqual(none);
-  });
-
-  it("takes a done column in a page request, since the window no longer holds it all", async () => {
-    await world.db.insert(task).values({
-      projectId: world.projectId,
-      shortId: "OC-900",
-      title: "done long ago",
-      status: "feito",
-      createdByUserId: world.adminUserId,
-      createdAt: new Date("2026-01-01T00:00:00Z"),
-      updatedAt: new Date("2026-01-01T00:00:00Z"),
-    });
-    const page = await older({ status: "feito" });
-    expect(page.cards.map((card) => card.title)).toEqual(["done long ago"]);
-    expect(page.hasMore).toBe(false);
-  });
-
-  it("answers null to bad filters for the column counts", async () => {
-    expect(await boardColumnCountsAction({ ...base, missionId: "zzz" })).toBeNull();
-    expect(await boardColumnCountsAction({ ...base, projectIds: ["zzz"] })).toBeNull();
-    expect(
-      await boardColumnCountsAction({ ...base, types: ["epic"] } as never),
-    ).toBeNull();
-    expect(await boardColumnCountsAction(base)).not.toBeNull();
-    expect(await boardColumnCountsAction({ ...base, missionId: "none" })).not.toBeNull();
   });
 
   it("answers empty to a search that is not text", async () => {

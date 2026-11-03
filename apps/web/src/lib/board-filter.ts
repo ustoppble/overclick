@@ -22,9 +22,10 @@ export const TASK_PRIORITIES: readonly TaskPriority[] = [
 ];
 
 /**
- * How far back the board reaches, by a card's last activity (updated_at):
- * the last 7, 14 or 30 days, or all time. Seven days is the default, which is
- * what keeps a board of thousands of cards a board of the work in motion.
+ * How far back the board reaches: the last 7, 14 or 30 days, or all time.
+ * Seven days is the default, which is what keeps a board of thousands of cards
+ * a board of the work in motion. It is the only thing that decides what a
+ * column holds; the search is the way past it.
  */
 export const BOARD_PERIODS = ["7d", "14d", "30d", "all"] as const;
 export type BoardPeriod = (typeof BOARD_PERIODS)[number];
@@ -34,6 +35,21 @@ export function isBoardPeriod(value: unknown): value is BoardPeriod {
   return (
     typeof value === "string" &&
     (BOARD_PERIODS as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Which date of a card the period reads: its last activity (updated_at), the
+ * default and what the period always read, or when it was created.
+ */
+export const BOARD_PERIOD_FIELDS = ["updated", "created"] as const;
+export type BoardPeriodField = (typeof BOARD_PERIOD_FIELDS)[number];
+export const DEFAULT_BOARD_PERIOD_FIELD: BoardPeriodField = "updated";
+
+export function isBoardPeriodField(value: unknown): value is BoardPeriodField {
+  return (
+    typeof value === "string" &&
+    (BOARD_PERIOD_FIELDS as readonly string[]).includes(value)
   );
 }
 
@@ -63,10 +79,12 @@ export type BoardFilter = {
   priorities: TaskPriority[];
   /**
    * How far back the board reaches. Unlike the filters above it is not
-   * applied to the cards the client holds: the server decides which cards
-   * make the window, and the ones the reader pulled in past it stay.
+   * applied by `filterBoardCards`: the server builds the window from it, and
+   * the search reaches past it.
    */
   period?: BoardPeriod;
+  /** The date the period reads. Undefined is the default, the last activity. */
+  periodBy?: BoardPeriodField;
 };
 
 type StoredBoardFilter = {
@@ -77,6 +95,7 @@ type StoredBoardFilter = {
   priorities?: string | string[] | null;
   resolvedIn?: string | null;
   period?: string | null;
+  periodBy?: string | null;
 };
 
 type FilterableCard = {
@@ -99,9 +118,10 @@ export type SearchableBoardCard = FilterableCard & {
 
 /**
  * How many choices narrow the board, one per business, project, mission, type,
- * priority and release picked, the way the Filters menu counts its own. The
- * period is a window the board always has, and the search words have a chip of
- * their own, so neither is counted.
+ * priority and release picked, the way the Filters menu counts its own. A
+ * period other than the default 7 days and the creation date as the one it
+ * reads are choices too, one each. The search words have a chip of their own,
+ * so they are not counted.
  */
 export function activeFilterCount(filter: BoardFilter): number {
   return (
@@ -110,7 +130,9 @@ export function activeFilterCount(filter: BoardFilter): number {
     (filter.missionId !== null ? 1 : 0) +
     filter.types.length +
     filter.priorities.length +
-    (filter.resolvedIn !== undefined ? 1 : 0)
+    (filter.resolvedIn !== undefined ? 1 : 0) +
+    ((filter.period ?? DEFAULT_BOARD_PERIOD) !== DEFAULT_BOARD_PERIOD ? 1 : 0) +
+    ((filter.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD) !== DEFAULT_BOARD_PERIOD_FIELD ? 1 : 0)
   );
 }
 
@@ -317,15 +339,6 @@ export function boardFilterToQuery(filter: BoardFilter): string {
   return params.toString();
 }
 
-/**
- * What tells one view of the board from another: the filter and the period.
- * The shared query leaves the period out, because Insights has no use for it;
- * the counts, the pages already loaded and the cursors of "show older" do.
- */
-export function boardViewKey(filter: BoardFilter): string {
-  return `${boardFilterToQuery(filter)}&period=${filter.period ?? DEFAULT_BOARD_PERIOD}`;
-}
-
 /** The other end of boardFilterToQuery. No params at all means everything. */
 export function boardFilterFromQuery(
   params: {
@@ -405,6 +418,9 @@ export function resolveBoardFilter(
     priorities: resolveFacetSelection(stored.priorities, TASK_PRIORITIES),
     ...(resolvedIn !== undefined ? { resolvedIn } : {}),
     period: isBoardPeriod(stored.period) ? stored.period : DEFAULT_BOARD_PERIOD,
+    periodBy: isBoardPeriodField(stored.periodBy)
+      ? stored.periodBy
+      : DEFAULT_BOARD_PERIOD_FIELD,
   };
 }
 

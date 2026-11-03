@@ -2,15 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/icon";
-import { BOARD_PERIODS, type BoardPeriod } from "../../lib/board-filter";
+import {
+  BOARD_PERIOD_FIELDS,
+  BOARD_PERIODS,
+  type BoardPeriod,
+  type BoardPeriodField,
+} from "../../lib/board-filter";
 import type { Dict } from "../../lib/i18n";
 
 /**
- * How far back the board reaches, by a card's last activity. Four fixed
- * answers, one of them always picked: a menu with a trigger that looks like
- * its neighbours (same 32px control, same chevron) and a listbox panel. It
- * was a bare native select, a small pill with no chevron that did not read as
- * a menu and opened the operating system's own list, out of the app's style.
+ * How far back the board reaches. Four fixed answers, one of them always
+ * picked: a menu with a trigger that looks like its neighbours (same 32px
+ * control, same chevron) and a listbox panel. It was a bare native select, a
+ * small pill with no chevron that did not read as a menu and opened the
+ * operating system's own list, out of the app's style.
  */
 export function PeriodFilter({
   value,
@@ -20,6 +25,59 @@ export function PeriodFilter({
   value: BoardPeriod;
   onChange: (period: BoardPeriod) => void;
   t: Dict;
+}) {
+  return (
+    <ChoiceMenu
+      className="period-filter"
+      label={t.board.periodLabel}
+      choices={BOARD_PERIODS}
+      names={t.board.periodOptions}
+      value={value}
+      onChange={onChange}
+    />
+  );
+}
+
+/**
+ * Which date the period reads: the last activity (the default) or when the
+ * card was created. The period's own menu, beside it on the bar; on the phone
+ * it lives in More filters instead, so the sheet does not grow a row for it.
+ */
+export function PeriodByFilter({
+  value,
+  onChange,
+  t,
+}: {
+  value: BoardPeriodField;
+  onChange: (periodBy: BoardPeriodField) => void;
+  t: Dict;
+}) {
+  return (
+    <ChoiceMenu
+      className="period-filter period-by-filter"
+      label={t.board.periodByLabel}
+      choices={BOARD_PERIOD_FIELDS}
+      names={t.board.periodByOptions}
+      value={value}
+      onChange={onChange}
+    />
+  );
+}
+
+function ChoiceMenu<T extends string>({
+  className,
+  label,
+  choices,
+  names,
+  value,
+  onChange,
+}: {
+  className: string;
+  label: string;
+  choices: readonly T[];
+  names: Record<T, string>;
+  value: T;
+  onChange: (choice: T) => void;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement | null>(null);
@@ -41,17 +99,17 @@ export function PeriodFilter({
     // The picked answer takes the focus, so the arrows start from where the
     // user already is.
     const frame = window.requestAnimationFrame(() =>
-      options.current[BOARD_PERIODS.indexOf(value)]?.focus(),
+      options.current[choices.indexOf(value)]?.focus(),
     );
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
       window.cancelAnimationFrame(frame);
     };
-  }, [open, value]);
+  }, [open, value, choices]);
 
   function move(from: number, step: number) {
-    const next = (from + step + BOARD_PERIODS.length) % BOARD_PERIODS.length;
+    const next = (from + step + choices.length) % choices.length;
     options.current[next]?.focus();
   }
 
@@ -59,20 +117,19 @@ export function PeriodFilter({
     if (event.key === "ArrowDown") move(index, 1);
     else if (event.key === "ArrowUp") move(index, -1);
     else if (event.key === "Home") options.current[0]?.focus();
-    else if (event.key === "End")
-      options.current[BOARD_PERIODS.length - 1]?.focus();
+    else if (event.key === "End") options.current[choices.length - 1]?.focus();
     else if (event.key === "Tab") setOpen(false);
     else return;
     if (event.key !== "Tab") event.preventDefault();
   }
 
   return (
-    <div className="period-filter" ref={root}>
+    <div className={className} ref={root}>
       <button
         ref={trigger}
         type="button"
         className="period-trigger oc-tappable"
-        aria-label={t.board.periodLabel}
+        aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
@@ -83,22 +140,18 @@ export function PeriodFilter({
           }
         }}
       >
-        <span className="period-label">{t.board.periodOptions[value]}</span>
+        <span className="period-label">{names[value]}</span>
         <Icon name="chevronDown" label={null} size={14} />
       </button>
 
       {open ? (
         <div className="period-panel nebula-glass">
-          <div
-            className="period-list"
-            role="listbox"
-            aria-label={t.board.periodLabel}
-          >
-            {BOARD_PERIODS.map((period, index) => {
-              const picked = period === value;
+          <div className="period-list" role="listbox" aria-label={label}>
+            {choices.map((choice, index) => {
+              const picked = choice === value;
               return (
                 <button
-                  key={period}
+                  key={choice}
                   ref={(element) => {
                     options.current[index] = element;
                   }}
@@ -108,14 +161,12 @@ export function PeriodFilter({
                   className={`period-opt${picked ? " on" : ""}`}
                   onKeyDown={(event) => onListKeyDown(event, index)}
                   onClick={() => {
-                    if (!picked) onChange(period);
+                    if (!picked) onChange(choice);
                     setOpen(false);
                     trigger.current?.focus();
                   }}
                 >
-                  <span className="period-opt-name">
-                    {t.board.periodOptions[period]}
-                  </span>
+                  <span className="period-opt-name">{names[choice]}</span>
                   {picked ? <Icon name="check" label={null} size={13} /> : null}
                 </button>
               );

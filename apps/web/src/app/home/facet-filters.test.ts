@@ -32,6 +32,8 @@ describe("facet filter menu", () => {
         onTypesChange: vi.fn(),
         onPrioritiesChange: vi.fn(),
         onReleaseChange: vi.fn(),
+        periodBy: "updated",
+        onPeriodByChange: vi.fn(),
         onClear: vi.fn(),
         query: "",
         onQueryChange: vi.fn(),
@@ -41,14 +43,15 @@ describe("facet filter menu", () => {
     );
 
     expect(html).toContain(">Filters</span>");
-    expect(html).toContain('class="badge">3</span>');
+    expect(html).toContain('class="badge ff-badge-bar">3</span>');
     expect(html).toContain(">Type</h3>");
     expect(html).toContain(">Priority</h3>");
     expect(html).toContain(">Release</h3>");
     expect(html).toContain("v1.2.0");
     expect(html).toContain("No release");
     expect(html.match(/type="checkbox"/g)).toHaveLength(7);
-    expect(html.match(/type="radio"/g)).toHaveLength(3);
+    // Three releases, and the two dates the period can read (phone only).
+    expect(html.match(/type="radio"/g)).toHaveLength(5);
     expect(html).not.toContain("facet-chip");
   });
 
@@ -62,6 +65,8 @@ describe("facet filter menu", () => {
         onTypesChange: vi.fn(),
         onPrioritiesChange: vi.fn(),
         onReleaseChange: vi.fn(),
+        periodBy: "updated",
+        onPeriodByChange: vi.fn(),
         onClear: vi.fn(),
         query: "OCL-72",
         onQueryChange: vi.fn(),
@@ -87,6 +92,8 @@ describe("facet filter menu", () => {
           onTypesChange: vi.fn(),
           onPrioritiesChange: vi.fn(),
           onReleaseChange: vi.fn(),
+          periodBy: "updated",
+          onPeriodByChange: vi.fn(),
           onClear: vi.fn(),
           query: "",
           onQueryChange: vi.fn(),
@@ -97,5 +104,37 @@ describe("facet filter menu", () => {
     expect(render("en")).toContain('<span class="ff-label-sheet">More filters</span>');
     expect(render("pt-BR")).toContain('<span class="ff-label-bar">Filtros</span>');
     expect(render("pt-BR")).toContain('<span class="ff-label-sheet">Mais filtros</span>');
+  });
+
+  it("holds the date the period reads on the phone, where More filters counts it too", () => {
+    const render = (periodBy: "updated" | "created") =>
+      renderToStaticMarkup(
+        createElement(FacetFilters, {
+          types: ["bug"],
+          priorities: [],
+          releases: [],
+          resolvedIn: undefined,
+          onTypesChange: vi.fn(),
+          onPrioritiesChange: vi.fn(),
+          onReleaseChange: vi.fn(),
+          periodBy,
+          onPeriodByChange: vi.fn(),
+          onClear: vi.fn(),
+          query: "",
+          onQueryChange: vi.fn(),
+          defaultOpen: true,
+          t: dict("pt-BR"),
+        }),
+      );
+    const updated = render("updated");
+    expect(updated).toContain('class="ff-section ff-sheet-only"');
+    expect(updated).toContain(">Atualizado</span>");
+    expect(updated).toContain(">Criado</span>");
+    expect(updated).toContain('class="badge ff-badge-bar">1</span>');
+    expect(updated).toContain('class="badge ff-badge-sheet">1</span>');
+    // The desktop bar has its own control for it, so only the sheet counts it.
+    const created = render("created");
+    expect(created).toContain('class="badge ff-badge-bar">1</span>');
+    expect(created).toContain('class="badge ff-badge-sheet">2</span>');
   });
 });

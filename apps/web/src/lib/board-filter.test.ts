@@ -6,8 +6,8 @@ import {
   NO_MISSION,
   boardFilterFromQuery,
   boardFilterToQuery,
-  boardViewKey,
   DEFAULT_BOARD_PERIOD,
+  DEFAULT_BOARD_PERIOD_FIELD,
   periodDays,
   countLooseCards,
   encodeFacetSelection,
@@ -102,6 +102,7 @@ function boardFilter(overrides: Partial<BoardFilter> = {}): BoardFilter {
     types: [],
     priorities: [],
     period: "7d",
+    periodBy: "updated",
     ...overrides,
   };
 }
@@ -115,6 +116,7 @@ describe("board filters", () => {
       types: [],
       priorities: [],
       period: "7d",
+      periodBy: "updated",
     });
   });
 
@@ -325,6 +327,7 @@ describe("several projects at once", () => {
       types: [],
       priorities: [],
       period: "7d",
+      periodBy: "updated",
     });
     expect(
       boardFilterFromQuery({ projects: "all", mission: NO_MISSION }, projects, missions),
@@ -590,6 +593,7 @@ describe("the release filter only offers releases", () => {
       types: [],
       priorities: [],
       period: "7d",
+      periodBy: "updated",
     });
   });
 
@@ -650,11 +654,21 @@ describe("the period filter", () => {
     expect(periodDays("all")).toBeNull();
   });
 
-  it("is part of the key a view of the board is told apart by, but not of the shared query", () => {
+  it("is not part of the query shared with Insights, and neither is the date it reads", () => {
     const base = resolveBoardFilter(none, projects, missions);
-    const wider = { ...base, period: "30d" as const };
-    expect(boardViewKey(base)).not.toBe(boardViewKey(wider));
-    expect(boardFilterToQuery(base)).toBe(boardFilterToQuery(wider));
+    expect(boardFilterToQuery(base)).toBe(boardFilterToQuery({ ...base, period: "30d" }));
+    expect(boardFilterToQuery(base)).toBe(boardFilterToQuery({ ...base, periodBy: "created" }));
+  });
+
+  it("reads the last activity unless the reader picked the creation date", () => {
+    expect(DEFAULT_BOARD_PERIOD_FIELD).toBe("updated");
+    expect(resolveBoardFilter(none, projects, missions).periodBy).toBe("updated");
+    expect(resolveBoardFilter({ ...none, periodBy: "created" }, projects, missions).periodBy).toBe(
+      "created",
+    );
+    expect(resolveBoardFilter({ ...none, periodBy: "closed" }, projects, missions).periodBy).toBe(
+      "updated",
+    );
   });
 
   it("does not hide a card by its age on the client: the server window decides that", () => {
@@ -682,8 +696,15 @@ describe("active filter count", () => {
 
   it("is zero for a board that is not filtered, so the phone button wears no badge", () => {
     expect(activeFilterCount(none)).toBe(0);
-    // The period is a window, not a filter: the default one does not count.
-    expect(activeFilterCount({ ...none, period: "30d" })).toBe(0);
+    // The default period and the default date it reads are not choices made.
+    expect(activeFilterCount({ ...none, period: "7d", periodBy: "updated" })).toBe(0);
+  });
+
+  it("counts a period other than 7 days, and the creation date, one each", () => {
+    expect(activeFilterCount({ ...none, period: "30d" })).toBe(1);
+    expect(activeFilterCount({ ...none, period: "all" })).toBe(1);
+    expect(activeFilterCount({ ...none, periodBy: "created" })).toBe(1);
+    expect(activeFilterCount({ ...none, period: "14d", periodBy: "created" })).toBe(2);
   });
 
   it("counts every choice made, one each, the way the Filters menu counts its own", () => {

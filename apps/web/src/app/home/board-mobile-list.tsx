@@ -39,8 +39,6 @@ export function BoardMobileList({
   labels,
   renderRow,
   renderEmpty,
-  renderMore,
-  headCount,
   t,
 }: {
   /** Already through the board filters, exactly what the columns render. */
@@ -49,10 +47,6 @@ export function BoardMobileList({
   /** The card as one dense row, rendered by the board that owns the detail. */
   renderRow: (card: BoardCard) => ReactNode;
   renderEmpty: (status: ColumnStatus) => ReactNode;
-  /** The "show older" button of a finished column, when it has older cards. */
-  renderMore?: (status: ColumnStatus) => ReactNode;
-  /** The number on a column's head, given the cards that column holds here. */
-  headCount: (status: ColumnStatus, list: BoardCard[]) => number;
   t: Dict;
 }) {
   const counts = useMemo(() => countByStatus(cards), [cards]);
@@ -62,7 +56,6 @@ export function BoardMobileList({
     firstStatusWithCards(countByStatus(cards)),
   );
   const list = cards.filter((card) => card.status === status);
-  const more = renderMore?.(status) ?? null;
 
   return (
     <div className="board-mobile">
@@ -86,13 +79,10 @@ export function BoardMobileList({
         <span className="ml-caret">
           <Icon name="chevronDown" label={null} size={13} />
         </span>
-        <span className="count">
-          {headCount(status, list)}
-        </span>
+        <span className="count">{counts[status]}</span>
       </label>
       <div className="col">
-        {more}
-        {list.length === 0 && !more ? renderEmpty(status) : list.map(renderRow)}
+        {list.length === 0 ? renderEmpty(status) : list.map(renderRow)}
       </div>
     </div>
   );
