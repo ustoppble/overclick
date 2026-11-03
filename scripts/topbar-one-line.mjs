@@ -38,7 +38,7 @@
  *   BOARD_URL     page to measure (default http://localhost:3000/home)
  *   BOARD_COOKIE  value of the ab_session cookie, for a board behind login
  *   CHROME_BIN    path to a Chrome or Chromium binary
- *   WIDTHS        comma separated widths (default 1440,1280,1024,768,390,320)
+ *   WIDTHS        comma separated widths (default 1728,1440,1280,1024,768,390,320)
  *   VERBOSE       print the width every control ended up with, and the width
  *                 it wanted, which is how you see what yielded and by how much
  *
@@ -51,7 +51,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const DEFAULT_WIDTHS = [1440, 1280, 1024, 768, 390, 320];
+const DEFAULT_WIDTHS = [1728, 1440, 1280, 1024, 768, 390, 320];
 const HEIGHT = 900;
 
 const CHROME_CANDIDATES = [
@@ -239,8 +239,46 @@ const MEASURE = `(() => {
     if (entry.lines > 1) offenders.push(entry);
   }
 
+  // A control squeezed narrower than what it holds does not wrap and does not
+  // overflow the bar: it draws over its neighbour. On one line that is the
+  // failure the line count cannot see, so the painted boxes of the controls
+  // (their descendants included) must not cross each other.
+  const painted = [];
+  for (const control of controls) {
+    const style = getComputedStyle(control);
+    if (style.display === "none" || style.visibility === "hidden") continue;
+    let left = Infinity;
+    let right = -Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const el of [control, ...control.querySelectorAll("*")]) {
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden" || cs.position === "absolute" || cs.position === "fixed") continue;
+      // what an open panel hangs below the bar is not on the line
+      if (el.closest("[role=dialog], [role=listbox], .pf-panel, .mf-panel, .period-panel, .ff-panel, .am-panel")) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      left = Math.min(left, r.left);
+      right = Math.max(right, r.right);
+      top = Math.min(top, r.top);
+      bottom = Math.max(bottom, r.bottom);
+    }
+    if (right > left) painted.push({ left, right, top, bottom, where: where(control) });
+  }
+  const overlaps = [];
+  for (let i = 0; i < painted.length; i += 1) {
+    for (let j = i + 1; j < painted.length; j += 1) {
+      const a = painted[i];
+      const b = painted[j];
+      const x = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      const y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      if (x > 1 && y > 1) overlaps.push(a.where + " and " + b.where + " by " + Math.round(x) + "px");
+    }
+  }
+
   return {
     offenders,
+    overlaps,
     labels: measured.length,
     measured,
     rows: bands(chromeBoxes),
@@ -378,22 +416,29 @@ async function main() {
         } else {
           console.log(`  ok   ${label}: ${row.labels} labels, one line each`);
         }
-        // OCL-82: collapsed means the Filtros button is on screen, which is
-        // where the two levels merge. The closed bar is what a person sees on
-        // a phone before they touch anything, so that is what owes one row.
-        if (row.state === "bar" && row.menuVisible) {
+        // OCL-82: on the phone the collapsed bar (Filtros button on screen)
+        // owes one row. Since the owner's "esse menu em 2 linhas me incomoda"
+        // the desktop owes one too: wordmark, filters, state, cost and menu on
+        // a single line at every width, with what does not fit stepping aside.
+        if (row.state === "bar") {
           if (row.rows === 1) {
             console.log(`  ok   ${label}: one row of chrome`);
           } else {
             failed = true;
             console.log(
-              `  FAIL ${label}: the collapsed bar spends ${row.rows} rows of chrome, and it may spend one`,
+              `  FAIL ${label}: the bar spends ${row.rows} rows of chrome, and it may spend one`,
             );
           }
         }
         if (process.env.VERBOSE) {
           for (const item of row.measured) {
             console.log(`        ${String(item.width).padStart(5)}px of ${String(item.natural).padEnd(5)} ${item.where}  "${item.text}"`);
+          }
+        }
+        if (row.state === "bar" && row.overlaps.length) {
+          failed = true;
+          for (const overlap of row.overlaps) {
+            console.log(`  FAIL ${label}: ${overlap} draw over each other`);
           }
         }
         if (row.overflow > 1) {
