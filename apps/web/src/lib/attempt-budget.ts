@@ -99,3 +99,27 @@ export async function clearBudget<T extends BudgetTable>(
 ): Promise<void> {
   await db.delete(table).where(eq(table.id, scope));
 }
+
+/**
+ * Whether `scope` has already used up its budget in the window it is
+ * counting in, without spending anything. A window that has run its course
+ * counts as empty, the same as `spendBudgetStatement` would treat it.
+ */
+export async function budgetExhausted<T extends BudgetTable>(
+  db: McpDatabase,
+  table: T,
+  scope: string,
+  maxAttempts: number,
+  windowMs: number,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const [row] = (await db
+    .select({ count: table.count, windowStartedAt: table.windowStartedAt })
+    .from(table as PgTable)
+    .where(eq(table.id, scope))) as Array<{ count: number; windowStartedAt: Date }>;
+  if (!row) return false;
+  return (
+    row.count >= maxAttempts &&
+    row.windowStartedAt.getTime() >= now.getTime() - windowMs
+  );
+}

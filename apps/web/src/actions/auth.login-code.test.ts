@@ -549,6 +549,62 @@ describe("signing in with a code sent by email", () => {
       return rows.filter((row) => row.id.includes("origin:198.51.100.7"));
     }
 
+    describe("a sign-in that works is not charged to its origin", () => {
+      beforeEach(() => {
+        process.env.OVERCLICK_TRUSTED_PROXY = "1";
+        requestState.headers = { "x-forwarded-for": "198.51.100.7" };
+      });
+
+      it("lets more than the failure budget of correct password sign-ins through from one origin", async () => {
+        for (let i = 0; i < MAX_LOGIN_FAILURES + 4; i++) {
+          redirectSpy.mockClear();
+          const answer = await loginAction(null, passwordForm(EMAIL, PASSWORD));
+          expect(answer?.error).toBeUndefined();
+          expect(redirectSpy).toHaveBeenCalledWith("/home");
+        }
+        expect(await originRows()).toHaveLength(0);
+      });
+
+      it("locks an origin after as many wrong passwords as the budget, for a correct one too", async () => {
+        for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
+          await loginAction(null, passwordForm(`ghost${i}@local.test`, "nope-nope"));
+        }
+
+        const refused = await loginAction(null, passwordForm(EMAIL, PASSWORD));
+
+        expect(refused?.error).toBeTruthy();
+        expect(redirectSpy).not.toHaveBeenCalled();
+        expect(requestState.cookieSet).not.toHaveBeenCalled();
+      });
+
+      it("lets more than the failure budget of correct code sign-ins through from one origin", async () => {
+        const { issueLoginCode } = await import("../lib/login-code");
+        for (let i = 0; i < MAX_LOGIN_FAILURES + 4; i++) {
+          at(i * 2 * MINUTE);
+          const issued = await issueLoginCode(world.db, EMAIL);
+          redirectSpy.mockClear();
+          const answer = await loginWithCodeAction(null, codeForm(EMAIL, issued!.code));
+          expect(answer?.error).toBeUndefined();
+          expect(redirectSpy).toHaveBeenCalledWith("/home");
+        }
+        expect(await originRows()).toHaveLength(0);
+      });
+
+      it("locks an origin after as many wrong codes as the budget, for a correct one too", async () => {
+        const { issueLoginCode } = await import("../lib/login-code");
+        for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
+          await loginWithCodeAction(null, codeForm(`ghost${i}@local.test`, "123456"));
+        }
+        const issued = await issueLoginCode(world.db, EMAIL);
+
+        const refused = await loginWithCodeAction(null, codeForm(EMAIL, issued!.code));
+
+        expect(refused?.error).toBeTruthy();
+        expect(redirectSpy).not.toHaveBeenCalled();
+        expect(requestState.cookieSet).not.toHaveBeenCalled();
+      });
+    });
+
     it("does not let a successful code sign-in wipe what its origin has spent", async () => {
       process.env.OVERCLICK_TRUSTED_PROXY = "1";
       requestState.headers = { "x-forwarded-for": "198.51.100.7" };

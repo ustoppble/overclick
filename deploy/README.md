@@ -81,8 +81,11 @@ the address has an account. A live code under a minute old is never replaced
 by a new ask. Ten wrong codes in 24 hours, however many codes they were
 spread over, shut code sign-in for that account for 24 hours; the password
 keeps working. Passwords and codes have separate failed-attempt budgets, so
-running one out never locks the other. Switching a member off deletes the
-codes they were sent.
+running one out never locks the other. Each budget is 8 failures in 15 minutes
+per address typed and, behind the trusted proxy, per origin; the origin is
+charged only for a sign-in that fails, so people who sign in correctly are
+never counted against it. Switching a member off deletes the codes they were
+sent.
 
 The whole instance also sends at most 60 code emails an hour, whoever asks;
 set `LOGIN_CODE_MAX_SENDS_PER_HOUR` in `deploy/.env` to change it. Past the cap
@@ -97,7 +100,8 @@ the owner's call; until then the limits above are all there is.
 
 ### Behind a proxy: which address counts as the origin
 
-The per-origin limit (and the failed-attempt budget by origin) reads the **last**
+The per-origin limit (and the failed-attempt budget by origin, which only
+failed sign-ins spend) reads the **last**
 hop of `X-Forwarded-For`, and only when `OVERCLICK_TRUSTED_PROXY=1`. That is
 right for one proxy that **appends** the address it saw (Caddy, Traefik,
 nginx with `$proxy_add_x_forwarded_for`). Two things to know:

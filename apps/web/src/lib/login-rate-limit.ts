@@ -1,7 +1,12 @@
 import { loginCodeRequest, loginFailure } from "@agent-board/db";
 import { eq, sql } from "drizzle-orm";
 import { headers } from "next/headers";
-import { clearBudget, spendBudget, spendBudgetStatement } from "./attempt-budget";
+import {
+  budgetExhausted,
+  clearBudget,
+  spendBudget,
+  spendBudgetStatement,
+} from "./attempt-budget";
 import type { McpDatabase } from "../mcp/types";
 
 /**
@@ -70,9 +75,11 @@ export async function loginOrigin(): Promise<string | null> {
 }
 
 /**
- * Charges one attempt to the origin's bucket and then the email's, and
- * reports whether the login may proceed to `verifyPassword`. Neither looks at
- * whether the account exists, so which one refuses says nothing about it.
+ * Lets a password attempt proceed to `verifyPassword`, or not. The origin's
+ * bucket is only read here — it is charged by `chargeLoginOriginFailure`
+ * once the attempt has failed — and the email's is charged now, as
+ * submitted. Neither looks at whether the account exists, so which one
+ * refuses says nothing about it.
  */
 export async function withinLoginBudget(
   db: McpDatabase,
@@ -103,16 +110,20 @@ async function spendLoginBuckets(
   origin: string | null,
 ): Promise<boolean> {
   // The origin first, and a refusal stops here: an origin that has used its
-  // allowance gets no new per-address row for whatever it makes up next.
-  if (origin) {
-    const originOk = await spendBudget(
+  // allowance gets no new per-address row for whatever it makes up next. Only
+  // read: behind a NAT or an edge proxy the origin is shared by everyone, and
+  // charging it for sign-ins that work would lock out the people it serves.
+  if (
+    origin &&
+    (await budgetExhausted(
       db,
       loginFailure,
       loginFailureScope(flow, "origin", origin),
       MAX_LOGIN_FAILURES,
       LOGIN_ATTEMPT_WINDOW_MS,
-    );
-    if (!originOk) return false;
+    ))
+  ) {
+    return false;
   }
   return spendBudget(
     db,
@@ -124,10 +135,46 @@ async function spendLoginBuckets(
 }
 
 /**
+ * Charges the origin for a password attempt that did not get in. Called
+ * whichever way it failed — no such account, switched off, wrong password —
+ * so what is charged says nothing about the account either.
+ */
+export async function chargeLoginOriginFailure(
+  db: McpDatabase,
+  origin: string | null,
+): Promise<void> {
+  await chargeOriginFailure(db, "login", origin);
+}
+
+/** Same as `chargeLoginOriginFailure`, for a code that did not get in. */
+export async function chargeCodeLoginOriginFailure(
+  db: McpDatabase,
+  origin: string | null,
+): Promise<void> {
+  await chargeOriginFailure(db, "logincode", origin);
+}
+
+async function chargeOriginFailure(
+  db: McpDatabase,
+  flow: "login" | "logincode",
+  origin: string | null,
+): Promise<void> {
+  if (!origin) return;
+  await spendBudget(
+    db,
+    loginFailure,
+    loginFailureScope(flow, "origin", origin),
+    MAX_LOGIN_FAILURES,
+    LOGIN_ATTEMPT_WINDOW_MS,
+  );
+}
+
+/**
  * A successful login clears the email's budget, nobody there was guessing.
  * It never clears the origin's: that bucket is shared by everyone behind the
  * address, so anyone with an account of their own could otherwise wipe it
- * between rounds of guessing at somebody else's.
+ * between rounds of guessing at somebody else's. The origin is only charged
+ * for failures, so a success has nothing there to clear.
  */
 export async function clearLoginBudget(db: McpDatabase, email: string): Promise<void> {
   await clearBudget(db, loginFailure, loginFailureScope("login", "email", email));
