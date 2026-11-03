@@ -114,17 +114,50 @@ describe("login codes", () => {
 
   it("invalidates the previous code when a new one is issued", async () => {
     const first = await issueLoginCode(world.db, EMAIL, T0);
-    let second = await issueLoginCode(world.db, EMAIL, at(1000));
+    // A minute on, the first code no longer protects itself from a new ask.
+    let when = 61 * 1000;
+    let second = await issueLoginCode(world.db, EMAIL, at(when));
     // Two draws can land on the same six digits; the old one is only provably
     // dead when it differs from the live one.
     while (second!.code === first!.code) {
-      second = await issueLoginCode(world.db, EMAIL, at(1000));
+      when += 61 * 1000;
+      second = await issueLoginCode(world.db, EMAIL, at(when));
     }
 
-    expect(await redeemLoginCode(world.db, EMAIL, first!.code, at(2000))).toBeNull();
-    expect(await redeemLoginCode(world.db, EMAIL, second!.code, at(3000))).toEqual({
+    expect(await redeemLoginCode(world.db, EMAIL, first!.code, at(when + 1000))).toBeNull();
+    expect(await redeemLoginCode(world.db, EMAIL, second!.code, at(when + 2000))).toEqual({
       userId,
     });
+  });
+
+  it("leaves a live code younger than a minute alone and issues nothing new", async () => {
+    const first = await issueLoginCode(world.db, EMAIL, T0);
+
+    expect(await issueLoginCode(world.db, EMAIL, at(30 * 1000))).toBeNull();
+
+    expect(await world.db.select().from(loginCode)).toHaveLength(1);
+    expect(await redeemLoginCode(world.db, EMAIL, first!.code, at(31 * 1000))).toEqual({
+      userId,
+    });
+  });
+
+  it("replaces a live code once it is a minute old", async () => {
+    const first = await issueLoginCode(world.db, EMAIL, T0);
+    let second = await issueLoginCode(world.db, EMAIL, at(61 * 1000));
+    while (second && second.code === first!.code) {
+      await world.db.delete(loginCode);
+      second = await issueLoginCode(world.db, EMAIL, at(61 * 1000));
+    }
+
+    expect(second).not.toBeNull();
+    expect(await world.db.select().from(loginCode)).toHaveLength(1);
+  });
+
+  it("replaces a young code that was used up, since nothing live is being protected", async () => {
+    const first = await issueLoginCode(world.db, EMAIL, T0);
+    await redeemLoginCode(world.db, EMAIL, first!.code, at(1000));
+
+    expect(await issueLoginCode(world.db, EMAIL, at(5000))).not.toBeNull();
   });
 
   it("does not let one account's code open another account", async () => {

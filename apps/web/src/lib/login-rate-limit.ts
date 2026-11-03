@@ -150,29 +150,18 @@ function codeRequestScope(
 }
 
 /**
- * Charges one code request to every bucket and says whether a code may be
- * issued. All buckets are always spent, for the same reason as in
- * `withinLoginBudget`.
+ * Charges one code request and says whether a code may be issued. The
+ * buckets are charged in order and a refusal stops the chain: an ask the
+ * minute bucket turned away must not also eat the hour's allowance, or a
+ * stranger hammering an address for a second would leave its owner without
+ * codes for the whole hour. Which bucket refused cannot tell a caller
+ * whether the address has an account — none of them looks at that.
  */
 export async function withinCodeRequestBudget(
   db: McpDatabase,
   email: string,
   origin: string | null,
 ): Promise<boolean> {
-  const minuteOk = await spendBudget(
-    db,
-    loginCodeRequest,
-    codeRequestScope("minute-email", email),
-    CODE_REQUESTS_PER_MINUTE,
-    CODE_REQUEST_MINUTE_MS,
-  );
-  const hourOk = await spendBudget(
-    db,
-    loginCodeRequest,
-    codeRequestScope("hour-email", email),
-    CODE_REQUESTS_PER_HOUR,
-    CODE_REQUEST_HOUR_MS,
-  );
   const originOk = origin
     ? await spendBudget(
         db,
@@ -182,7 +171,25 @@ export async function withinCodeRequestBudget(
         CODE_REQUEST_HOUR_MS,
       )
     : true;
-  if (!(minuteOk && hourOk && originOk)) return false;
+  if (!originOk) return false;
+
+  const minuteOk = await spendBudget(
+    db,
+    loginCodeRequest,
+    codeRequestScope("minute-email", email),
+    CODE_REQUESTS_PER_MINUTE,
+    CODE_REQUEST_MINUTE_MS,
+  );
+  if (!minuteOk) return false;
+
+  const hourOk = await spendBudget(
+    db,
+    loginCodeRequest,
+    codeRequestScope("hour-email", email),
+    CODE_REQUESTS_PER_HOUR,
+    CODE_REQUEST_HOUR_MS,
+  );
+  if (!hourOk) return false;
 
   // Charged for every ask that got this far, account or not, so the cap is
   // no more an oracle than the buckets above.

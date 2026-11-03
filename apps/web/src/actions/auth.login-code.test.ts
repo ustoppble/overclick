@@ -166,6 +166,22 @@ describe("signing in with a code sent by email", () => {
       expect(sentTo(EMAIL)).toBe(2);
     });
 
+    it("does not charge the hourly bucket for asks the minute bucket refused, so a burst cannot lock the owner out for the hour", async () => {
+      await requestLoginCodeAction(null, emailForm(EMAIL));
+      expect(sentTo(EMAIL)).toBe(1);
+
+      // A stranger hammering the owner's address.
+      for (let i = 0; i < 20; i++) {
+        at(1000 + i);
+        await requestLoginCodeAction(null, emailForm(EMAIL));
+      }
+      expect(sentTo(EMAIL)).toBe(1);
+
+      at(MINUTE + 5000);
+      await requestLoginCodeAction(null, emailForm(EMAIL));
+      expect(sentTo(EMAIL)).toBe(2);
+    });
+
     it("sends at most five codes an hour per address", async () => {
       for (let i = 0; i < CODE_REQUESTS_PER_HOUR; i++) {
         at(i * (MINUTE + 1000));
