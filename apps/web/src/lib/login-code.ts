@@ -7,6 +7,7 @@ import {
   claimLockNoticeRow,
   codeLoginLockStart,
   codeLoginLocked,
+  spendGlobalSend,
 } from "./login-rate-limit";
 import { deriveKey } from "./session";
 
@@ -185,7 +186,8 @@ export async function redeemLoginCode(
 
 /**
  * The address to warn, when the account at `email` is locked out of code
- * sign-in and nobody has been told about this lock yet; null otherwise. Run
+ * sign-in, nobody has been told about this lock yet and the hourly send cap
+ * has room for the warning; null otherwise. Run
  * after a failed sign-in, once the response is out, so whether it finds
  * anything never shows in the response.
  */
@@ -198,7 +200,10 @@ export async function claimLockNotice(
   if (!account) return null;
   const lockStart = await codeLoginLockStart(db, account.id, now);
   if (!lockStart) return null;
-  return (await claimLockNoticeRow(db, account.id, lockStart)) ? { to: email } : null;
+  if (!(await claimLockNoticeRow(db, account.id, lockStart))) return null;
+  // The warning is an email like any other: it counts against the instance's
+  // hourly cap, and once that is spent this lock goes without one.
+  return (await spendGlobalSend(db)) ? { to: email } : null;
 }
 
 /** The warning a lock sends: what happened, for how long, and what to do. No code in it. */

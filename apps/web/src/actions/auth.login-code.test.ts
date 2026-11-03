@@ -670,6 +670,31 @@ describe("signing in with a code sent by email", () => {
       expect(lockNotices(EMAIL)).toHaveLength(2);
     });
 
+    it("counts the notice in the hourly send cap, and sends none once the cap is spent", async () => {
+      process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "5";
+      await world.db
+        .insert(loginCodeRequest)
+        .values({ id: "code-hour-global:all", count: 4, windowStartedAt: new Date(T0.getTime()) });
+      await lockThroughTheAction(EMAIL);
+
+      expect(lockNotices(EMAIL)).toHaveLength(1);
+      const [global] = await world.db
+        .select()
+        .from(loginCodeRequest)
+        .where(eq(loginCodeRequest.id, "code-hour-global:all"));
+      expect(global!.count).toBe(5);
+    });
+
+    it("drops the notice when the hourly cap is already spent, without throwing", async () => {
+      process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "5";
+      await world.db
+        .insert(loginCodeRequest)
+        .values({ id: "code-hour-global:all", count: 5, windowStartedAt: new Date(T0.getTime()) });
+      await lockThroughTheAction(EMAIL);
+
+      expect(lockNotices(EMAIL)).toHaveLength(0);
+    });
+
     it("sends nothing for an address with no account, however many wrong codes it gets", async () => {
       for (let i = 0; i < 12; i++) {
         await loginWithCodeAction(null, codeForm("ghost@local.test", "000000"));

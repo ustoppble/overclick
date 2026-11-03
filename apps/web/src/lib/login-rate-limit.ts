@@ -256,13 +256,24 @@ export async function withinCodeRequestBudget(
   if (!hourOk) return false;
 
   // Charged for every ask that got this far, account or not, so the cap is
-  // no more an oracle than the buckets above. The read above is not atomic
-  // with this charge, so a burst may overshoot by a few; the count here is
-  // what keeps it from going further.
+  // no more an oracle than the buckets above.
+  return spendGlobalSend(db);
+}
+
+/**
+ * Charges one email to the instance-wide hourly cap and says whether it fits.
+ * Every email this flow sends is counted here: the asks that reach the end of
+ * `withinCodeRequestBudget`, and the warning a lock sends (`claimLockNotice`).
+ * The read in `withinCodeRequestBudget` is not atomic with this charge, so a
+ * burst may overshoot by a few; the count here is what keeps it from going
+ * further.
+ */
+export async function spendGlobalSend(db: McpDatabase): Promise<boolean> {
+  const cap = loginCodeSendCap();
   const [global] = await spendBudgetStatement(
     db,
     loginCodeRequest,
-    globalScope,
+    codeRequestScope("hour-global", "all"),
     new Date(),
     CODE_REQUEST_HOUR_MS,
   );
