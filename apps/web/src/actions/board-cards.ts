@@ -4,12 +4,12 @@ import { and, eq } from "drizzle-orm";
 import { project, workspace } from "@agent-board/db";
 import type { BoardCard } from "../app/home/board";
 import { toBoardCards } from "../lib/board-card";
+import { parseBoardFilter, parseOlderRequest } from "../lib/board-input";
 import { boardSearchLimiter, normalizeBoardSearch } from "../lib/board-search-guard";
 import type { BoardFilter } from "../lib/board-filter";
 import type { ColumnCounts } from "../lib/board-columns";
 import {
   countBoardColumns,
-  isArchivedStatus,
   loadBoardTasksByIds,
   loadOlderBoardTasks,
   searchBoardTaskIds,
@@ -70,15 +70,10 @@ export async function loadOlderBoardCardsAction(input: {
   filter: BoardFilter;
   before: OlderCursor | null;
 }): Promise<{ cards: BoardCard[]; hasMore: boolean }> {
+  const request = parseOlderRequest(input);
   const reader = await boardReader();
-  if (!reader || !isArchivedStatus(input.status)) {
-    return { cards: [], hasMore: false };
-  }
-  const page = await loadOlderBoardTasks(db(), reader.projects, reader.principal, {
-    status: input.status,
-    filter: input.filter,
-    before: input.before,
-  });
+  if (!reader || !request) return { cards: [], hasMore: false };
+  const page = await loadOlderBoardTasks(db(), reader.projects, reader.principal, request);
   return { cards: await asCards(reader, page.tasks), hasMore: page.hasMore };
 }
 
@@ -113,7 +108,8 @@ export async function searchBoardCardsAction(
 export async function boardColumnCountsAction(
   filter: BoardFilter,
 ): Promise<ColumnCounts | null> {
+  const wanted = parseBoardFilter(filter);
   const reader = await boardReader();
-  if (!reader) return null;
-  return countBoardColumns(db(), reader.projects, reader.principal, filter);
+  if (!reader || !wanted) return null;
+  return countBoardColumns(db(), reader.projects, reader.principal, wanted);
 }
