@@ -121,7 +121,8 @@ export async function loginAction(
   // it is shared by everyone behind one NAT or edge proxy, so a sign-in
   // that works gives its charge back below.
   const origin = await loginOrigin();
-  if (!(await withinLoginBudget(db(), email, origin))) {
+  const charge = await withinLoginBudget(db(), email, origin);
+  if (!charge.ok) {
     return { error: (await authCopy()).errCredentials };
   }
 
@@ -143,7 +144,7 @@ export async function loginAction(
     return { error: (await authCopy()).errCredentials };
   }
 
-  await refundLoginOrigin(db(), origin);
+  await refundLoginOrigin(db(), origin, charge);
   await clearLoginBudget(db(), email);
   await setSession({
     userId: found.id,
@@ -217,7 +218,8 @@ export async function loginWithCodeAction(
 
   await sweepLoginRows(db());
   const origin = await loginOrigin();
-  if (!(await withinCodeLoginBudget(db(), email, origin))) {
+  const charge = await withinCodeLoginBudget(db(), email, origin);
+  if (!charge.ok) {
     return { error: (await authCopy()).errCode };
   }
 
@@ -229,7 +231,7 @@ export async function loginWithCodeAction(
     return { error: (await authCopy()).errCode };
   }
 
-  await refundCodeLoginOrigin(db(), origin);
+  await refundCodeLoginOrigin(db(), origin, charge);
   await clearCodeLoginBudget(db(), email);
   await setSession({
     userId: found.id,

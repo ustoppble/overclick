@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import {
   budgetExhausted,
+  chargeBudget,
   clearBudget,
   refundBudget,
   spendBudget,
@@ -76,6 +77,15 @@ export async function loginOrigin(): Promise<string | null> {
 }
 
 /**
+ * What an attempt was charged: whether it may go on to be checked, and the
+ * window of the origin's bucket the charge landed in, which is what gives it
+ * back (`refundLoginOrigin`) to that window and no other. `originWindow` is
+ * null when there is no origin to charge, or when the attempt was turned away
+ * and nothing is left to give back.
+ */
+export type LoginCharge = { ok: boolean; originWindow: Date | null };
+
+/**
  * Lets a password attempt proceed to `verifyPassword`, or not. Both buckets
  * are charged now, before anything is verified, and the email's as
  * submitted. Neither looks at whether the account exists, so which one
@@ -86,7 +96,7 @@ export async function withinLoginBudget(
   db: McpDatabase,
   email: string,
   origin: string | null,
-): Promise<boolean> {
+): Promise<LoginCharge> {
   return spendLoginBuckets(db, "login", email, origin);
 }
 
@@ -100,7 +110,7 @@ export async function withinCodeLoginBudget(
   db: McpDatabase,
   email: string,
   origin: string | null,
-): Promise<boolean> {
+): Promise<LoginCharge> {
   return spendLoginBuckets(db, "logincode", email, origin);
 }
 
@@ -109,26 +119,29 @@ async function spendLoginBuckets(
   flow: "login" | "logincode",
   email: string,
   origin: string | null,
-): Promise<boolean> {
+): Promise<LoginCharge> {
   // The origin first, and a refusal stops here: an origin that has used its
   // allowance gets no new per-address row for whatever it makes up next.
   // Charged before the guess is checked, in one statement: reading the count
   // and charging it after the check let a burst of parallel guesses, one
-  // address each, all read an untouched origin and pass together. The charge
-  // is given back on success (`refundLoginOrigin`), because behind a NAT or
-  // an edge proxy the origin is shared by everyone, and sign-ins that work
-  // must not lock out the people it serves.
-  if (
-    origin &&
-    !(await spendBudget(
+  // address each, all read an untouched origin and pass together. A charge
+  // the origin has no room for is not taken at all, so a burst of sign-ins
+  // that work and are turned away only for being too many at once leaves
+  // nothing behind to lock the origin out afterwards. The charge is given
+  // back on success (`refundLoginOrigin`), because behind a NAT or an edge
+  // proxy the origin is shared by everyone, and sign-ins that work must not
+  // lock out the people it serves.
+  let originWindow: Date | null = null;
+  if (origin) {
+    const charge = await chargeBudget(
       db,
       loginFailure,
       loginFailureScope(flow, "origin", origin),
       MAX_LOGIN_FAILURES,
       LOGIN_ATTEMPT_WINDOW_MS,
-    ))
-  ) {
-    return false;
+    );
+    if (!charge.ok) return { ok: false, originWindow: null };
+    originWindow = charge.windowStartedAt;
   }
   const emailOk = await spendBudget(
     db,
@@ -140,8 +153,11 @@ async function spendLoginBuckets(
   // Turned away before any guess was checked: nothing to count against the
   // origin, so a stranger hammering one address cannot use up the allowance
   // of the people sharing its origin.
-  if (!emailOk) await refundOriginCharge(db, flow, origin);
-  return emailOk;
+  if (!emailOk) {
+    await refundOriginCharge(db, flow, origin, originWindow);
+    return { ok: false, originWindow: null };
+  }
+  return { ok: true, originWindow };
 }
 
 /**
@@ -152,29 +168,32 @@ async function spendLoginBuckets(
 export async function refundLoginOrigin(
   db: McpDatabase,
   origin: string | null,
+  charge: LoginCharge,
 ): Promise<void> {
-  await refundOriginCharge(db, "login", origin);
+  await refundOriginCharge(db, "login", origin, charge.originWindow);
 }
 
 /** Same as `refundLoginOrigin`, for a code sign-in that worked. */
 export async function refundCodeLoginOrigin(
   db: McpDatabase,
   origin: string | null,
+  charge: LoginCharge,
 ): Promise<void> {
-  await refundOriginCharge(db, "logincode", origin);
+  await refundOriginCharge(db, "logincode", origin, charge.originWindow);
 }
 
 async function refundOriginCharge(
   db: McpDatabase,
   flow: "login" | "logincode",
   origin: string | null,
+  originWindow: Date | null,
 ): Promise<void> {
-  if (!origin) return;
+  if (!origin || !originWindow) return;
   await refundBudget(
     db,
     loginFailure,
     loginFailureScope(flow, "origin", origin),
-    LOGIN_ATTEMPT_WINDOW_MS,
+    originWindow,
   );
 }
 

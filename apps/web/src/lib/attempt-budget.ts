@@ -1,4 +1,4 @@
-import { and, eq, gte, lte, sql, type SQL } from "drizzle-orm";
+import { and, eq, lte, sql, type SQL } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import type { McpDatabase } from "../mcp/types";
 
@@ -20,6 +20,7 @@ type UntypedInsert = {
     onConflictDoUpdate(opts: {
       target: PgColumn;
       set: Record<string, unknown>;
+      setWhere?: SQL;
     }): {
       returning(columns: Record<string, PgColumn>): UntypedInsertResult;
     };
@@ -32,7 +33,7 @@ type UntypedUpdate = {
 };
 
 /** A drizzle query: awaits to rows, and `.toSQL()` inspects it unexecuted (see `pairing.integration.test.ts`). */
-type UntypedInsertResult = Promise<Array<{ count: number }>> & {
+type UntypedInsertResult = Promise<Array<{ count: number; windowStartedAt: Date }>> & {
   toSQL(): { sql: string; params: unknown[] };
 };
 
@@ -42,6 +43,14 @@ type UntypedInsertResult = Promise<Array<{ count: number }>> & {
  * count and write back the same increment — see `pairing.ts` for the full
  * argument. The window resets on its own once `windowMs` has passed since it
  * started, so a caller need not run any cleanup job.
+ *
+ * With `maxAttempts` the statement only takes the charge while the scope is
+ * under it: a scope at its limit is left exactly as it is and the statement
+ * returns no row. A spend that is turned away therefore costs nothing, which
+ * is what lets a caller that gives charges back (`refundBudget`) keep the
+ * books even — nothing refused is left in the count with nobody to give it
+ * back. Without it the count simply goes up, for a caller that wants the
+ * number (the hourly send cap).
  *
  * The two timestamps are sent as explicit `::timestamptz` casts, not as
  * `Date` values, because a value interpolated into `sql` reaches the driver
@@ -65,6 +74,7 @@ export function spendBudgetStatement<T extends BudgetTable>(
   scope: string,
   now: Date,
   windowMs: number,
+  maxAttempts?: number,
 ) {
   const windowFloor = new Date(now.getTime() - windowMs);
   const floorParam = sql`${windowFloor.toISOString()}::timestamptz`;
@@ -80,11 +90,38 @@ export function spendBudgetStatement<T extends BudgetTable>(
         windowStartedAt: sql`case when ${table.windowStartedAt} < ${floorParam}
           then ${nowParam} else ${table.windowStartedAt} end`,
       },
+      setWhere:
+        maxAttempts === undefined
+          ? undefined
+          : sql`${table.count} < ${maxAttempts} or ${table.windowStartedAt} < ${floorParam}`,
     })
-    .returning({ count: table.count }) as UntypedInsertResult;
+    .returning({
+      count: table.count,
+      windowStartedAt: table.windowStartedAt,
+    }) as UntypedInsertResult;
 }
 
-/** Spends one attempt and says whether `scope` is still inside its budget. */
+/**
+ * Takes one attempt from `scope` if it has one left. `windowStartedAt` is the
+ * window the charge landed in, which is what `refundBudget` needs to give it
+ * back to the right window; null when the scope was out of attempts and
+ * nothing was charged.
+ */
+export async function chargeBudget<T extends BudgetTable>(
+  db: McpDatabase,
+  table: T,
+  scope: string,
+  maxAttempts: number,
+  windowMs: number,
+  now: Date = new Date(),
+): Promise<{ ok: boolean; windowStartedAt: Date | null }> {
+  const [row] = await spendBudgetStatement(db, table, scope, now, windowMs, maxAttempts);
+  return row
+    ? { ok: true, windowStartedAt: row.windowStartedAt }
+    : { ok: false, windowStartedAt: null };
+}
+
+/** Spends one attempt and says whether `scope` was inside its budget. */
 export async function spendBudget<T extends BudgetTable>(
   db: McpDatabase,
   table: T,
@@ -92,31 +129,30 @@ export async function spendBudget<T extends BudgetTable>(
   maxAttempts: number,
   windowMs: number,
 ): Promise<boolean> {
-  const [row] = await spendBudgetStatement(db, table, scope, new Date(), windowMs);
-  return (row?.count ?? 1) <= maxAttempts;
+  return (await chargeBudget(db, table, scope, maxAttempts, windowMs)).ok;
 }
 
 /**
- * Gives back one attempt `spendBudget` took from `scope`, for a caller that
+ * Gives back one attempt `chargeBudget` took from `scope`, for a caller that
  * spends first and learns afterwards that the attempt was not one to count.
- * One statement, so it cannot undercount a burst either; a window that has
- * already run its course has nothing to give back, and the count never goes
- * below zero.
+ * `windowStartedAt` is the window that charge landed in: if the scope has
+ * moved on to another window since, the charge went away with the old one
+ * and there is nothing to give back, so a slow caller cannot take an attempt
+ * from somebody else's window. One statement, so it cannot undercount a
+ * burst either; the count never goes below zero.
  */
 export async function refundBudget<T extends BudgetTable>(
   db: McpDatabase,
   table: T,
   scope: string,
-  windowMs: number,
-  now: Date = new Date(),
+  windowStartedAt: Date,
 ): Promise<void> {
-  const floor = new Date(now.getTime() - windowMs);
   await (db.update(table) as UntypedUpdate)
     .set({ count: sql`greatest(${table.count} - 1, 0)` })
     .where(
       and(
         eq(table.id, scope),
-        gte(table.windowStartedAt, sql`${floor.toISOString()}::timestamptz`),
+        eq(table.windowStartedAt, sql`${windowStartedAt.toISOString()}::timestamptz`),
       ),
     );
   // A bucket given back down to nothing is no bucket: drop the row rather

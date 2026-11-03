@@ -2,7 +2,7 @@ import { loginFailure, user } from "@agent-board/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_LOGIN_FAILURES } from "../lib/login-rate-limit";
 import { hashPassword, verifyPassword } from "../lib/password";
-import { redeemLoginCode } from "../lib/login-code";
+import { issueLoginCode, redeemLoginCode } from "../lib/login-code";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
 
 let world: TestWorld;
@@ -111,5 +111,176 @@ describe("a parallel burst from one origin, one address per guess", () => {
       (row) => row.id === "login-origin:198.51.100.7",
     );
     expect(origin?.count ?? 0).toBe(0);
+  });
+});
+
+const ORIGIN_PASSWORD = "login-origin:198.51.100.7";
+const ORIGIN_CODE = "logincode-origin:198.51.100.7";
+const PASSWORD = "right-one-123";
+
+async function originCount(id: string): Promise<number> {
+  const rows = await world.db.select().from(loginFailure);
+  return rows.find((row) => row.id === id)?.count ?? 0;
+}
+
+/** `n` accounts that all sign in with `PASSWORD`, one address each. */
+async function seedAccounts(n: number): Promise<string[]> {
+  const passwordHash = await hashPassword(PASSWORD);
+  const emails = Array.from({ length: n }, (_, i) => `ok${i}@local.test`);
+  await world.db.insert(user).values(emails.map((email) => ({ email, passwordHash })));
+  return emails;
+}
+
+/** A live code for each of `emails`, in the order given. */
+async function seedCodes(emails: string[]): Promise<string[]> {
+  return Promise.all(
+    emails.map(async (email) => {
+      const issued = await issueLoginCode(world.db, email);
+      if (!issued) throw new Error("no code issued");
+      return issued.code;
+    }),
+  );
+}
+
+/** A sign-in that works answers with a redirect, which is mocked: no error comes back. */
+function signedIn(answers: Array<{ error: string } | null | undefined>): number {
+  return answers.filter((answer) => !answer).length;
+}
+
+/**
+ * Behind a NAT or an edge proxy the origin is shared by everyone, so people
+ * signing in correctly must not lock it out — however many of them arrive at
+ * once. The origin's charge is taken before the guess is checked, so a burst
+ * wider than the budget finds some of its members turned away while the rest
+ * are in flight; what is turned away must not stay charged, or the origin is
+ * left locked for the whole window with nobody having been wrong.
+ */
+describe.each([12, 30])("a parallel burst of %i right sign-ins from one origin", (burst) => {
+  beforeEach(async () => {
+    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.OVERCLICK_TRUSTED_PROXY = "1";
+    world = await createTestWorld();
+  });
+
+  afterEach(async () => {
+    if (world) await closeTestWorld(world);
+    delete process.env.AUTH_SECRET;
+    delete process.env.OVERCLICK_TRUSTED_PROXY;
+  });
+
+  it("leaves the origin's password budget untouched", async () => {
+    const emails = await seedAccounts(burst);
+    const answers = await Promise.all(
+      emails.map((email) => loginAction(null, passwordForm(email, PASSWORD))),
+    );
+
+    // The budget is what bounds how many guesses are in flight at once.
+    expect(signedIn(answers)).toBeGreaterThanOrEqual(MAX_LOGIN_FAILURES);
+    expect(await originCount(ORIGIN_PASSWORD)).toBe(0);
+    // And nobody is shut out afterwards.
+    const [again] = await Promise.all([loginAction(null, passwordForm(emails[0]!, PASSWORD))]);
+    expect(again).toBeUndefined();
+  });
+
+  it("leaves the origin's code budget untouched", async () => {
+    // One account more than the burst, kept out of it: the one to sign in
+    // with afterwards.
+    const [afterwards, ...emails] = (await seedAccounts(burst + 1)).reverse();
+    const codes = await seedCodes([afterwards!, ...emails]);
+    const answers = await Promise.all(
+      emails.map((email, i) => loginWithCodeAction(null, codeForm(email, codes[i + 1]!))),
+    );
+
+    expect(signedIn(answers)).toBeGreaterThanOrEqual(MAX_LOGIN_FAILURES);
+    expect(await originCount(ORIGIN_CODE)).toBe(0);
+    expect(await loginWithCodeAction(null, codeForm(afterwards!, codes[0]!))).toBeUndefined();
+  });
+});
+
+describe("right sign-ins from one origin, one after the other", () => {
+  beforeEach(async () => {
+    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.OVERCLICK_TRUSTED_PROXY = "1";
+    world = await createTestWorld();
+  });
+
+  afterEach(async () => {
+    if (world) await closeTestWorld(world);
+    delete process.env.AUTH_SECRET;
+    delete process.env.OVERCLICK_TRUSTED_PROXY;
+  });
+
+  it("never run out of password budget, however many there are", async () => {
+    const emails = await seedAccounts(14);
+    const answers: Array<{ error: string } | null | undefined> = [];
+    for (const email of emails) answers.push(await loginAction(null, passwordForm(email, PASSWORD)));
+
+    expect(signedIn(answers)).toBe(14);
+    expect(await originCount(ORIGIN_PASSWORD)).toBe(0);
+  });
+
+  it("never run out of code budget, however many there are", async () => {
+    const emails = await seedAccounts(14);
+    const codes = await seedCodes(emails);
+    const answers: Array<{ error: string } | null | undefined> = [];
+    for (const [i, email] of emails.entries()) {
+      answers.push(await loginWithCodeAction(null, codeForm(email, codes[i]!)));
+    }
+
+    expect(signedIn(answers)).toBe(14);
+    expect(await originCount(ORIGIN_CODE)).toBe(0);
+  });
+});
+
+describe("what a right sign-in gives back", () => {
+  beforeEach(async () => {
+    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.OVERCLICK_TRUSTED_PROXY = "1";
+    world = await createTestWorld();
+  });
+
+  afterEach(async () => {
+    if (world) await closeTestWorld(world);
+    delete process.env.AUTH_SECRET;
+    delete process.env.OVERCLICK_TRUSTED_PROXY;
+  });
+
+  it("is its own charge on the password budget, never the wrong guesses before it", async () => {
+    const [email] = await seedAccounts(1);
+    for (let i = 0; i < 3; i++) {
+      await loginAction(null, passwordForm(`ghost${i}@local.test`, "nope-nope"));
+    }
+    expect(await originCount(ORIGIN_PASSWORD)).toBe(3);
+
+    expect(await loginAction(null, passwordForm(email!, PASSWORD))).toBeUndefined();
+
+    expect(await originCount(ORIGIN_PASSWORD)).toBe(3);
+  });
+
+  it("is its own charge on the code budget, never the wrong guesses before it", async () => {
+    const [email] = await seedAccounts(1);
+    const [code] = await seedCodes([email!]);
+    for (let i = 0; i < 3; i++) {
+      await loginWithCodeAction(null, codeForm(`ghost${i}@local.test`, "123456"));
+    }
+    expect(await originCount(ORIGIN_CODE)).toBe(3);
+
+    expect(await loginWithCodeAction(null, codeForm(email!, code!))).toBeUndefined();
+
+    expect(await originCount(ORIGIN_CODE)).toBe(3);
+  });
+
+  it("does not let right sign-ins wipe the wrong ones: eight failures still lock, then none gets in", async () => {
+    const emails = await seedAccounts(3);
+    for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
+      await loginAction(null, passwordForm(`ghost${i}@local.test`, "nope-nope"));
+      await loginAction(null, passwordForm(emails[i % 3]!, PASSWORD));
+    }
+    vi.mocked(verifyPassword).mockClear();
+
+    expect(await loginAction(null, passwordForm(emails[0]!, PASSWORD))).toEqual({
+      error: expect.any(String),
+    });
+    expect(verifyPassword).not.toHaveBeenCalled();
   });
 });
