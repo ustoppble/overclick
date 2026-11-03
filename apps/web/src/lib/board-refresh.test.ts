@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BOARD_REFRESH_INTERVAL_MS,
+  BOARD_REFRESH_MAX_AGE_MS,
   subscribeToBoardRefresh,
 } from "./board-refresh";
 
 function harness(initialVisibility: DocumentVisibilityState = "visible") {
   let visibilityState = initialVisibility;
   let visibilityListener: (() => void) | null = null;
-  let intervalCallback: (() => void) | null = null;
+  let intervalCallback: (() => unknown) | null = null;
 
   const doc = {
     get visibilityState() {
@@ -22,7 +23,7 @@ function harness(initialVisibility: DocumentVisibilityState = "visible") {
   } as unknown as Document;
 
   const clock = {
-    setInterval: vi.fn((callback: () => void) => {
+    setInterval: vi.fn((callback: () => unknown) => {
       intervalCallback = callback;
       return 17;
     }),
@@ -109,5 +110,115 @@ describe("board refresh subscription", () => {
     expect(refresh).not.toHaveBeenCalled();
     // The cadence still resumes, so the next free tick refreshes.
     expect(host.clock.setInterval).toHaveBeenCalledOnce();
+  });
+});
+
+describe("board refresh by signature", () => {
+  function setup(options: { held?: string | null; signature?: () => Promise<string | null> } = {}) {
+    const refresh = vi.fn();
+    const host = harness();
+    let clockNow = 1_000_000;
+    let held = options.held === undefined ? "a" : options.held;
+    const signature = vi.fn(options.signature ?? (async () => "a"));
+    subscribeToBoardRefresh(
+      { refresh, signature, held: () => held, now: () => clockNow },
+      host.doc,
+      host.clock,
+    );
+    return {
+      refresh,
+      signature,
+      host,
+      hold: (next: string | null) => {
+        held = next;
+      },
+      advance: (ms: number) => {
+        clockNow += ms;
+      },
+    };
+  }
+
+  it("asks for the signature, not for the page, and leaves the page alone when it matches", async () => {
+    const run = setup();
+    await run.host.tick();
+    expect(run.signature).toHaveBeenCalledOnce();
+    expect(run.refresh).not.toHaveBeenCalled();
+  });
+
+  it("refreshes when the signature differs from the one the page was built with", async () => {
+    const run = setup({ signature: async () => "b" });
+    await run.host.tick();
+    expect(run.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("refreshes when the signature cannot be read, so a lost session still lands on the login", async () => {
+    const failing = setup({ signature: async () => null });
+    await failing.host.tick();
+    expect(failing.refresh).toHaveBeenCalledOnce();
+
+    const throwing = setup({
+      signature: async () => {
+        throw new Error("network");
+      },
+    });
+    await throwing.host.tick();
+    expect(throwing.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("refreshes an unchanged board once it is older than the max age", async () => {
+    const run = setup();
+    run.advance(BOARD_REFRESH_MAX_AGE_MS - 1);
+    await run.host.tick();
+    expect(run.refresh).not.toHaveBeenCalled();
+
+    run.advance(1);
+    await run.host.tick();
+    expect(run.refresh).toHaveBeenCalledOnce();
+
+    // The age starts over with that refresh.
+    await run.host.tick();
+    expect(run.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("does not ask twice while the first answer is on its way", async () => {
+    let answer: (value: string) => void = () => {};
+    const run = setup({
+      signature: () => new Promise<string>((resolve) => (answer = resolve)),
+    });
+    const first = run.host.tick();
+    await run.host.tick();
+    expect(run.signature).toHaveBeenCalledOnce();
+
+    answer("b");
+    await first;
+    expect(run.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("does not even ask while a refresh is in flight", async () => {
+    const refresh = vi.fn();
+    const signature = vi.fn(async () => "b");
+    const host = harness();
+    subscribeToBoardRefresh(
+      { refresh, signature, held: () => "a", isBusy: () => true },
+      host.doc,
+      host.clock,
+    );
+    await host.tick();
+    expect(signature).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("checks the signature on coming back to the tab instead of reloading the page", async () => {
+    const refresh = vi.fn();
+    const signature = vi.fn(async () => "a");
+    const host = harness("hidden");
+    subscribeToBoardRefresh(
+      { refresh, signature, held: () => "a" },
+      host.doc,
+      host.clock,
+    );
+    host.setVisibility("visible");
+    await vi.waitFor(() => expect(signature).toHaveBeenCalledOnce());
+    expect(refresh).not.toHaveBeenCalled();
   });
 });

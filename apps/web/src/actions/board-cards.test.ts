@@ -35,7 +35,12 @@ vi.mock("../lib/board-tasks", async (original) => {
   };
 });
 
-const { boardColumnCountsAction, loadOlderBoardCardsAction, searchBoardCardsAction } =
+const {
+  boardColumnCountsAction,
+  boardSignatureAction,
+  loadOlderBoardCardsAction,
+  searchBoardCardsAction,
+} =
   await import("./board-cards");
 
 describe("board search action", () => {
@@ -174,5 +179,37 @@ describe("board actions, malformed input", () => {
 
   it("answers empty to a search that is not text", async () => {
     expect(await searchBoardCardsAction({ $ne: 1 } as never)).toMatchObject({ cards: [] });
+  });
+});
+
+describe("board signature action", () => {
+  beforeEach(async () => {
+    world = await createTestWorld();
+  });
+
+  afterEach(async () => {
+    sessionUserId = "";
+    if (world) await closeTestWorld(world);
+  });
+
+  it("answers null without a session, so the poll refreshes into the login", async () => {
+    sessionUserId = "";
+    expect(await boardSignatureAction()).toBeNull();
+  });
+
+  it("answers the same text twice for a board that did not move, and a new one when it did", async () => {
+    sessionUserId = world.adminUserId;
+    const first = await boardSignatureAction();
+    expect(first).toEqual(expect.any(String));
+    expect(await boardSignatureAction()).toBe(first);
+
+    await world.db.insert(task).values({
+      projectId: world.projectId,
+      shortId: "OC-901",
+      title: "a new card",
+      status: "aberto",
+      createdByUserId: world.adminUserId,
+    });
+    expect(await boardSignatureAction()).not.toBe(first);
   });
 });

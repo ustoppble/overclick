@@ -10,6 +10,7 @@ import {
 } from "../../actions/board-filter";
 import {
   boardColumnCountsAction,
+  boardSignatureAction,
   loadOlderBoardCardsAction,
   searchBoardCardsAction,
 } from "../../actions/board-cards";
@@ -249,6 +250,7 @@ export function HomeShell({
   columnCounts,
   openCardId,
   windowSince,
+  boardSignature,
 }: {
   lang: string;
   organizations: BoardOrganizationOption[];
@@ -265,6 +267,8 @@ export function HomeShell({
   openCardId: string | null;
   /** Where the window starts: the finished cards older than this are not in `cards`. */
   windowSince: string;
+  /** The board's fingerprint when the page was built; the poll compares against it. */
+  boardSignature: string;
 }) {
   const router = useRouter();
   const t = dict(lang);
@@ -434,11 +438,18 @@ export function HomeShell({
   const [refreshing, startRefresh] = useTransition();
   const refreshingRef = useRef(false);
   refreshingRef.current = refreshing;
+  // The poll asks a few small queries whether anything moved, and only
+  // rebuilds the page when this fingerprint (the one the page arrived with)
+  // is no longer the server's.
+  const signatureRef = useRef(boardSignature);
+  signatureRef.current = boardSignature;
   useEffect(
     () =>
       subscribeToBoardRefresh({
         refresh: () => startRefresh(() => router.refresh()),
         isBusy: () => refreshingRef.current,
+        signature: boardSignatureAction,
+        held: () => signatureRef.current,
       }),
     [router],
   );

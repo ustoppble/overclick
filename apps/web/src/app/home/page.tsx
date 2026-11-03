@@ -17,6 +17,7 @@ import {
   findBoardTaskByShortId,
   loadBoardTasks,
 } from "../../lib/board-tasks";
+import { loadBoardSignature } from "../../lib/board-signature";
 import { loadBoardTotals } from "../../lib/board-totals-query";
 import { getSession } from "../../lib/cookies";
 import { db } from "../../lib/db";
@@ -235,6 +236,9 @@ export default async function HomePage({
   // The window, not the whole history (OCL): every live card, and the
   // finished ones that changed this week. The rest come in on demand.
   const windowNow = new Date();
+  // Read before the cards, so a write landing in between makes the poll
+  // refresh once more instead of hiding behind a fingerprint newer than the page.
+  const boardSignature = await loadBoardSignature(db(), ws.id, projectIds, principal);
   const rows = await loadBoardTasks(db(), projectIds, principal, { now: windowNow });
   // A link to one card (?card=OCL-12) opens it even when the window left it
   // out. Out of scope reads as no card, the same as an id that matches none.
@@ -323,6 +327,7 @@ export default async function HomePage({
         columnCounts={columnCounts}
         openCardId={linkedRow?.id ?? null}
         windowSince={boardWindowStart(windowNow).toISOString()}
+        boardSignature={boardSignature}
       />
 
       <div className="nebula-glass-fade viewport-fade" aria-hidden="true" />
