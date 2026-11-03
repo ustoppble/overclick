@@ -29,7 +29,6 @@ import {
   taskScope,
 } from "../../lib/scope";
 import { pagePrincipal } from "../../lib/web-scope";
-import { loadUsageRecipes } from "../../lib/recipes";
 import { detectRuntime } from "../../lib/runtime";
 import { detectDeployMode } from "../../lib/deploy-mode";
 import {
@@ -276,13 +275,11 @@ export default async function HomePage({
   }
   // Same rule as the Insights page: no money layer, no price table to read.
   const prices = ws.pricingEnabled ? await loadModelPrices(db(), ws.id) : [];
-  // The same recipes the briefing hands agents, so the card's recompute
-  // command is the one that measured the run, pinned to its transcript.
-  const recipes = await loadUsageRecipes(db(), ws.id);
+  // Each card's line only: the panel's share (contract, handoff, timeline,
+  // transcript) is read when a card is opened (loadBoardCardDetailAction).
   const cards = toBoardCards(rows, {
     tr: t,
     pricingEnabled: ws.pricingEnabled,
-    recipes,
     viewerId: session.userId,
     claimTimeoutMinutes: ws.claimTimeoutMinutes,
   });

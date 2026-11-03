@@ -84,8 +84,8 @@ export function findLinkedCard<
 
 /**
  * The board search over what the board holds, widened by what the server
- * search found for the same words: its full-text match reads comments too,
- * which the cards on the client do not carry.
+ * search found for the same words: its full-text match reads the contract
+ * and the comments too, which the cards on the client do not carry.
  */
 export function searchWithServerHits<T extends SearchableBoardCard & { id: string }>(
   cards: T[],

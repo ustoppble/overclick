@@ -75,21 +75,11 @@ const searchableCards = [
     ...cards[0],
     shortId: "OCL-72",
     title: "Pesquisar no board",
-    oQue: "Campo de busca dentro de Filtros",
-    porQue: "Achar cards sem rolagem cega",
-    comoConfirmo: [
-      { step: "Digitar um trecho", expected: "Board filtra em tempo real" },
-    ],
   },
   {
     ...cards[1],
     shortId: "OCL-11",
     title: "Revisão do cabeçalho",
-    oQue: "Ajustar o topbar",
-    porQue: "Dar mais espaço",
-    comoConfirmo: [
-      { step: "Abrir o board", expected: "Cabeçalho em uma linha" },
-    ],
   },
 ];
 const ALL: string[] = [];
@@ -154,16 +144,15 @@ describe("board filters", () => {
     expect(both.map((card) => card.id)).toEqual(["a"]);
   });
 
-  it("searches card ids, titles and contract text without losing facet results", () => {
+  it("searches card ids and titles on the client, leaving the contract to the server search", () => {
     expect(searchBoardCards(searchableCards, "ocl-72").map((card) => card.shortId)).toEqual([
       "OCL-72",
     ]);
-    expect(searchBoardCards(searchableCards, "rolagem cega").map((card) => card.shortId)).toEqual([
+    expect(searchBoardCards(searchableCards, "PESQUISAR board").map((card) => card.shortId)).toEqual([
       "OCL-72",
     ]);
-    expect(searchBoardCards(searchableCards, "CAMPO filtros").map((card) => card.shortId)).toEqual([
-      "OCL-72",
-    ]);
+    // The line carries no contract: those words come back from task_search.
+    expect(searchBoardCards(searchableCards, "rolagem cega")).toEqual([]);
     expect(searchBoardCards(searchableCards, "  ")).toEqual(searchableCards);
   });
 

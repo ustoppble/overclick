@@ -108,12 +108,14 @@ type FilterableCard = {
   resolvedIn: string | null;
 };
 
+/**
+ * What the board can match on the client: the id and the title its line
+ * carries. The contract comes with the card's detail, so words from it are
+ * the server search's to find (searchWithServerHits).
+ */
 export type SearchableBoardCard = FilterableCard & {
   shortId: string;
   title: string;
-  oQue: string;
-  porQue: string;
-  comoConfirmo: readonly { step: string; expected: string }[];
 };
 
 /**
@@ -472,12 +474,7 @@ export function searchBoardCards<T extends SearchableBoardCard>(
   if (needles.length === 0) return cards;
 
   return cards.filter((card) => {
-    const contract = card.comoConfirmo
-      .flatMap((step) => [step.step, step.expected])
-      .join(" ");
-    const haystack = normalize(
-      [card.shortId, card.title, card.oQue, card.porQue, contract].join(" "),
-    );
+    const haystack = normalize([card.shortId, card.title].join(" "));
     return needles.every((needle) => haystack.includes(needle));
   });
 }

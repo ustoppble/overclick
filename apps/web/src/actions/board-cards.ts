@@ -2,8 +2,8 @@
 
 import { and, eq } from "drizzle-orm";
 import { project, workspace } from "@agent-board/db";
-import type { BoardCard } from "../app/home/board";
-import { toBoardCards } from "../lib/board-card";
+import type { BoardCard, BoardCardDetail } from "../app/home/board";
+import { toBoardCardDetail, toBoardCards } from "../lib/board-card";
 import { loadBoardSignature } from "../lib/board-signature";
 import { boardSignatureLimiter } from "../lib/board-signature-guard";
 import {
@@ -11,7 +11,11 @@ import {
   normalizeBoardSearch,
   type BoardSearchRefusal,
 } from "../lib/board-search-guard";
-import { loadBoardTasksByIds, searchBoardTaskIds } from "../lib/board-tasks";
+import {
+  loadBoardTaskDetail,
+  loadBoardTasksByIds,
+  searchBoardTaskIds,
+} from "../lib/board-tasks";
 import { getSession } from "../lib/cookies";
 import { db } from "../lib/db";
 import { dict } from "../lib/i18n";
@@ -48,18 +52,50 @@ async function boardReader(
   return { principal, session, ws, projects };
 }
 
-async function asCards(
+function asCards(
   reader: BoardReader,
   rows: Parameters<typeof toBoardCards>[0],
-): Promise<BoardCard[]> {
+): BoardCard[] {
   if (rows.length === 0) return [];
   return toBoardCards(rows, {
     tr: dict(reader.ws.language),
     pricingEnabled: reader.ws.pricingEnabled,
-    recipes: await loadUsageRecipes(db(), reader.ws.id),
     viewerId: reader.session.userId,
     claimTimeoutMinutes: reader.ws.claimTimeoutMinutes,
   });
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * What the detail panel adds to a card, read when the card is opened: the
+ * board's list carries only each card's line. Same scope as the board: a
+ * member gets their own cards, and any other id, theirs or nobody's, reads
+ * as "Card not found.", the same answer as no session at all.
+ */
+export async function loadBoardCardDetailAction(
+  id: string,
+): Promise<{ ok: true; detail: BoardCardDetail } | { ok: false; error: string }> {
+  const notFound = { ok: false as const, error: "Card not found." };
+  if (typeof id !== "string" || !UUID.test(id)) return notFound;
+  const reader = await boardReader();
+  if (!reader) return notFound;
+  const row = await loadBoardTaskDetail(
+    db(),
+    reader.projects.map((item) => item.id),
+    reader.principal,
+    id,
+  );
+  if (!row) return notFound;
+  return {
+    ok: true,
+    detail: toBoardCardDetail(
+      row,
+      dict(reader.ws.language),
+      reader.ws.pricingEnabled,
+      await loadUsageRecipes(db(), reader.ws.id),
+    ),
+  };
 }
 
 /**
@@ -89,7 +125,7 @@ export async function searchBoardCardsAction(
       reader.principal,
       ids,
     );
-    return { query, cards: await asCards(reader, rows) };
+    return { query, cards: asCards(reader, rows) };
   } finally {
     slot.release();
   }

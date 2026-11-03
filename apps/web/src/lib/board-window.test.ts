@@ -63,9 +63,9 @@ describe("board window, client side", () => {
 
   it("shows a server search hit the local words did not match", () => {
     const cards = [
-      { ...card("a", "validado", 1), shortId: "OC-1", oQue: "", porQue: "", comoConfirmo: [], organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "black panes" },
-      { ...card("b", "validado", 1), shortId: "OC-2", oQue: "", porQue: "", comoConfirmo: [], organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "matched in a comment" },
-      { ...card("c", "validado", 1), shortId: "OC-3", oQue: "", porQue: "", comoConfirmo: [], organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "unrelated" },
+      { ...card("a", "validado", 1), shortId: "OC-1", organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "black panes" },
+      { ...card("b", "validado", 1), shortId: "OC-2", organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "matched in its contract" },
+      { ...card("c", "validado", 1), shortId: "OC-3", organizationId: "o", projectId: "p", missionId: null, tipo: "bug" as const, priority: "media" as const, resolvedIn: null, title: "unrelated" },
     ];
     expect(
       searchWithServerHits(cards, "black", new Set(["b"])).map((c) => c.id),

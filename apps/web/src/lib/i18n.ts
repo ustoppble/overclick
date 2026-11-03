@@ -325,6 +325,9 @@ const en = {
     filterByMission: "Filter the board by this mission",
     /** An empty contract is a fact about the card, not a dash. */
     noSteps: "This card was written without confirmation steps.",
+    /** The panel's share of the card is read when it opens, and that read can fail. */
+    loadError: "Could not load this card.",
+    retry: "Try again",
   },
   wizard: {
     stepProject: "01 · project",
@@ -972,6 +975,8 @@ const ptBR: Dict = {
     cardLocation: "Localização do card",
     filterByMission: "Filtrar o board por esta missão",
     noSteps: "Este card foi escrito sem passos de confirmação.",
+    loadError: "Não foi possível carregar este card.",
+    retry: "Tentar de novo",
   },
   wizard: {
     stepProject: "01 · projeto",

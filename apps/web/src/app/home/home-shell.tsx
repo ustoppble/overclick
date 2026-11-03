@@ -732,6 +732,7 @@ export function HomeShell({
         onToggleSelect={toggleSelect}
         onMissionSelect={(missionId) => apply({ ...filter, missionId })}
         initialOpen={openCard}
+        detailVersion={boardSignature}
       />
 
       {picking ? (

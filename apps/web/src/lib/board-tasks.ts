@@ -1,5 +1,5 @@
-import { project, task, type Database } from "@agent-board/db";
-import { and, asc, eq, gte, inArray, or, sql, type SQL } from "drizzle-orm";
+import { executionAttempt, handoff, project, task, type Database } from "@agent-board/db";
+import { and, asc, desc, eq, gte, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   DEFAULT_BOARD_PERIOD,
   DEFAULT_BOARD_PERIOD_FIELD,
@@ -35,6 +35,49 @@ export function boardWindowStart(
  * otherwise carry that mission's title or that card's id and short id along
  * with it. A reference the reader may not see reads as no reference at all.
  */
+function withVisibleReferences<
+  Row extends {
+    missionId: string | null;
+    supersedesId: string | null;
+    supersededById: string | null;
+    mission: { id: string; title: string; createdByUserId: string | null } | null;
+    supersedes: { id: string; shortId: string; createdByUserId: string | null } | null;
+    supersededBy: { id: string; shortId: string; createdByUserId: string | null } | null;
+  },
+>(principal: MaybePrincipal, row: Row) {
+  const mission = row.mission && canSeeMission(principal, row.mission) ? row.mission : null;
+  const supersedes =
+    row.supersedes && canSeeTask(principal, row.supersedes) ? row.supersedes : null;
+  const supersededBy =
+    row.supersededBy && canSeeTask(principal, row.supersededBy) ? row.supersededBy : null;
+  return {
+    ...row,
+    mission,
+    missionId: mission ? row.missionId : null,
+    supersedes,
+    supersedesId: supersedes ? row.supersedesId : null,
+    supersededBy,
+    supersededById: supersededBy ? row.supersededById : null,
+  };
+}
+
+const CARD_REFERENCES = {
+  mission: { columns: { id: true, title: true, createdByUserId: true } },
+  project: { columns: { name: true, repoUrl: true, organizationId: true } },
+  createdBy: { columns: { email: true } },
+  reviewer: { columns: { email: true } },
+  supersedes: { columns: { id: true, shortId: true, createdByUserId: true } },
+  supersededBy: { columns: { id: true, shortId: true, createdByUserId: true } },
+} as const;
+
+/**
+ * The board's list: each card with only what its line draws. Handoffs,
+ * comments and attempts stay in the database; the query hands over the
+ * newest attempt's numbers, the newest handoff's usage and the CLIs that ever
+ * ran the card, and the rest comes when the card is opened
+ * (loadBoardTaskDetail). On "all time" that is the difference between a few
+ * hundred bytes a card and every evidence, comment and transcript ever written.
+ */
 async function queryBoardTasks(
   database: Database,
   principal: MaybePrincipal,
@@ -45,37 +88,85 @@ async function queryBoardTasks(
     where: and(where, taskScope(principal)),
     orderBy: asc(task.createdAt),
     ...(options.limit !== undefined ? { limit: options.limit } : {}),
+    // The contract is the card's body: the panel reads it, the line does not.
+    columns: { oQue: false, porQue: false, comoConfirmo: false, validationTicks: false },
+    extras: {
+      // Every executor that ever claimed the card, raw; the CLI is read from
+      // each one in board-card, as it always was. The inner table is spelled
+      // out: the relational query would qualify its columns with "task".
+      attemptExecutors: sql<string[] | null>`(select json_agg(distinct ea.executor) from execution_attempt ea where ea.task_id = ${task.id} and ea.executor is not null)`.as(
+        "attempt_executors",
+      ),
+    },
     with: {
-      mission: { columns: { id: true, title: true, createdByUserId: true } },
-      project: { columns: { name: true, repoUrl: true, organizationId: true } },
-      createdBy: { columns: { email: true } },
-      reviewer: { columns: { email: true } },
-      attempts: true,
-      handoffs: true,
-      comments: true,
-      supersedes: { columns: { id: true, shortId: true, createdByUserId: true } },
-      supersededBy: { columns: { id: true, shortId: true, createdByUserId: true } },
+      ...CARD_REFERENCES,
+      attempts: {
+        columns: {
+          executor: true,
+          model: true,
+          modelSource: true,
+          startedAt: true,
+          lastActivityAt: true,
+          tokensIn: true,
+          tokensOut: true,
+          tokensCache: true,
+          usageSegments: true,
+          usageEstimated: true,
+          usageSuspect: true,
+          costUsd: true,
+          costSource: true,
+          costStatus: true,
+          costUnpricedModels: true,
+          durationMs: true,
+          serverDurationMs: true,
+          turns: true,
+        },
+        orderBy: desc(executionAttempt.startedAt),
+        limit: 1,
+      },
+      handoffs: {
+        columns: { usage: true },
+        orderBy: desc(handoff.createdAt),
+        limit: 1,
+      },
     },
   });
-  return rows.map((row) => {
-    const mission = row.mission && canSeeMission(principal, row.mission) ? row.mission : null;
-    const supersedes =
-      row.supersedes && canSeeTask(principal, row.supersedes) ? row.supersedes : null;
-    const supersededBy =
-      row.supersededBy && canSeeTask(principal, row.supersededBy) ? row.supersededBy : null;
-    return {
-      ...row,
-      mission,
-      missionId: mission ? row.missionId : null,
-      supersedes,
-      supersedesId: supersedes ? row.supersedesId : null,
-      supersededBy,
-      supersededById: supersededBy ? row.supersededById : null,
-    };
-  });
+  return rows.map(({ attempts, handoffs, attemptExecutors, ...row }) => ({
+    ...withVisibleReferences(principal, row),
+    latestAttempt: attempts[0] ?? null,
+    latestHandoffUsage: handoffs[0]?.usage ?? null,
+    attemptExecutors: attemptExecutors ?? [],
+  }));
 }
 
 export type BoardTaskRow = Awaited<ReturnType<typeof queryBoardTasks>>[number];
+
+/**
+ * One card with everything its detail panel reads: the contract, every
+ * attempt and comment, and the handoffs without their evidences and
+ * artifacts, which the board never shows. Scoped like the list: a card the
+ * reader may not see, or that is not in their projects, is null.
+ */
+export async function loadBoardTaskDetail(
+  database: Database,
+  projectIds: string[],
+  principal: MaybePrincipal,
+  id: string,
+) {
+  if (projectIds.length === 0) return null;
+  const row = await database.query.task.findFirst({
+    where: and(eq(task.id, id), inArray(task.projectId, projectIds), taskScope(principal)),
+    with: {
+      ...CARD_REFERENCES,
+      attempts: true,
+      handoffs: { columns: { evidences: false, artifacts: false } },
+      comments: true,
+    },
+  });
+  return row ? withVisibleReferences(principal, row) : null;
+}
+
+export type BoardTaskDetailRow = NonNullable<Awaited<ReturnType<typeof loadBoardTaskDetail>>>;
 
 /**
  * The board's cards with everything the card line and detail panel read: the
