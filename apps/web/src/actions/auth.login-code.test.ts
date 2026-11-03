@@ -1,10 +1,11 @@
-import { loginCode, user } from "@agent-board/db";
+import { loginCode, loginFailure, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CODE_REQUESTS_PER_HOUR,
   CODE_REQUESTS_PER_ORIGIN_HOUR,
   DEFAULT_LOGIN_CODE_MAX_SENDS_PER_HOUR,
+  MAX_LOGIN_FAILURES,
   loginCodeSendCap,
 } from "../lib/login-rate-limit";
 import { hashPassword } from "../lib/password";
@@ -379,6 +380,69 @@ describe("signing in with a code sent by email", () => {
       const answer = await loginWithCodeAction(null, codeForm(EMAIL, code));
       expect(answer?.error).toBeTruthy();
       expect(requestState.cookieSet).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("budgets", () => {
+    it("keeps a spent password budget from touching code sign-in", async () => {
+      for (let i = 0; i < MAX_LOGIN_FAILURES + 2; i++) {
+        await loginAction(null, passwordForm(EMAIL, "not-the-password"));
+      }
+      await requestLoginCodeAction(null, emailForm(EMAIL));
+
+      await loginWithCodeAction(null, codeForm(EMAIL, lastSentCode()));
+
+      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
+      expect(requestState.cookieSet).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps a spent code budget from touching password sign-in", async () => {
+      for (let i = 0; i < MAX_LOGIN_FAILURES + 2; i++) {
+        await loginWithCodeAction(null, codeForm(EMAIL, "123456"));
+      }
+
+      await loginAction(null, passwordForm(EMAIL, PASSWORD));
+
+      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
+      expect(requestState.cookieSet).toHaveBeenCalledTimes(1);
+    });
+
+    async function originRows(): Promise<{ id: string; count: number }[]> {
+      const rows = await world.db.select().from(loginFailure);
+      return rows.filter((row) => row.id.includes("origin:198.51.100.7"));
+    }
+
+    it("does not let a successful code sign-in wipe what its origin has spent", async () => {
+      process.env.OVERCLICK_TRUSTED_PROXY = "1";
+      requestState.headers = { "x-forwarded-for": "198.51.100.7" };
+      for (let i = 0; i < 5; i++) {
+        await loginWithCodeAction(null, codeForm(`ghost${i}@local.test`, "123456"));
+      }
+      const before = (await originRows()).reduce((sum, row) => sum + row.count, 0);
+      expect(before).toBeGreaterThanOrEqual(5);
+
+      await requestLoginCodeAction(null, emailForm(EMAIL));
+      await loginWithCodeAction(null, codeForm(EMAIL, lastSentCode()));
+      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
+
+      const after = (await originRows()).reduce((sum, row) => sum + row.count, 0);
+      expect(after).toBeGreaterThanOrEqual(before);
+    });
+
+    it("does not let a successful password sign-in wipe what its origin has spent", async () => {
+      process.env.OVERCLICK_TRUSTED_PROXY = "1";
+      requestState.headers = { "x-forwarded-for": "198.51.100.7" };
+      for (let i = 0; i < 5; i++) {
+        await loginAction(null, passwordForm(`ghost${i}@local.test`, "nope-nope"));
+      }
+      const before = (await originRows()).reduce((sum, row) => sum + row.count, 0);
+      expect(before).toBeGreaterThanOrEqual(5);
+
+      await loginAction(null, passwordForm(EMAIL, PASSWORD));
+      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
+
+      const after = (await originRows()).reduce((sum, row) => sum + row.count, 0);
+      expect(after).toBeGreaterThanOrEqual(before);
     });
   });
 

@@ -20,8 +20,10 @@ import {
   redeemLoginCode,
 } from "../lib/login-code";
 import {
+  clearCodeLoginBudget,
   clearLoginBudget,
   loginOrigin,
+  withinCodeLoginBudget,
   withinCodeRequestBudget,
   withinLoginBudget,
 } from "../lib/login-rate-limit";
@@ -134,7 +136,7 @@ export async function loginAction(
     return { error: (await authCopy()).errCredentials };
   }
 
-  await clearLoginBudget(db(), email, origin);
+  await clearLoginBudget(db(), email);
   await setSession({
     userId: found.id,
     sessionVersion: found.sessionVersion,
@@ -180,8 +182,8 @@ export async function requestLoginCodeAction(
 }
 
 /**
- * Signs in with an emailed code. Same budget, same generic refusal and the
- * same `setSession` as `loginAction`: the cookie it leaves is the password
+ * Signs in with an emailed code. Its own budget (see `withinCodeLoginBudget`),
+ * the same generic refusal and the same `setSession` as `loginAction`: the cookie it leaves is the password
  * sign-in's, byte for byte.
  */
 export async function loginWithCodeAction(
@@ -196,7 +198,7 @@ export async function loginWithCodeAction(
   }
 
   const origin = await loginOrigin();
-  if (!(await withinLoginBudget(db(), email, origin))) {
+  if (!(await withinCodeLoginBudget(db(), email, origin))) {
     return { error: (await authCopy()).errCode };
   }
 
@@ -208,7 +210,7 @@ export async function loginWithCodeAction(
     return { error: (await authCopy()).errCode };
   }
 
-  await clearLoginBudget(db(), email, origin);
+  await clearCodeLoginBudget(db(), email);
   await setSession({
     userId: found.id,
     sessionVersion: found.sessionVersion,

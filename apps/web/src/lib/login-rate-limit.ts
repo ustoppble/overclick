@@ -34,8 +34,12 @@ export const MAX_LOGIN_FAILURES = 8;
  * (`OVERCLICK_TRUSTED_PROXY` unset) everyone shares one shared bucket, which
  * still refuses a burst without being able to single a caller out.
  */
-function loginFailureScope(kind: "email" | "origin", value: string): string {
-  return `login-${kind}:${value}`;
+function loginFailureScope(
+  flow: "login" | "logincode",
+  kind: "email" | "origin",
+  value: string,
+): string {
+  return `${flow}-${kind}:${value}`;
 }
 
 /**
@@ -76,10 +80,33 @@ export async function withinLoginBudget(
   email: string,
   origin: string | null,
 ): Promise<boolean> {
+  return spendLoginBuckets(db, "login", email, origin);
+}
+
+/**
+ * The same budget for signing in with an emailed code, in buckets of its own.
+ * Sharing the password's meant that anyone who knew an address could spend 8
+ * malformed codes and lock the owner out of both ways in, so each way in has
+ * its own allowance and running out of one leaves the other alone.
+ */
+export async function withinCodeLoginBudget(
+  db: McpDatabase,
+  email: string,
+  origin: string | null,
+): Promise<boolean> {
+  return spendLoginBuckets(db, "logincode", email, origin);
+}
+
+async function spendLoginBuckets(
+  db: McpDatabase,
+  flow: "login" | "logincode",
+  email: string,
+  origin: string | null,
+): Promise<boolean> {
   const emailOk = await spendBudget(
     db,
     loginFailure,
-    loginFailureScope("email", email),
+    loginFailureScope(flow, "email", email),
     MAX_LOGIN_FAILURES,
     LOGIN_ATTEMPT_WINDOW_MS,
   );
@@ -87,7 +114,7 @@ export async function withinLoginBudget(
     ? await spendBudget(
         db,
         loginFailure,
-        loginFailureScope("origin", origin),
+        loginFailureScope(flow, "origin", origin),
         MAX_LOGIN_FAILURES,
         LOGIN_ATTEMPT_WINDOW_MS,
       )
@@ -95,16 +122,22 @@ export async function withinLoginBudget(
   return emailOk && originOk;
 }
 
-/** A successful login clears both budgets: nobody there was guessing. */
-export async function clearLoginBudget(
+/**
+ * A successful login clears the email's budget, nobody there was guessing.
+ * It never clears the origin's: that bucket is shared by everyone behind the
+ * address, so anyone with an account of their own could otherwise wipe it
+ * between rounds of guessing at somebody else's.
+ */
+export async function clearLoginBudget(db: McpDatabase, email: string): Promise<void> {
+  await clearBudget(db, loginFailure, loginFailureScope("login", "email", email));
+}
+
+/** Same as `clearLoginBudget`, for the sign-in-by-code buckets. */
+export async function clearCodeLoginBudget(
   db: McpDatabase,
   email: string,
-  origin: string | null,
 ): Promise<void> {
-  await clearBudget(db, loginFailure, loginFailureScope("email", email));
-  if (origin) {
-    await clearBudget(db, loginFailure, loginFailureScope("origin", origin));
-  }
+  await clearBudget(db, loginFailure, loginFailureScope("logincode", "email", email));
 }
 
 /**
