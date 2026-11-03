@@ -8,11 +8,19 @@ import {
 } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
 
-/** Local auth only. Email is an identifier, not a channel. */
+/**
+ * Local accounts. Sign-in is by a code sent to `email`, so the address is the
+ * credential: it is how a person proves they are who the row says.
+ */
 export const user = pgTable("user", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  /**
+   * Unused. Sign-in by password is gone and new accounts are born without one;
+   * the column stays, nullable, so the hashes old accounts had are kept rather
+   * than deleted. Nothing reads it.
+   */
+  passwordHash: text("password_hash"),
   /**
    * `admin` sees and changes everything; `member` only what they authored,
    * inside `organizationId`. The column default is the restrictive one: a

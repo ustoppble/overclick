@@ -9,7 +9,3 @@ export function canCreateFirstAdmin(userCount: number): boolean {
 export function isValidEmail(email: string): boolean {
   return email.length <= MAX_EMAIL_LENGTH && EMAIL.test(email);
 }
-
-export function isValidPassword(password: string): boolean {
-  return password.length >= 8;
-}

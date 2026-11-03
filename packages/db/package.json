@@ -6,14 +6,16 @@
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema/index.ts",
-    "./domain": "./src/domain/index.ts"
+    "./domain": "./src/domain/index.ts",
+    "./emergency-login": "./src/emergency-login.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "emergency-login": "tsx src/emergency-login.ts"
   },
   "dependencies": {
     "@agent-board/mcp-core": "workspace:*",

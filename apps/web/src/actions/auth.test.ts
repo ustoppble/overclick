@@ -1,102 +1,115 @@
 import { user } from "@agent-board/db";
+import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ABSENT_USER_HASH, hashPassword, verifyPassword } from "../lib/password";
+import { issueLoginCode, redeemLoginCode } from "../lib/login-code";
 import { createTestWorld, type TestWorld } from "../mcp/test-db";
 
 let world: TestWorld;
-let storedHash: string;
 
 vi.mock("../lib/db", () => ({
   db: () => world.db,
   getDatabaseUrl: () => "pglite://test",
 }));
 
-vi.mock("../lib/password", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../lib/password")>();
-  return { ...actual, verifyPassword: vi.fn(actual.verifyPassword) };
+vi.mock("../lib/login-code", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/login-code")>();
+  return { ...actual, redeemLoginCode: vi.fn(actual.redeemLoginCode) };
 });
 
-const { loginAction } = await import("./auth");
+const redirectSpy = vi.fn();
+vi.mock("next/navigation", () => ({
+  redirect: (url: string) => redirectSpy(url),
+}));
 
-const PASSWORD = "correct-horse-battery";
+const cookieSet = vi.fn();
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: () => undefined, set: cookieSet, delete: vi.fn() }),
+  headers: async () => new Headers(),
+}));
 
-function credentials(email: string, password: string): FormData {
+vi.mock("next/server", () => ({ after: () => undefined }));
+
+const actions = await import("./auth");
+const { loginWithCodeAction } = actions;
+
+function codeForm(email: string, code: string): FormData {
   const form = new FormData();
   form.set("email", email);
-  form.set("password", password);
+  form.set("code", code);
   return form;
 }
 
 /**
- * GHSA-rrc7-jvcm-35r5: loginAction used to short-circuit on `found` and on
- * `found.active`, so an address with no account and an address whose account
- * is switched off both answered without ever calling scrypt — about 0.4ms
- * against about 20ms for a real account on this machine. The message was
- * already generic; the clock was not, and the gap enumerated which addresses
- * have an account here and which of those are disabled.
- *
- * These assert the invariant structurally — exactly one verification per
- * failing path, and the decoy standing in when there is no hash to check
- * against — rather than by wall clock. A timing assertion on a shared CI
- * runner is flaky, and a flaky test on an auth path is worse than none; the
- * measurements live in the advisory. What a structural check buys is the
- * thing a wall-clock check would miss anyway: it fails the moment someone
- * reintroduces a `return` above the verification.
+ * The board takes no password any more: the only way in is a code sent to the
+ * address. These keep the guarantees the password sign-in had (GHSA-rrc7-jvcm-
+ * 35r5: one verification on every failing path, the same words for an address
+ * with no account, a switched-off account and a wrong guess) on the flow that
+ * replaced it, and pin that nothing takes a password at all.
  */
-describe("loginAction costs one password verification on every failing path", () => {
+describe("signing in takes a code, never a password", () => {
+  let offCode = "";
+
   beforeAll(async () => {
+    process.env.AUTH_SECRET = "s".repeat(32);
     world = await createTestWorld();
-    storedHash = await hashPassword(PASSWORD);
     await world.db.insert(user).values([
-      { email: "active@local.test", passwordHash: storedHash },
-      { email: "off@local.test", passwordHash: storedHash, active: false },
+      { email: "active@local.test" },
+      { email: "off@local.test" },
     ]);
+    // A code that was live when the account was switched off by hand, so the
+    // only thing turning it away is `active`.
+    offCode = (await issueLoginCode(world.db, "off@local.test"))!.code;
+    await world.db.update(user).set({ active: false }).where(eq(user.email, "off@local.test"));
+    await issueLoginCode(world.db, "active@local.test");
   });
 
   beforeEach(() => {
-    vi.mocked(verifyPassword).mockClear();
+    vi.mocked(redeemLoginCode).mockClear();
+    redirectSpy.mockClear();
+    cookieSet.mockClear();
   });
 
-  it("verifies against the decoy when the address has no account", async () => {
-    const result = await loginAction(
-      null,
-      credentials("ghost@local.test", PASSWORD),
-    );
-
-    expect(result?.error).toBeTruthy();
-    expect(verifyPassword).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(verifyPassword).mock.calls[0]?.[1]).toBe(ABSENT_USER_HASH);
+  it("has no password sign-in action left to call", () => {
+    expect("loginAction" in actions).toBe(false);
   });
 
-  it("verifies against the stored hash when the account is switched off", async () => {
-    const result = await loginAction(
-      null,
-      credentials("off@local.test", PASSWORD),
-    );
+  it("does not sign anyone in from a password, whatever the form carries", async () => {
+    const form = new FormData();
+    form.set("email", "active@local.test");
+    form.set("password", "correct-horse-battery");
 
-    // The password is the right one: only `active` turns this away, and it
-    // has to turn it away *after* paying for the verification.
-    expect(result?.error).toBeTruthy();
-    expect(verifyPassword).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(verifyPassword).mock.calls[0]?.[1]).toBe(storedHash);
+    expect(await loginWithCodeAction(null, form)).toEqual({ error: expect.any(String) });
+    expect(redirectSpy).not.toHaveBeenCalled();
+    expect(cookieSet).not.toHaveBeenCalled();
   });
 
-  it("verifies against the stored hash when the password is wrong", async () => {
-    const result = await loginAction(
-      null,
-      credentials("active@local.test", "not-the-password"),
-    );
+  it("checks the code once for an address with no account", async () => {
+    const result = await loginWithCodeAction(null, codeForm("ghost@local.test", "123456"));
 
     expect(result?.error).toBeTruthy();
-    expect(verifyPassword).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(verifyPassword).mock.calls[0]?.[1]).toBe(storedHash);
+    expect(redeemLoginCode).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks the code once for a switched-off account, and still turns it away", async () => {
+    const result = await loginWithCodeAction(null, codeForm("off@local.test", offCode));
+
+    expect(result?.error).toBeTruthy();
+    expect(redeemLoginCode).toHaveBeenCalledTimes(1);
+    expect(cookieSet).not.toHaveBeenCalled();
+  });
+
+  it("checks the code once for a wrong guess", async () => {
+    const result = await loginWithCodeAction(null, codeForm("active@local.test", "000000"));
+
+    expect(result?.error).toBeTruthy();
+    expect(redeemLoginCode).toHaveBeenCalledTimes(1);
   });
 
   it("answers all three with the same words", async () => {
     const answers = await Promise.all([
-      loginAction(null, credentials("ghost@local.test", PASSWORD)),
-      loginAction(null, credentials("off@local.test", PASSWORD)),
-      loginAction(null, credentials("active@local.test", "not-the-password")),
+      loginWithCodeAction(null, codeForm("ghost@local.test", "123456")),
+      loginWithCodeAction(null, codeForm("off@local.test", "123456")),
+      loginWithCodeAction(null, codeForm("active@local.test", "111111")),
     ]);
 
     expect(new Set(answers.map((answer) => answer?.error)).size).toBe(1);

@@ -677,14 +677,13 @@ const en = {
     factAgents: "Agents claim cards over MCP.",
     setupTitle: "Your board just came up.",
     setupSub:
-      "Create this instance's admin account. It lives in your database, nothing leaves this server.",
+      "Create this instance's admin account. It lives in your database; a code sent to your email proves the address is yours.",
+    setupIntro: "We will email you a 6-digit code to create the admin account.",
+    setupSent: (email: string) =>
+      `We sent a code to ${email}. It is valid for 10 minutes.`,
     loginTitle: "Welcome back.",
     loginSub: "Sign in with your account on this local instance.",
     email: "Email",
-    password: "Password",
-    confirmPassword: "Confirm password",
-    passwordRule: "At least 8 characters.",
-    confirmMismatch: "The two passwords do not match.",
     createAccount: "Create account and continue",
     creating: "Creating…",
     signIn: "Sign in",
@@ -693,15 +692,11 @@ const en = {
         on the screen a person reads twice, so they are read in the language
         the workspace is set to, like everything else on it. */
     errEmail: "Use a valid email. It only identifies the local account.",
-    errPassword: "The password needs at least 8 characters.",
-    errMismatch: "The passwords do not match.",
     errAdminExists:
       "This instance already has an admin. Sign in with the existing account.",
     errCreate: "Could not create the account.",
-    errCredentials: "Invalid email or password.",
-    /** Sign-in by a code sent by email (OCL login code). The "sent" words
+    /** Sign-in by a code sent by email, the only way in. The "sent" words
         are the same whether or not the address has an account. */
-    codeLink: "Sign in with an email code",
     codeIntro: "We will email you a 6-digit code.",
     codeSend: "Send code",
     codeSending: "Sending…",
@@ -709,14 +704,22 @@ const en = {
       `If ${email} has an account here, a code is on its way. It is valid for 10 minutes.`,
     code: "Code",
     codeResend: "Send another code",
-    usePassword: "Sign in with password",
     errCode: "Invalid or expired code.",
-    errCodeUnavailable: "Sign-in by email code is not available on this instance.",
-    /** The invitation page (OCL-222): a person an admin invited sets a password. */
+    errCodeUnavailable: "Sign-in unavailable: email is not configured.",
+    /** The emergency link the server owner makes inside the container. */
+    emergencyTitle: "Emergency sign-in.",
+    emergencySub: "A single-use link made on the server. It signs its admin in once, within 10 minutes.",
+    emergencyEnter: "Sign in",
+    errEmergency: "This emergency link is not valid, was already used or expired. Make a new one on the server.",
+    /** The invitation page (OCL-222): a person an admin invited proves the
+        invited address with a code. The address is typed, never printed. */
     inviteTitle: "You were invited.",
-    inviteSub: (email: string, organization: string) =>
-      `Set a password for ${email} to join ${organization} on this board.`,
-    inviteAccept: "Set password and enter",
+    inviteSub: (organization: string) =>
+      `Confirm the email this invitation was sent to, to join ${organization} on this board.`,
+    inviteIntro: "Type the invited email. We will send a 6-digit code to it.",
+    inviteSent: (email: string) =>
+      `If ${email} is the address this invitation was made for, a code is on its way. It is valid for 10 minutes.`,
+    inviteAccept: "Enter",
     inviteAccepting: "Entering…",
     inviteRefusedTitle: "This invitation cannot be used.",
     inviteToLogin: "Go to sign in",
@@ -1315,26 +1318,21 @@ const ptBR: Dict = {
     factAgents: "Agentes pegam cards via MCP.",
     setupTitle: "Seu board acabou de subir.",
     setupSub:
-      "Crie a conta admin desta instância. Ela mora no seu banco de dados, nada sai deste servidor.",
+      "Crie a conta admin desta instância. Ela mora no seu banco de dados; um código enviado ao seu e-mail prova que o endereço é seu.",
+    setupIntro: "Vamos enviar um código de 6 dígitos para o seu e-mail para criar a conta admin.",
+    setupSent: (email: string) =>
+      `Enviamos um código para ${email}. Ele vale por 10 minutos.`,
     loginTitle: "Bem-vindo de volta.",
     loginSub: "Entre com a sua conta nesta instância local.",
     email: "Email",
-    password: "Senha",
-    confirmPassword: "Confirmar senha",
-    passwordRule: "Pelo menos 8 caracteres.",
-    confirmMismatch: "As duas senhas não conferem.",
     createAccount: "Criar conta e continuar",
     creating: "Criando…",
     signIn: "Entrar",
     signingIn: "Entrando…",
     errEmail: "Use um email válido. Ele só identifica a conta local.",
-    errPassword: "A senha precisa de pelo menos 8 caracteres.",
-    errMismatch: "As senhas não conferem.",
     errAdminExists:
       "Esta instância já tem um admin. Entre com a conta existente.",
     errCreate: "Não foi possível criar a conta.",
-    errCredentials: "Email ou senha inválidos.",
-    codeLink: "Entrar com código por e-mail",
     codeIntro: "Vamos enviar um código de 6 dígitos para o seu e-mail.",
     codeSend: "Enviar código",
     codeSending: "Enviando…",
@@ -1342,13 +1340,19 @@ const ptBR: Dict = {
       `Se ${email} tiver conta aqui, enviamos um código. Ele vale por 10 minutos.`,
     code: "Código",
     codeResend: "Enviar outro código",
-    usePassword: "Entrar com senha",
     errCode: "Código inválido ou expirado.",
-    errCodeUnavailable: "O login com código por e-mail não está disponível nesta instância.",
+    errCodeUnavailable: "Login indisponível: e-mail não configurado.",
+    emergencyTitle: "Acesso de emergência.",
+    emergencySub: "Um link de uso único gerado no servidor. Ele entra com o admin dele uma vez, em até 10 minutos.",
+    emergencyEnter: "Entrar",
+    errEmergency: "Este link de emergência não é válido, já foi usado ou expirou. Gere outro no servidor.",
     inviteTitle: "Você foi convidado.",
-    inviteSub: (email: string, organization: string) =>
-      `Defina uma senha para ${email} e entre em ${organization} neste board.`,
-    inviteAccept: "Definir senha e entrar",
+    inviteSub: (organization: string) =>
+      `Confirme o e-mail para o qual este convite foi enviado e entre em ${organization} neste board.`,
+    inviteIntro: "Digite o e-mail convidado. Vamos enviar um código de 6 dígitos para ele.",
+    inviteSent: (email: string) =>
+      `Se ${email} for o e-mail deste convite, enviamos um código. Ele vale por 10 minutos.`,
+    inviteAccept: "Entrar",
     inviteAccepting: "Entrando…",
     inviteRefusedTitle: "Este convite não pode ser usado.",
     inviteToLogin: "Ir para o login",

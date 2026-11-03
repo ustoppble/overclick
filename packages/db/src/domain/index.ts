@@ -17,7 +17,6 @@ export {
 export {
   canCreateFirstAdmin,
   isValidEmail,
-  isValidPassword,
 } from "./first-access";
 export { canNestUnder } from "./subtask";
 export {

@@ -1100,16 +1100,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    chevron and the padding. */
 .nb .topbar-l2 .pf-trigger,
 .nb .topbar-l2 .mf-trigger { min-width: 96px; }
-/* Between the phone and the width where every control holds its natural size
-   the level has more controls than line. It wraps, once, as a whole group at
-   a time, instead of crushing the names: the scope controls stay together on
-   the first line and the rest follows under them. Above 1100px the names
-   truncate as before, and below 769px the level is behind the Filtros button. */
-@media (min-width: 769px) and (max-width: 1099px) {
-  .nb .topbar-l2 { flex-wrap: wrap; row-gap: 8px; }
-  .nb .topbar-l2 .mission-filter,
-  .nb .topbar-l2 .crumb { flex-shrink: 0; }
-}
+
 /* the card count is data, so it keeps the data face, but at the 11px of the
    ramp: 9px uppercase was a caption of a caption. It is a caption of the
    row, not a control, so it sits in the tertiary tone with no rule of its
@@ -2651,13 +2642,14 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    at the widths that have the room. Measured, not guessed: at 1100 the bar
    overflows by 40px with them on, so they fold one step before the stat
    itself moves into the account menu. */
-@media (max-width: 1199px) {
+@media (max-width: 1919px) {
   .nb .board-total .bt-sub { display: none; }
 }
 
-/* OCL-35 (ux-v2 §3): under 1100px level 1 folds the running-state chip into
-   the account menu. The telemetry stat never leaves level 1. */
-@media (max-width: 1099px) {
+/* OCL-35 (ux-v2 §3): the running-state chip folds into the account menu
+   once the one-line bar runs short (under 1440px). The telemetry stat never
+   leaves the bar. */
+@media (max-width: 1439px) {
   .nb .topbar-l1 .state-chip { display: none; }
   .nb .am-state { display: flex; }
   /* The state entry and navigation stay visibly separate. */
@@ -2667,6 +2659,71 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   }
 }
 
+
+/* ---------- one line (the owner, 2026-11-03: "esse menu em 2 linhas me
+   incomoda muito") ----------
+   On the desktop the two groups lay out as one line: the wordmark, the
+   filters, then state, cost and the menu on the right. The levels stay in the
+   DOM (the phone still stacks them) and become transparent here, so their
+   controls are items of the wrap itself and `order` puts the filters between
+   the wordmark and the spacer.
+
+   What does not fit never wraps. It steps aside in this order, each step at
+   the width where the bar measured short with it on (scripts/topbar-one-line
+   sweeps 1728, 1440, 1280 and 1024):
+     1. under 1920 the cost keeps its figure; tokens and time go to its title
+        and popover (the rule above, with the support numbers);
+     2. under 1800 the date the period reads (Criado/Atualizado) moves into
+        Filtros, the section the phone sheet already had;
+     3. under 1600 the card count shows only on a narrowed board and Limpar
+        filtros becomes its mark, named by its label;
+     4. under 1440 the running state folds into the account menu (above);
+     5. under 1280 the count leaves the bar (the column heads keep theirs),
+        the cost drops its word (the title still names it), the bar tightens
+        to 8px between controls and the names people typed truncate down to
+        their 96px floor. */
+@media (min-width: 769px) and (min-height: 501px), (min-width: 769px) and (orientation: portrait) {
+  .nb .topbar-wrap {
+    display: flex; align-items: center; flex-wrap: nowrap;
+    gap: var(--nebula-space-3); min-width: 0;
+    padding: 10px 0 12px;
+    border-bottom: 1px solid var(--nebula-glass-border);
+  }
+  .nb .topbar-wrap > .topbar-l1,
+  .nb .topbar-wrap > .topbar-l2 { display: contents; }
+  /* the wordmark keeps the 16px the checklist asks before the first control */
+  .nb .topbar-l1 > .logo { order: 0; margin-right: 4px; }
+  .nb .topbar-l2 > *,
+  .nb .topbar-more > * { order: 1; }
+  .nb .topbar-l1 > :not(.logo) { order: 2; }
+  /* the mission and the scope pair yield, but never below their triggers'
+     96px floor (plus the 4px between the pair, and the mission's 6px gap and
+     13px clear mark): a box narrower than what it holds draws over its
+     neighbour instead of truncating. min-content would hold the whole names,
+     which is the opposite of yielding. */
+  .nb .topbar-l2 .crumb { min-width: 96px; }
+  .nb .topbar-l2 .crumb:has(> .project-filter + .project-filter) { min-width: 196px; }
+  .nb .topbar-l2 .mission-filter { min-width: 96px; }
+  .nb .topbar-l2 .mission-filter:has(.mf-clear) { min-width: 115px; }
+}
+.nb .clear-board-filters .cbf-icon { display: none; }
+@media (min-width: 769px) and (max-width: 1799px) {
+  .nb .topbar-l2 .period-by-filter { display: none; }
+  .nb .topbar-l2 .ff-sheet-only { display: block; }
+  .nb .topbar-l2 .ff-trigger .badge.ff-badge-bar { display: none; }
+  .nb .topbar-l2 .ff-trigger .badge.ff-badge-sheet { display: inline-flex; }
+}
+@media (min-width: 769px) and (max-width: 1599px) {
+  .nb .topbar-l2 .filter-result:not(.narrowed) { display: none; }
+  .nb .topbar-l2 .clear-board-filters { width: 32px; padding: 0; justify-content: center; }
+  .nb .topbar-l2 .clear-board-filters .cbf-icon { display: block; }
+  .nb .topbar-l2 .clear-board-filters .cbf-label { display: none; }
+}
+@media (min-width: 769px) and (max-width: 1279px) {
+  .nb .topbar-l2 .filter-result { display: none; }
+  .nb .topbar-wrap { gap: 8px; }
+  .nb .board-total .bt-label { display: none; }
+}
 
 @media (max-width: 768px), (orientation: landscape) and (max-height: 500px) {
   .nb { padding: 16px 16px 48px; }
@@ -3168,9 +3225,8 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb-auth .auth-rule.ok { color: rgb(var(--oc-ok-rgb) / .8); }
 .nb-auth .auth-rule.bad { color: var(--oc-danger); }
 
-/* The other way in (password <-> emailed code), and asking for another
-   code: quiet text under the primary button, never a second pill competing
-   with it. */
+/* Asking for another code: quiet text under the primary button, never a
+   second pill competing with it. */
 .nb-auth .auth-switch {
   align-self: center;
   margin: 12px 0 0; padding: 4px 6px;

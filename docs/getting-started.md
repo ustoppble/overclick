@@ -29,8 +29,22 @@ Open **http://localhost:3000**.
 
 ## 2. Create the admin account
 
-First access shows the setup screen. E-mail + password, stored (hashed) in your own
-Postgres. No verification e-mail, no marketing questions: it's just a login.
+First access shows the setup screen: your e-mail, then the 6-digit code sent to it.
+There is no password; the code (10 minutes, single use) is how you sign in every time.
+No marketing questions: it's just a login.
+
+Codes go out through [Resend](https://resend.com): set `RESEND_API_KEY` and `EMAIL_FROM`
+(on a domain verified in Resend). Without them the screen says sign-in is unavailable,
+and the way in is an emergency link made on the server, which on an instance with no
+accounts also creates the first admin:
+
+```bash
+docker compose exec app pnpm emergency-login you@example.com
+```
+
+It prints only the path of a file inside the container (mode 600) holding a link that
+signs you in once, within 10 minutes. Read it off-screen and delete it after; see
+[deploy/README.md](../deploy/README.md#emergency-sign-in-server-owner-only).
 
 ## 3. Onboarding: 3 steps
 

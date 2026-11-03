@@ -10,7 +10,6 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("../../actions/auth", () => ({
-  loginAction: async () => null,
   loginWithCodeAction: async () => null,
   requestLoginCodeAction: async () => null,
 }));
@@ -32,28 +31,44 @@ async function render(): Promise<string> {
   return renderToStaticMarkup(await LoginPage());
 }
 
-describe("the login page offers sign-in by email code only where mail can be sent", () => {
+describe("the login page signs in by email code only", () => {
   beforeEach(() => {
     state.emailConfigured = true;
     state.language = "en";
   });
 
-  it("shows the link when RESEND_API_KEY and EMAIL_FROM are set", async () => {
+  it("opens straight on the email step of the code flow, with no password anywhere", async () => {
     const html = await render();
-    expect(html).toContain(dict("en").auth.codeLink);
+    expect(html).toContain('name="email"');
+    expect(html).toContain(dict("en").auth.codeSend);
+    expect(html).not.toContain('type="password"');
+    expect(html).not.toContain('name="password"');
+    expect(html).not.toContain("Sign in with password");
   });
 
-  it("shows the link in pt-BR too", async () => {
+  it("has no password and no way back to one in pt-BR either", async () => {
     state.language = "pt-BR";
     const html = await render();
-    expect(html).toContain("Entrar com código por e-mail");
+    expect(html).toContain("Enviar código");
+    expect(html).not.toContain('type="password"');
+    expect(html).not.toContain("Entrar com senha");
   });
 
-  it("hides the link when sending is not configured, and the password form stays", async () => {
+  it("says sign-in is unavailable when sending is not configured, and offers no form", async () => {
     state.emailConfigured = false;
     const html = await render();
 
-    expect(html).not.toContain(dict("en").auth.codeLink);
-    expect(html).toContain('name="password"');
+    expect(html).toContain("Sign-in unavailable: email is not configured.");
+    expect(html).not.toContain("<form");
+    expect(html).not.toContain('name="password"');
+  });
+
+  it("says it in pt-BR the way the owner asked", async () => {
+    state.emailConfigured = false;
+    state.language = "pt-BR";
+    const html = await render();
+
+    expect(html).toContain("Login indisponível: e-mail não configurado.");
+    expect(html).not.toContain("<form");
   });
 });

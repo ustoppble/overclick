@@ -90,10 +90,12 @@ docker compose up --build"><button class="copy-btn" type="button">copy</button><
       <div class="sec-index">03 · your account</div>
       <h2>Create the admin account</h2>
       <p>
-        First access shows the setup screen: e-mail and password, hashed into your own
-        Postgres. No verification mail, no marketing questions, no third party. It is a
-        login, and it exists so a browser session can prove it is you before validating an
-        agent's work.
+        First access shows the setup screen: your e-mail, then the 6-digit code sent to it.
+        There is no password; the code is how you sign in, every time. No marketing
+        questions. It is a login, and it exists so a browser session can prove it is you
+        before validating an agent's work. Codes go out through Resend; without it, an
+        emergency link made on the server (<code>pnpm emergency-login</code>) creates the
+        first admin and signs you in once.
       </p>
     </section>
 

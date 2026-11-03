@@ -1,41 +1,38 @@
 "use server";
 
-import {
-  canCreateFirstAdmin,
-  isValidEmail,
-  isValidPassword,
-  user,
-} from "@agent-board/db";
+import { canCreateFirstAdmin, isValidEmail, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { clearSession, setSession } from "../lib/cookies";
 import { db } from "../lib/db";
 import { emailConfigured, sendEmail } from "../lib/email";
+import { redeemEmergencyLogin } from "../lib/emergency-login";
 import { dict } from "../lib/i18n";
 import { countUsers, ensureWorkspace } from "../lib/instance";
 import { sweepLoginRows } from "../lib/login-housekeeping";
 import {
   LOGIN_CODE_PATTERN,
+  claimLockNotice,
   issueLoginCode,
   loginCodeEmail,
+  lockNoticeEmail,
   redeemLoginCode,
 } from "../lib/login-code";
 import {
   clearCodeLoginBudget,
-  clearLoginBudget,
+  clearCodeUserFailures,
   loginOrigin,
   refundCodeLoginOrigin,
-  refundLoginOrigin,
   withinCodeLoginBudget,
   withinCodeRequestBudget,
-  withinLoginBudget,
 } from "../lib/login-rate-limit";
 import {
-  ABSENT_USER_HASH,
-  hashPassword,
-  verifyPassword,
-} from "../lib/password";
+  issueSignupCode,
+  redeemSignupCode,
+  setupScope,
+  signupCodeEmail,
+} from "../lib/signup-code";
 
 export type AuthState = { error: string } | null;
 
@@ -56,33 +53,82 @@ async function authCopy() {
   return dict(ws?.language).auth;
 }
 
+/**
+ * Setup, step one: emails a code to the address that is to become the first
+ * admin. Nothing is created yet; the code is what creates the account
+ * (`signupAction`). Only while the instance has no account at all.
+ */
+export async function requestSetupCodeAction(
+  _prev: CodeRequestState,
+  formData: FormData,
+): Promise<CodeRequestState> {
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  if (!isValidEmail(email)) {
+    return { error: (await authCopy()).errEmail };
+  }
+  if (!emailConfigured()) {
+    console.error(
+      "[login-code] RESEND_API_KEY or EMAIL_FROM is not set; setup by code is unavailable",
+    );
+    return { error: (await authCopy()).errCodeUnavailable };
+  }
+  if (!canCreateFirstAdmin(await countUsers())) {
+    return { error: (await authCopy()).errAdminExists };
+  }
+
+  await sweepLoginRows(db());
+  const origin = await loginOrigin();
+  // The same buckets and the same global cap as a sign-in code: setup is no
+  // side door into the email provider's quota.
+  if (await withinCodeRequestBudget(db(), email, origin)) {
+    after(async () => {
+      try {
+        const issued = await issueSignupCode(db(), setupScope(email), email);
+        if (issued) await sendEmail(signupCodeEmail("setup", email, issued.code));
+      } catch (err) {
+        console.error(
+          `[login-code] issuing or sending a setup code failed (${err instanceof Error ? err.name : "unknown"})`,
+        );
+      }
+    });
+  }
+  return { sent: true };
+}
+
+/**
+ * Setup, step two: the code sent to the address creates the first admin,
+ * with no password, and signs them in. A password in the form is ignored.
+ */
 export async function signupAction(
   _prev: AuthState,
   formData: FormData,
 ): Promise<AuthState> {
   const email = normalizeEmail(String(formData.get("email") ?? ""));
-  const password = String(formData.get("password") ?? "");
-  const confirm = String(formData.get("confirm") ?? "");
+  const code = String(formData.get("code") ?? "").replace(/\s+/g, "");
 
   if (!isValidEmail(email)) {
     return { error: (await authCopy()).errEmail };
   }
-  if (!isValidPassword(password)) {
-    return { error: (await authCopy()).errPassword };
+  if (!LOGIN_CODE_PATTERN.test(code)) {
+    return { error: (await authCopy()).errCode };
   }
-  if (password !== confirm) {
-    return { error: (await authCopy()).errMismatch };
-  }
-
-  const existing = await countUsers();
-  if (!canCreateFirstAdmin(existing)) {
+  if (!canCreateFirstAdmin(await countUsers())) {
     return { error: (await authCopy()).errAdminExists };
   }
 
-  const passwordHash = await hashPassword(password);
+  const origin = await loginOrigin();
+  const charge = await withinCodeLoginBudget(db(), email, origin);
+  if (!charge.ok || !(await redeemSignupCode(db(), setupScope(email), email, code))) {
+    return { error: (await authCopy()).errCode };
+  }
+  // Read again: someone else may have finished setup while this code was typed.
+  if (!canCreateFirstAdmin(await countUsers())) {
+    return { error: (await authCopy()).errAdminExists };
+  }
+
   const [created] = await db()
     .insert(user)
-    .values({ email, passwordHash, role: "admin" })
+    .values({ email, role: "admin" })
     .returning({
       id: user.id,
       sessionVersion: user.sessionVersion,
@@ -92,65 +138,14 @@ export async function signupAction(
     return { error: (await authCopy()).errCreate };
   }
 
+  await refundCodeLoginOrigin(db(), origin, charge);
+  await clearCodeLoginBudget(db(), email);
   await ensureWorkspace();
   await setSession({
     userId: created.id,
     sessionVersion: created.sessionVersion,
   });
   redirect("/onboarding");
-}
-
-export async function loginAction(
-  _prev: AuthState,
-  formData: FormData,
-): Promise<AuthState> {
-  const email = normalizeEmail(String(formData.get("email") ?? ""));
-  const password = String(formData.get("password") ?? "");
-
-  if (!isValidEmail(email) || !password) {
-    return { error: (await authCopy()).errCredentials };
-  }
-
-  // Charged before anything below looks at whether the account exists, and
-  // by the email as submitted rather than a user id, so the refusal cannot
-  // become a second oracle for account existence on top of the one OCL-99
-  // closed. Over budget, the answer is the exact same generic message and
-  // skips verifyPassword entirely — that is the point: a drained budget
-  // must not pay for scrypt either. The origin is charged here too, before
-  // the check and atomically, so parallel guesses cannot all slip past it;
-  // it is shared by everyone behind one NAT or edge proxy, so a sign-in
-  // that works gives its charge back below.
-  const origin = await loginOrigin();
-  const charge = await withinLoginBudget(db(), email, origin);
-  if (!charge.ok) {
-    return { error: (await authCopy()).errCredentials };
-  }
-
-  const [found] = await db()
-    .select()
-    .from(user)
-    .where(eq(user.email, email))
-    .limit(1);
-
-  // Same work on every branch. Short-circuiting on `found` or on `active`
-  // skipped scrypt entirely, and answering that much sooner told a caller
-  // which addresses have an account, and which of those are switched off,
-  // however generic the message is.
-  const passwordOk = await verifyPassword(
-    password,
-    found?.passwordHash ?? ABSENT_USER_HASH,
-  );
-  if (!found || !found.active || !passwordOk) {
-    return { error: (await authCopy()).errCredentials };
-  }
-
-  await refundLoginOrigin(db(), origin, charge);
-  await clearLoginBudget(db(), email);
-  await setSession({
-    userId: found.id,
-    sessionVersion: found.sessionVersion,
-  });
-  redirect("/home");
 }
 
 /**
@@ -201,9 +196,11 @@ export async function requestLoginCodeAction(
 }
 
 /**
- * Signs in with an emailed code. Its own budget (see `withinCodeLoginBudget`),
- * the same generic refusal and the same `setSession` as `loginAction`: the cookie it leaves is the password
- * sign-in's, byte for byte.
+ * Signs in with an emailed code: the only way in there is. There is no
+ * password sign-in any more, and nothing here reads one: a form that carries a
+ * password and no code is a malformed code like any other. Budgeted per
+ * address and per origin (`withinCodeLoginBudget`), one generic refusal for
+ * every way it can fail, and the same `setSession` every session comes from.
  */
 export async function loginWithCodeAction(
   _prev: AuthState,
@@ -228,15 +225,45 @@ export async function loginWithCodeAction(
     ? await db().select().from(user).where(eq(user.id, redeemed.userId)).limit(1)
     : [];
   if (!found || !found.active) {
+    // A wrong guess may have just locked the account: its owner is told,
+    // once per lock, after the response, so the answer stays the same.
+    after(async () => {
+      try {
+        const notice = await claimLockNotice(db(), email);
+        if (notice) await sendEmail(lockNoticeEmail(notice.to, notice.lockMs));
+      } catch (err) {
+        console.error(
+          `[login-code] sending the lock notice failed (${err instanceof Error ? err.name : "unknown"})`,
+        );
+      }
+    });
     return { error: (await authCopy()).errCode };
   }
 
   await refundCodeLoginOrigin(db(), origin, charge);
   await clearCodeLoginBudget(db(), email);
+  await clearCodeUserFailures(db(), found.id);
   await setSession({
     userId: found.id,
     sessionVersion: found.sessionVersion,
   });
+  redirect("/home");
+}
+
+/**
+ * Signs the server owner in with the emergency link `pnpm emergency-login`
+ * wrote to a file inside the container. The token arrives in the form, read
+ * by the page from the part of the URL after `#`, which no proxy or access log
+ * ever sees. Single use, ten minutes, and it ignores the code sign-in lock.
+ */
+export async function emergencyLoginAction(
+  _prev: AuthState,
+  formData: FormData,
+): Promise<AuthState> {
+  const token = String(formData.get("token") ?? "").trim();
+  const admin = await redeemEmergencyLogin(db(), token);
+  if (!admin) return { error: (await authCopy()).errEmergency };
+  await setSession(admin);
   redirect("/home");
 }
 

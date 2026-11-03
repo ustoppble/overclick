@@ -24,7 +24,7 @@ describe.skipIf(!process.env.DATABASE_URL)(
           .returning({ id: organization.id });
         const [admin] = await world.db
           .insert(user)
-          .values({ email: "admin@example.test", passwordHash: "x", role: "admin" })
+          .values({ email: "admin@example.test", role: "admin" })
           .returning({ id: user.id });
 
         // Several links for one email, all created before any was accepted,
@@ -47,7 +47,7 @@ describe.skipIf(!process.env.DATABASE_URL)(
         const raw = world.db as unknown as { execute(query: SQL): Promise<unknown> };
         await Promise.all(links.map(() => raw.execute(sql`select pg_sleep(0.05)`)));
         const results = await Promise.all(
-          links.map((secret) => acceptInvitation(world.db, secret, "hash")),
+          links.map((secret) => acceptInvitation(world.db, secret)),
         );
         expect(results.filter((r) => r.ok)).toHaveLength(1);
         expect(results.filter((r) => !r.ok)).toEqual(

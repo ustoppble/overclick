@@ -154,15 +154,43 @@ describe("the running total sits on the row's centre line (level 1)", () => {
   });
 });
 
-describe("level 2 holds every control at its size at the widths between the phone and the desktop", () => {
-  it("wraps between 769px and 1099px instead of crushing the names", () => {
+describe("the desktop bar is one line, and what does not fit steps aside instead of wrapping", () => {
+  const inAtRules = (selector: string) =>
+    allRulesInSourceOrder
+      .map(({ rule }) => rule)
+      .filter((rule) => rule.insideAtRule && splitSelectorList(rule.selector).includes(selector));
+  const declares = (rules: CssRule[], prop: string, value: string) =>
+    rules.some((rule) =>
+      parseDeclarations(rule.body).some((d) => d.prop === prop && d.value.trim() === value),
+    );
+
+  it("lays the two levels out as one row that never wraps", () => {
+    expect(declares(inAtRules(".nb .topbar-wrap"), "display", "flex")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-wrap"), "flex-wrap", "nowrap")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-wrap > .topbar-l1"), "display", "contents")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-wrap > .topbar-l2"), "display", "contents")).toBe(true);
+  });
+
+  it("no longer wraps level 2 at any width", () => {
     const wraps = allRulesInSourceOrder.some(
       ({ rule }) =>
-        rule.insideAtRule &&
         splitSelectorList(rule.selector).includes(".nb .topbar-l2") &&
         parseDeclarations(rule.body).some((d) => d.prop === "flex-wrap" && d.value.trim() === "wrap"),
     );
-    expect(wraps).toBe(true);
+    expect(wraps).toBe(false);
+  });
+
+  it("collapses in order: the cost's support, the period date, the count and the clear label", () => {
+    expect(declares(inAtRules(".nb .board-total .bt-sub"), "display", "none")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-l2 .period-by-filter"), "display", "none")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-l2 .ff-sheet-only"), "display", "block")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-l2 .filter-result:not(.narrowed)"), "display", "none")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-l2 .clear-board-filters .cbf-label"), "display", "none")).toBe(true);
+  });
+
+  it("never lets the scope pair or the mission shrink below their triggers' floor", () => {
+    expect(declares(inAtRules(".nb .topbar-l2 .crumb"), "min-width", "96px")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-l2 .mission-filter"), "min-width", "96px")).toBe(true);
   });
 
   it("keeps a floor under the project and mission triggers", () => {

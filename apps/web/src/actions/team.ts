@@ -1,20 +1,37 @@
 "use server";
 
-import { isValidPassword } from "@agent-board/db";
+import { isValidEmail } from "@agent-board/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import type { ActionResult } from "../lib/action-result";
 import { getSession, setSession } from "../lib/cookies";
 import { db } from "../lib/db";
+import { emailConfigured, sendEmail } from "../lib/email";
 import { dict } from "../lib/i18n";
 import {
   acceptInvitation,
   createInvitation,
   dismissInstallNotices,
+  inspectInvitation,
   revokeInvitation,
   setMemberActive,
 } from "../lib/invitations";
-import { hashPassword } from "../lib/password";
+import { sweepLoginRows } from "../lib/login-housekeeping";
+import { LOGIN_CODE_PATTERN } from "../lib/login-code";
+import {
+  clearCodeLoginBudget,
+  loginOrigin,
+  refundCodeLoginOrigin,
+  withinCodeLoginBudget,
+  withinCodeRequestBudget,
+} from "../lib/login-rate-limit";
+import {
+  inviteScope,
+  issueSignupCode,
+  redeemSignupCode,
+  signupCodeEmail,
+} from "../lib/signup-code";
 import { ADMIN_ONLY, sessionPrincipal } from "../lib/web-scope";
 
 /**
@@ -97,23 +114,85 @@ export async function dismissInstallNoticesAction(): Promise<ActionResult> {
 
 export type AcceptState = { error: string } | null;
 
-/** Public: the invited person sets a password and lands signed in on the board. */
+/** `sent` is the one answer every typed address gets, the invited one or not. */
+export type InviteCodeState = { sent: true } | { error: string } | null;
+
+/**
+ * Public, step one of accepting a link: the person types the address the
+ * invitation was made for and a code goes to it. The page does not print that
+ * address, and every typed address gets the same answer, so a leaked link
+ * alone tells nobody whose inbox the code goes to and gets no code anywhere
+ * else. Nothing is created yet.
+ */
+export async function requestInviteCodeAction(
+  _prev: InviteCodeState,
+  formData: FormData,
+): Promise<InviteCodeState> {
+  const secret = String(formData.get("token") ?? "");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+
+  const ws = await db().query.workspace.findFirst();
+  const t = dict(ws?.language).auth;
+  if (!isValidEmail(email)) return { error: t.errEmail };
+  if (!emailConfigured()) {
+    console.error(
+      "[login-code] RESEND_API_KEY or EMAIL_FROM is not set; accepting an invitation is unavailable",
+    );
+    return { error: t.errCodeUnavailable };
+  }
+  const found = await inspectInvitation(db(), secret);
+  if (!found.ok) return { error: t.inviteRefused[found.reason] };
+
+  await sweepLoginRows(db());
+  const origin = await loginOrigin();
+  // The sign-in code's buckets and global cap, charged to the typed address.
+  if (await withinCodeRequestBudget(db(), email, origin)) {
+    after(async () => {
+      if (email !== found.email) return;
+      try {
+        const issued = await issueSignupCode(db(), inviteScope(found.id), email);
+        if (issued) await sendEmail(signupCodeEmail("invite", email, issued.code));
+      } catch (err) {
+        console.error(
+          `[login-code] issuing or sending an invitation code failed (${err instanceof Error ? err.name : "unknown"})`,
+        );
+      }
+    });
+  }
+  return { sent: true };
+}
+
+/**
+ * Public, step two: the code sent to the invited address creates the member,
+ * with no password, spends the link and signs them in. The account does not
+ * exist until the address is proved.
+ */
 export async function acceptInvitationAction(
   _prev: AcceptState,
   formData: FormData,
 ): Promise<AcceptState> {
   const secret = String(formData.get("token") ?? "");
-  const password = String(formData.get("password") ?? "");
-  const confirm = String(formData.get("confirm") ?? "");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const code = String(formData.get("code") ?? "").replace(/\s+/g, "");
 
   const ws = await db().query.workspace.findFirst();
   const t = dict(ws?.language).auth;
-  if (!isValidPassword(password)) return { error: t.errPassword };
-  if (password !== confirm) return { error: t.errMismatch };
+  if (!isValidEmail(email) || !LOGIN_CODE_PATTERN.test(code)) return { error: t.errCode };
 
-  const accepted = await acceptInvitation(db(), secret, await hashPassword(password));
+  const found = await inspectInvitation(db(), secret);
+  if (!found.ok) return { error: t.inviteRefused[found.reason] };
+
+  const origin = await loginOrigin();
+  const charge = await withinCodeLoginBudget(db(), email, origin);
+  if (!charge.ok || !(await redeemSignupCode(db(), inviteScope(found.id), email, code))) {
+    return { error: t.errCode };
+  }
+
+  const accepted = await acceptInvitation(db(), secret);
   if (!accepted.ok) return { error: t.inviteRefused[accepted.reason] };
 
+  await refundCodeLoginOrigin(db(), origin, charge);
+  await clearCodeLoginBudget(db(), email);
   await setSession({
     userId: accepted.userId,
     sessionVersion: accepted.sessionVersion,

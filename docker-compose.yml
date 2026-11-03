@@ -48,8 +48,8 @@ services:
       # OCL-226: the GitHub release webhook (/api/github/release) refuses
       # every call until this holds the secret configured on the webhook.
       GITHUB_WEBHOOK_SECRET: "${GITHUB_WEBHOOK_SECRET:-}"
-      # Sign-in by a code sent by email. Both empty = the option says it is
-      # unavailable and everything else runs as before; see deploy/README.md.
+      # Sign-in is by a code sent by email only. Both empty = the login screen
+      # says it is unavailable; use pnpm emergency-login (deploy/README.md).
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
       EMAIL_FROM: "${EMAIL_FROM:-}"
       LOGIN_CODE_MAX_SENDS_PER_HOUR: "${LOGIN_CODE_MAX_SENDS_PER_HOUR:-}"

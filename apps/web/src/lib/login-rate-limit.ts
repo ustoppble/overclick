@@ -1,5 +1,5 @@
 import { loginCodeRequest, loginFailure } from "@agent-board/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import {
   budgetExhausted,
@@ -10,23 +10,18 @@ import {
   spendBudgetStatement,
 } from "./attempt-budget";
 import type { McpDatabase } from "../mcp/types";
+import { clientOrigin } from "./client-origin";
 
 /**
- * Failed logins one identifier may spend inside a window before the endpoint
- * stops paying for the scrypt call at all.
+ * Failed sign-ins one identifier may spend inside a window before the
+ * endpoint stops checking codes for it at all.
  *
- * OCL-99 made every failing login pay for one scrypt verification, real
- * account or not, to close a timing gap that told a caller which addresses
- * exist. That is the right trade, but it turned "no rate limit" from
- * inconvenient into a CPU-exhaustion vector: verifyPassword runs on the
- * libuv threadpool (4 threads by default), so unauthenticated garbage now
- * occupies the same threads real logins need.
- *
- * 8 failures in 15 minutes is picked to survive a genuine mistyped-password
- * afternoon (a human retyping a forgotten password, an old saved credential
- * in a second browser) without giving a guesser more than a token number of
- * scrypt calls per identifier. It is a product call, not a security
- * invariant — see the PR description for the number actually shipped.
+ * The number was picked for the password sign-in this replaced (OCL-100):
+ * enough to survive a person mistyping a few times, without giving a guesser
+ * more than a token number of checks per identifier. A code also dies after
+ * five wrong guesses of its own, and the account has a count that outlives
+ * codes (`MAX_CODE_USER_FAILURES`). It is a product call, not a security
+ * invariant.
  */
 export const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 export const MAX_LOGIN_FAILURES = 8;
@@ -41,36 +36,21 @@ export const MAX_LOGIN_FAILURES = 8;
  * (`OVERCLICK_TRUSTED_PROXY` unset) everyone shares one shared bucket, which
  * still refuses a burst without being able to single a caller out.
  */
-function loginFailureScope(
-  flow: "login" | "logincode",
-  kind: "email" | "origin",
-  value: string,
-): string {
-  return `${flow}-${kind}:${value}`;
+function loginFailureScope(kind: "email" | "origin", value: string): string {
+  return `logincode-${kind}:${value}`;
 }
 
 /**
- * The caller's origin, as far as this deployment can honestly tell — see
- * `guessOrigin` in `app/api/pair/route.ts`, which this mirrors. Trusting a
- * forwarded-for header on a directly exposed instance would hand a guesser a
- * fresh budget per request just by varying a string, so it only counts where
- * the deploy declares it sits behind a proxy. Server Actions do not receive
- * a `Request`, so this reads `next/headers` instead; guarded so a caller
- * outside a request scope (a unit test invoking the action directly) simply
- * sees no origin rather than throwing — the same behaviour as an undeclared
- * proxy.
+ * The caller's origin for the sign-in budgets — see `clientOrigin`, which the
+ * pairing endpoint reads too. Server Actions do not receive a `Request`, so
+ * this reads `next/headers` instead; guarded so a caller outside a request
+ * scope (a unit test invoking the action directly) simply sees no origin
+ * rather than throwing — the same behaviour as an undeclared proxy.
  */
 export async function loginOrigin(): Promise<string | null> {
   if (process.env.OVERCLICK_TRUSTED_PROXY !== "1") return null;
   try {
-    const store = await headers();
-    const forwarded = store.get("x-forwarded-for");
-    if (!forwarded) return store.get("x-real-ip");
-    const hops = forwarded
-      .split(",")
-      .map((hop) => hop.trim())
-      .filter(Boolean);
-    return hops.at(-1) ?? null;
+    return clientOrigin(await headers());
   } catch {
     return null;
   }
@@ -79,44 +59,24 @@ export async function loginOrigin(): Promise<string | null> {
 /**
  * What an attempt was charged: whether it may go on to be checked, and the
  * window of the origin's bucket the charge landed in, which is what gives it
- * back (`refundLoginOrigin`) to that window and no other. `originWindow` is
+ * back (`refundCodeLoginOrigin`) to that window and no other. `originWindow` is
  * null when there is no origin to charge, or when the attempt was turned away
  * and nothing is left to give back.
  */
 export type LoginCharge = { ok: boolean; originWindow: Date | null };
 
 /**
- * Lets a password attempt proceed to `verifyPassword`, or not. Both buckets
- * are charged now, before anything is verified, and the email's as
- * submitted. Neither looks at whether the account exists, so which one
- * refuses says nothing about it. The origin's charge is given back by
- * `refundLoginOrigin` if the attempt turns out to be a sign-in that works.
- */
-export async function withinLoginBudget(
-  db: McpDatabase,
-  email: string,
-  origin: string | null,
-): Promise<LoginCharge> {
-  return spendLoginBuckets(db, "login", email, origin);
-}
-
-/**
- * The same budget for signing in with an emailed code, in buckets of its own.
- * Sharing the password's meant that anyone who knew an address could spend 8
- * malformed codes and lock the owner out of both ways in, so each way in has
- * its own allowance and running out of one leaves the other alone.
+ * Lets an attempt at signing in with an emailed code go on to be checked, or
+ * not. Both buckets are charged now, before anything is checked, and the
+ * email's as submitted. Neither looks at whether the account exists, so which
+ * one refuses says nothing about it. The origin's charge is given back by
+ * `refundCodeLoginOrigin` if the attempt turns out to be a sign-in that works.
+ *
+ * The buckets keep the `logincode-` names they had when a password sign-in
+ * sat beside this one with buckets of its own (`login-`, unused since).
  */
 export async function withinCodeLoginBudget(
   db: McpDatabase,
-  email: string,
-  origin: string | null,
-): Promise<LoginCharge> {
-  return spendLoginBuckets(db, "logincode", email, origin);
-}
-
-async function spendLoginBuckets(
-  db: McpDatabase,
-  flow: "login" | "logincode",
   email: string,
   origin: string | null,
 ): Promise<LoginCharge> {
@@ -128,7 +88,7 @@ async function spendLoginBuckets(
   // the origin has no room for is not taken at all, so a burst of sign-ins
   // that work and are turned away only for being too many at once leaves
   // nothing behind to lock the origin out afterwards. The charge is given
-  // back on success (`refundLoginOrigin`), because behind a NAT or an edge
+  // back on success (`refundCodeLoginOrigin`), because behind a NAT or an edge
   // proxy the origin is shared by everyone, and sign-ins that work must not
   // lock out the people it serves.
   let originWindow: Date | null = null;
@@ -136,7 +96,7 @@ async function spendLoginBuckets(
     const charge = await chargeBudget(
       db,
       loginFailure,
-      loginFailureScope(flow, "origin", origin),
+      loginFailureScope("origin", origin),
       MAX_LOGIN_FAILURES,
       LOGIN_ATTEMPT_WINDOW_MS,
     );
@@ -146,7 +106,7 @@ async function spendLoginBuckets(
   const emailOk = await spendBudget(
     db,
     loginFailure,
-    loginFailureScope(flow, "email", email),
+    loginFailureScope("email", email),
     MAX_LOGIN_FAILURES,
     LOGIN_ATTEMPT_WINDOW_MS,
   );
@@ -154,37 +114,27 @@ async function spendLoginBuckets(
   // origin, so a stranger hammering one address cannot use up the allowance
   // of the people sharing its origin.
   if (!emailOk) {
-    await refundOriginCharge(db, flow, origin, originWindow);
+    await refundOriginCharge(db, origin, originWindow);
     return { ok: false, originWindow: null };
   }
   return { ok: true, originWindow };
 }
 
 /**
- * Gives back the origin's charge for a password sign-in that worked. The
- * charge stays for every way an attempt can fail — no such account, switched
- * off, wrong password — so what is kept says nothing about the account.
+ * Gives back the origin's charge for a code sign-in that worked. The charge
+ * stays for every way an attempt can fail — no such account, switched off,
+ * wrong code — so what is kept says nothing about the account.
  */
-export async function refundLoginOrigin(
-  db: McpDatabase,
-  origin: string | null,
-  charge: LoginCharge,
-): Promise<void> {
-  await refundOriginCharge(db, "login", origin, charge.originWindow);
-}
-
-/** Same as `refundLoginOrigin`, for a code sign-in that worked. */
 export async function refundCodeLoginOrigin(
   db: McpDatabase,
   origin: string | null,
   charge: LoginCharge,
 ): Promise<void> {
-  await refundOriginCharge(db, "logincode", origin, charge.originWindow);
+  await refundOriginCharge(db, origin, charge.originWindow);
 }
 
 async function refundOriginCharge(
   db: McpDatabase,
-  flow: "login" | "logincode",
   origin: string | null,
   originWindow: Date | null,
 ): Promise<void> {
@@ -192,28 +142,23 @@ async function refundOriginCharge(
   await refundBudget(
     db,
     loginFailure,
-    loginFailureScope(flow, "origin", origin),
+    loginFailureScope("origin", origin),
     originWindow,
   );
 }
 
 /**
- * A successful login clears the email's budget, nobody there was guessing.
+ * A successful sign-in clears the email's budget, nobody there was guessing.
  * It never clears the origin's: that bucket is shared by everyone behind the
  * address, so anyone with an account of their own could otherwise wipe it
  * between rounds of guessing at somebody else's. A success gives back only
- * its own charge (`refundLoginOrigin`), never what other attempts spent.
+ * its own charge (`refundCodeLoginOrigin`), never what other attempts spent.
  */
-export async function clearLoginBudget(db: McpDatabase, email: string): Promise<void> {
-  await clearBudget(db, loginFailure, loginFailureScope("login", "email", email));
-}
-
-/** Same as `clearLoginBudget`, for the sign-in-by-code buckets. */
 export async function clearCodeLoginBudget(
   db: McpDatabase,
   email: string,
 ): Promise<void> {
-  await clearBudget(db, loginFailure, loginFailureScope("logincode", "email", email));
+  await clearBudget(db, loginFailure, loginFailureScope("email", email));
 }
 
 /**
@@ -311,13 +256,24 @@ export async function withinCodeRequestBudget(
   if (!hourOk) return false;
 
   // Charged for every ask that got this far, account or not, so the cap is
-  // no more an oracle than the buckets above. The read above is not atomic
-  // with this charge, so a burst may overshoot by a few; the count here is
-  // what keeps it from going further.
+  // no more an oracle than the buckets above.
+  return spendGlobalSend(db);
+}
+
+/**
+ * Charges one email to the instance-wide hourly cap and says whether it fits.
+ * Every email this flow sends is counted here: the asks that reach the end of
+ * `withinCodeRequestBudget`, and the warning a lock sends (`claimLockNotice`).
+ * The read in `withinCodeRequestBudget` is not atomic with this charge, so a
+ * burst may overshoot by a few; the count here is what keeps it from going
+ * further.
+ */
+export async function spendGlobalSend(db: McpDatabase): Promise<boolean> {
+  const cap = loginCodeSendCap();
   const [global] = await spendBudgetStatement(
     db,
     loginCodeRequest,
-    globalScope,
+    codeRequestScope("hour-global", "all"),
     new Date(),
     CODE_REQUEST_HOUR_MS,
   );
@@ -339,14 +295,133 @@ export async function withinCodeRequestBudget(
  * request, every request — about 25 an hour for any address they know. This
  * bucket belongs to the account (by id, not by the email as typed) and is not
  * reset when a new code goes out: at 10 wrong guesses in 24 hours code
- * sign-in for that account is shut for 24 hours from the tenth. The password
- * keeps working, and the refusal is the same generic one as any wrong code.
+ * sign-in for that account is shut from the tenth.
+ *
+ * The first lock lasts an hour, not a day, because there is no password to
+ * fall back on any more: whoever knows the admin's address could otherwise
+ * keep them out for good. Each lock is fixed: it runs from the tenth wrong
+ * guess and nothing stretches it. Guesses made while it is shut are not
+ * counted (`redeemLoginCode` books them on a sink, and `chargeFailureRow`
+ * ignores one that still lands), and when it is over the account has its ten
+ * attempts again. Every new lock that starts within a day of the last one
+ * ending lasts twice as long — 1, 2, 4, 8, 16 hours, then 24 for as long as
+ * it goes on — so a stranger cannot keep guessing at ten an hour. A sign-in
+ * that works zeroes both counts (`clearCodeUserFailures`), and a day with no
+ * new lock brings the next one back to an hour.
+ *
+ * The worst a guesser gets is ten guesses per lock: 50 in the first day of a
+ * series (locks of 1, 2, 4 and 8 hours, then the tenth guess of the fifth),
+ * and 779 in 30 days, ~26 a day (a few locks, then a day of waiting for the
+ * series to reset, again and again), ~0.08% of hitting a code. The account is emailed
+ * once per lock (`claimLockNotice`), and the server owner's emergency link
+ * ignores it. The refusal is the same generic one as any wrong code.
  */
 export const CODE_USER_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const CODE_USER_LOCK_MS = 60 * 60 * 1000;
+export const CODE_USER_MAX_LOCK_MS = 24 * 60 * 60 * 1000;
+/** How long after a lock ends a new one still counts as the next in its series. */
+export const CODE_USER_LOCK_SERIES_MS = 24 * 60 * 60 * 1000;
 export const MAX_CODE_USER_FAILURES = 10;
+
+/** How long the `level`th lock of a series lasts: 1 h, doubled each time, at most 24 h. */
+export function codeUserLockMs(level: number): number {
+  return Math.min(CODE_USER_LOCK_MS * 2 ** (level - 1), CODE_USER_MAX_LOCK_MS);
+}
+
+/** The level from which every lock lasts `CODE_USER_MAX_LOCK_MS`; the count stops there. */
+const MAX_LOCK_LEVEL = Math.ceil(Math.log2(CODE_USER_MAX_LOCK_MS / CODE_USER_LOCK_MS)) + 1;
 
 function codeUserScope(userId: string): string {
   return `logincode-user:${userId}`;
+}
+
+/**
+ * The account's last lock, kept in `login_failure` beside the wrong-guess
+ * count so no new column is needed: `count` is how many locks the series has
+ * had, and `window_started_at` is when the last one ends. Keyed by its end,
+ * the housekeeping sweep drops the row a day after that lock is over — which
+ * is exactly when the series no longer counts.
+ */
+function codeUserLockScope(userId: string): string {
+  return `logincode-userlock:${userId}`;
+}
+
+type BudgetRow = { count: number; windowStartedAt: Date };
+
+/**
+ * The level of the lock that started at `start`, from the last lock written
+ * down. Worked out the same way by whoever reads it, so a lock is the same
+ * length for the guess that started it and for every check after, even before
+ * `chargeCodeFailure` has written it down: the one on record if it is that
+ * lock, the next one up if it came within a day of the last ending, and the
+ * first otherwise.
+ */
+function lockLevel(start: Date, last: BudgetRow | undefined): number {
+  if (!last) return 1;
+  const lastEnd = last.windowStartedAt.getTime();
+  if (lastEnd - codeUserLockMs(last.count) === start.getTime()) return last.count;
+  if (start.getTime() - lastEnd > CODE_USER_LOCK_SERIES_MS) return 1;
+  return Math.min(last.count + 1, MAX_LOCK_LEVEL);
+}
+
+/** Both rows of the account's code sign-in count, in one read. */
+async function codeUserRows(
+  db: McpDatabase,
+  userId: string,
+): Promise<{ failures: BudgetRow | undefined; lastLock: BudgetRow | undefined }> {
+  const rows = await db
+    .select({
+      id: loginFailure.id,
+      count: loginFailure.count,
+      windowStartedAt: loginFailure.windowStartedAt,
+    })
+    .from(loginFailure)
+    .where(inArray(loginFailure.id, [codeUserScope(userId), codeUserLockScope(userId)]));
+  return {
+    failures: rows.find((row) => row.id === codeUserScope(userId)),
+    lastLock: rows.find((row) => row.id === codeUserLockScope(userId)),
+  };
+}
+
+/** How long the lock recorded on `failures` lasts, if it is one; the first lock's length otherwise. */
+function failuresLockMs(failures: BudgetRow | undefined, lastLock: BudgetRow | undefined): number {
+  if (!failures || failures.count < MAX_CODE_USER_FAILURES) return CODE_USER_LOCK_MS;
+  return codeUserLockMs(lockLevel(failures.windowStartedAt, lastLock));
+}
+
+/**
+ * When the lock that holds right now on `rowId` started, or null when there is
+ * none. The window restarts at the guess that reaches the cap (see
+ * `chargeFailureRow`), so its start is when the lock began, and it is fixed.
+ * `lockMs` is how long it lasts: an hour for signup codes, which keep a count
+ * of their own; an account's grows (`codeLoginLock`).
+ */
+export async function lockStartedAt(
+  db: McpDatabase,
+  rowId: string,
+  now: Date = new Date(),
+  lockMs: number = CODE_USER_LOCK_MS,
+): Promise<Date | null> {
+  const [row] = await db
+    .select({ count: loginFailure.count, windowStartedAt: loginFailure.windowStartedAt })
+    .from(loginFailure)
+    .where(eq(loginFailure.id, rowId));
+  if (!row || row.count < MAX_CODE_USER_FAILURES) return null;
+  return row.windowStartedAt.getTime() >= now.getTime() - lockMs ? row.windowStartedAt : null;
+}
+
+/** The lock holding on this account right now — when it started and how long it lasts — or null. */
+export async function codeLoginLock(
+  db: McpDatabase,
+  userId: string,
+  now: Date = new Date(),
+): Promise<{ start: Date; ms: number } | null> {
+  const { failures, lastLock } = await codeUserRows(db, userId);
+  if (!failures || failures.count < MAX_CODE_USER_FAILURES) return null;
+  const ms = failuresLockMs(failures, lastLock);
+  return failures.windowStartedAt.getTime() >= now.getTime() - ms
+    ? { start: failures.windowStartedAt, ms }
+    : null;
 }
 
 /** Whether code sign-in is shut for this account right now. */
@@ -355,42 +430,116 @@ export async function codeLoginLocked(
   userId: string,
   now: Date = new Date(),
 ): Promise<boolean> {
-  const [row] = await db
-    .select({ count: loginFailure.count, windowStartedAt: loginFailure.windowStartedAt })
-    .from(loginFailure)
-    .where(eq(loginFailure.id, codeUserScope(userId)));
-  if (!row) return false;
-  return (
-    row.count >= MAX_CODE_USER_FAILURES &&
-    row.windowStartedAt.getTime() >= now.getTime() - CODE_USER_FAILURE_WINDOW_MS
-  );
+  return (await codeLoginLock(db, userId, now)) !== null;
 }
 
 /**
  * Counts one wrong guess against the account. The window restarts at the
- * guess that reaches the cap, so the lock lasts a full day from then rather
- * than from whenever the first guess of the day happened.
+ * guess that reaches the cap, which starts a lock (see `codeUserLockMs` for
+ * how long). A guess that arrives while the lock holds changes nothing; the
+ * first one after it is over starts a new round of ten. The lock is written
+ * down as the series' latest in the same three statements every miss runs —
+ * read, charge, record — so a guess that starts one takes no longer than any
+ * other.
  */
 export async function chargeCodeFailure(
   db: McpDatabase,
   userId: string,
   now: Date = new Date(),
 ): Promise<void> {
-  const floor = new Date(now.getTime() - CODE_USER_FAILURE_WINDOW_MS);
-  const floorParam = sql`${floor.toISOString()}::timestamptz`;
-  const nowParam = sql`${now.toISOString()}::timestamptz`;
+  const { failures, lastLock } = await codeUserRows(db, userId);
+  const charged = await chargeFailureRow(
+    db,
+    codeUserScope(userId),
+    now,
+    failuresLockMs(failures, lastLock),
+  );
+  const lockStart = charged.count >= MAX_CODE_USER_FAILURES ? charged.windowStartedAt : null;
+  const level = lockLevel(lockStart ?? now, lastLock);
+  const lockEnd = new Date((lockStart ?? now).getTime() + codeUserLockMs(level));
+  // Always run, written only when a lock holds: the same lock is written down
+  // the same way by every charge that lands on it.
   await db
     .insert(loginFailure)
-    .values({ id: codeUserScope(userId), count: 1, windowStartedAt: now })
+    .select(
+      sql`select ${codeUserLockScope(userId)}::text, ${level}::integer,
+        ${lockEnd.toISOString()}::timestamptz where ${lockStart !== null}::boolean`,
+    )
+    .onConflictDoUpdate({
+      target: loginFailure.id,
+      set: { count: sql`excluded.count`, windowStartedAt: sql`excluded.window_started_at` },
+    });
+}
+
+/**
+ * `chargeCodeFailure` for any row id: signup codes keep a count of their own.
+ * `lockMs` is how long the lock on the row lasts, if it holds one.
+ */
+export async function chargeFailureRow(
+  db: McpDatabase,
+  rowId: string,
+  now: Date = new Date(),
+  lockMs: number = CODE_USER_LOCK_MS,
+): Promise<BudgetRow> {
+  const floor = new Date(now.getTime() - CODE_USER_FAILURE_WINDOW_MS);
+  const lockFloor = new Date(now.getTime() - lockMs);
+  const floorParam = sql`${floor.toISOString()}::timestamptz`;
+  const lockFloorParam = sql`${lockFloor.toISOString()}::timestamptz`;
+  const nowParam = sql`${now.toISOString()}::timestamptz`;
+  // At or past the cap the row is a lock, and its window start is when the
+  // lock began (see `lockStartedAt`): inside it a charge is a no-op, and once
+  // it is over the next one is the first of a new round.
+  const locked = sql`${loginFailure.count} >= ${MAX_CODE_USER_FAILURES}`;
+  const lockHolds = sql`${locked} and ${loginFailure.windowStartedAt} >= ${lockFloorParam}`;
+  const [row] = await db
+    .insert(loginFailure)
+    .values({ id: rowId, count: 1, windowStartedAt: now })
     .onConflictDoUpdate({
       target: loginFailure.id,
       set: {
-        count: sql`case when ${loginFailure.windowStartedAt} < ${floorParam}
+        count: sql`case when ${lockHolds} then ${loginFailure.count}
+          when ${locked} or ${loginFailure.windowStartedAt} < ${floorParam}
           then 1 else ${loginFailure.count} + 1 end`,
-        windowStartedAt: sql`case when ${loginFailure.windowStartedAt} < ${floorParam}
+        windowStartedAt: sql`case when ${lockHolds} then ${loginFailure.windowStartedAt}
+          when ${locked} or ${loginFailure.windowStartedAt} < ${floorParam}
           then ${nowParam}
           when ${loginFailure.count} + 1 >= ${MAX_CODE_USER_FAILURES}
           then ${nowParam} else ${loginFailure.windowStartedAt} end`,
       },
-    });
+    })
+    .returning({ count: loginFailure.count, windowStartedAt: loginFailure.windowStartedAt });
+  return row!;
+}
+
+/**
+ * Zeroes the account's wrong-guess count and its series of locks. A sign-in
+ * that works proves whoever made it is the owner, so the mistakes before it
+ * should not add up with those after, and the next lock is an hour again. It
+ * cannot be called to lift a lock from outside: a locked account cannot sign
+ * in by code.
+ */
+export async function clearCodeUserFailures(db: McpDatabase, userId: string): Promise<void> {
+  await clearBudget(db, loginFailure, codeUserScope(userId));
+  await clearBudget(db, loginFailure, codeUserLockScope(userId));
+}
+
+/**
+ * Claims the one notice a lock gets: true the first time it is asked for the
+ * lock that started at `lockStart`, false every time after. The row is keyed
+ * by the lock itself, so a new lock gets a notice of its own and two failed
+ * sign-ins finishing at once cannot both send one.
+ */
+export async function claimLockNoticeRow(
+  db: McpDatabase,
+  userId: string,
+  lockStart: Date,
+): Promise<boolean> {
+  const charge = await chargeBudget(
+    db,
+    loginFailure,
+    `logincode-locknotice:${userId}:${lockStart.getTime()}`,
+    1,
+    CODE_USER_FAILURE_WINDOW_MS,
+  );
+  return charge.ok;
 }

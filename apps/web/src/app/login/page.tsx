@@ -45,12 +45,14 @@ export default async function LoginPage() {
             <p className="brand">{t.auth.brand}</p>
             <h1>{t.auth.loginTitle}</h1>
             <p className="sub">{t.auth.loginSub}</p>
-            {/* Decided here, on the server: an instance that cannot send mail does
-                not offer a way in that only fails after the address is typed.
-                The action still answers a direct call with its own refusal. */}
+            {/* Decided here, on the server: an instance that cannot send mail
+                says so instead of offering a way in that only fails after the
+                address is typed. The action still answers a direct call with
+                its own refusal. */}
             <LoginForm
               lang={ws?.language ?? "en"}
               codeEnabled={emailConfigured()}
+              unavailable={t.auth.errCodeUnavailable}
             />
             <p className="foot">v{APP_VERSION} · {t.auth.foot}</p>
           </div>

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  canCreateFirstAdmin,
-  isValidEmail,
-  isValidPassword,
-} from "./first-access";
+import * as firstAccess from "./first-access";
+import { canCreateFirstAdmin, isValidEmail } from "./first-access";
 
 describe("first-access admin (spec §2 + §6)", () => {
   it("allows signup only when the instance has no users", () => {
@@ -12,7 +9,7 @@ describe("first-access admin (spec §2 + §6)", () => {
     expect(canCreateFirstAdmin(12)).toBe(false);
   });
 
-  it("accepts a plain email identifier — no verification channel", () => {
+  it("accepts a plain email identifier; proving it is the sign-in code's job", () => {
     expect(isValidEmail("admin@local")).toBe(true);
     expect(isValidEmail("dev@example.com")).toBe(true);
     expect(isValidEmail("not-an-email")).toBe(false);
@@ -26,9 +23,7 @@ describe("first-access admin (spec §2 + §6)", () => {
     expect(isValidEmail(`${"a".repeat(5000)}@x.test`)).toBe(false);
   });
 
-  it("requires a password of at least 8 characters and nothing else", () => {
-    expect(isValidPassword("abcdefgh")).toBe(true);
-    expect(isValidPassword("short")).toBe(false);
-    expect(isValidPassword("")).toBe(false);
+  it("has no password rule left: no account is given one", () => {
+    expect("isValidPassword" in firstAccess).toBe(false);
   });
 });

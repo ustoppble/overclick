@@ -506,10 +506,12 @@ export function HomeShell({
 
   return (
     <>
-      {/* OCL-35 (ux-v2 §3): the bar is two levels now. Level 1 holds
-          identity, running state, telemetry and account, and it never wraps and
-          never truncates. Level 2 owns filtering, so a selected mission with
-          a long title no longer squeezes everything else off the line. */}
+      {/* OCL-35 (ux-v2 §3): two groups, identity and state (level 1) and
+          filtering (level 2). On the desktop they lay out as ONE line: the
+          wordmark, the filters, then state, cost and the menu on the right,
+          and what does not fit steps aside in order instead of wrapping
+          (nebula.css, "one line"). On the phone they stay two compact rows
+          and the filters live behind the Filtros button. */}
       <header className="topbar-wrap">
         <div className="topbar topbar-l1">
           <Wordmark label={t.board.homeLink} current />
@@ -637,7 +639,11 @@ export function HomeShell({
               }}
               t={t}
             />
-            <span className="filter-result">
+            {/* The count says something on a narrowed board; on the whole one
+                it is the first thing the one-line bar lets go of. */}
+            <span
+              className={`filter-result${hasActiveFilters || searchQuery.trim() ? " narrowed" : ""}`}
+            >
               {searching ? t.board.searchingOlder : t.board.cardsShown(visible.length)}
               {searchLimited && !searching ? (
                 <> · {t.board.searchLimited}</>
@@ -648,8 +654,13 @@ export function HomeShell({
                 className="btn-ghost clear-board-filters"
                 type="button"
                 onClick={clearBoardFilters}
+                aria-label={t.board.clearFilters}
+                title={t.board.clearFilters}
               >
-                {t.board.clearFilters}
+                {/* Where the bar runs short the words step aside and the
+                    mark stays, with the words as its name. */}
+                <Icon name="close" label={null} size={12} className="cbf-icon" />
+                <span className="cbf-label">{t.board.clearFilters}</span>
               </button>
             ) : null}
             {/* ux-v2 §3: "Mover para missão" appears only with cards

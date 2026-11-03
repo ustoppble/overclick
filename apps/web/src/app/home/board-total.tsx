@@ -113,7 +113,9 @@ export function totalParts(totals: BoardTotals, filter: BoardFilter, t: Dict) {
   // The hover reading, for the pointer that never clicks: the label, then the
   // sources and the caveats. The tilde's own note stays in the popover, where
   // it has a line to itself instead of a clause inside a run-on sentence.
-  const title = [t.board.totalLabel, ...detail, ...warns.map((w) => w.text)]
+  // The tokens and the time ride the title too: where the bar is short it
+  // shows the figure alone, and hovering it still reads all three.
+  const title = [t.board.totalLabel, support, ...detail, ...warns.map((w) => w.text)]
     .filter(Boolean)
     .join(" · ");
 
