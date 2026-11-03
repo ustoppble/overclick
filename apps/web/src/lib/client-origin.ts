@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 /**
  * The caller's origin, as far as this deployment can honestly tell. Shared by
  * the sign-in budgets (`loginOrigin`) and the pairing endpoint.
@@ -13,7 +15,10 @@
  *   Behind such an edge the last forwarded-for hop is the edge itself, shared
  *   by everyone. The header is only as honest as the edge: it is trustworthy
  *   only if the server takes traffic from nowhere else (deploy/README.md).
- *   When a request does not carry it, the rule below applies.
+ *   Its value must be one single IPv4 or IPv6 address (`net.isIP`, no `%zone`): anything
+ *   else — garbage, a list, an empty value — is what a caller makes up when the
+ *   server can be reached without the edge, and each distinct string would be a
+ *   fresh budget. A request that does not carry a valid one gets the rule below.
  * - otherwise the last hop of `x-forwarded-for` — the entry our own proxy
  *   appended, which the caller cannot write past — or `x-real-ip` when there
  *   is no forwarded-for at all.
@@ -23,7 +28,7 @@ export function clientOrigin(headers: Headers): string | null {
   const named = process.env.OVERCLICK_CLIENT_IP_HEADER?.trim();
   if (named) {
     const value = headers.get(named)?.trim();
-    if (value) return value;
+    if (value && !value.includes("%") && isIP(value) !== 0) return value;
   }
   const forwarded = headers.get("x-forwarded-for");
   if (!forwarded) return headers.get("x-real-ip");
