@@ -5,7 +5,7 @@ import type { McpDatabase } from "../mcp/types";
 import {
   chargeCodeFailure,
   claimLockNoticeRow,
-  codeLoginLockStart,
+  codeLoginLock,
   codeLoginLocked,
   spendGlobalSend,
 } from "./login-rate-limit";
@@ -195,27 +195,35 @@ export async function claimLockNotice(
   db: McpDatabase,
   email: string,
   now: Date = new Date(),
-): Promise<{ to: string } | null> {
+): Promise<{ to: string; lockMs: number } | null> {
   const [account] = await accountId(db, email);
   if (!account) return null;
-  const lockStart = await codeLoginLockStart(db, account.id, now);
-  if (!lockStart) return null;
-  if (!(await claimLockNoticeRow(db, account.id, lockStart))) return null;
+  const lock = await codeLoginLock(db, account.id, now);
+  if (!lock) return null;
+  if (!(await claimLockNoticeRow(db, account.id, lock.start))) return null;
   // The warning is an email like any other: it counts against the instance's
   // hourly cap, and once that is spent this lock goes without one.
-  return (await spendGlobalSend(db)) ? { to: email } : null;
+  return (await spendGlobalSend(db)) ? { to: email, lockMs: lock.ms } : null;
+}
+
+/** "1 hora", "2 horas": how long a lock lasts, in whole hours. */
+function lockLength(lockMs: number): string {
+  const hours = Math.round(lockMs / (60 * 60 * 1000));
+  return hours === 1 ? "1 hora" : `${hours} horas`;
 }
 
 /** The warning a lock sends: what happened, for how long, and what to do. No code in it. */
-export function lockNoticeEmail(to: string) {
+export function lockNoticeEmail(to: string, lockMs: number) {
+  const length = lockLength(lockMs);
   return {
     to,
-    subject: "Seu login no overclick foi travado por 1 hora",
+    subject: `Seu login no overclick foi travado por ${length}`,
     text: [
       "Alguém errou o código de acesso da sua conta no overclick 10 vezes,",
-      "então o login por código desta conta ficou travado por 1 hora.",
+      `então o login por código desta conta ficou travado por ${length}.`,
+      "Se os erros continuarem, cada nova trava dura o dobro, até 24 horas.",
       "",
-      "Se foi você, espere a hora passar e peça um código novo.",
+      "Se foi você, espere o prazo passar e peça um código novo.",
       "Se não foi, alguém conhece o seu e-mail e está tentando entrar: o código",
       "só chega na sua caixa, então ele não entrou. Avise o admin do board.",
     ].join("\n"),

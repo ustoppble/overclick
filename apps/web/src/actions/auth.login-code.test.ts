@@ -670,6 +670,30 @@ describe("signing in with a code sent by email", () => {
       expect(lockNotices(EMAIL)).toHaveLength(2);
     });
 
+    it("tells the account how long each lock lasts as it doubles", async () => {
+      await lockThroughTheAction(EMAIL);
+      await lockThroughTheAction(EMAIL, 65 * MINUTE);
+
+      const notices = lockNotices(EMAIL);
+      expect(notices).toHaveLength(2);
+      expect(notices[0]![0].subject).toContain("1 hora");
+      expect(notices[1]![0].subject).toContain("2 horas");
+      expect(notices[1]![0].text).toContain("2 horas");
+    });
+
+    it("starts over at one hour after the owner signs in with a code", async () => {
+      await lockThroughTheAction(EMAIL);
+      at(65 * MINUTE);
+      await requestLoginCodeAction(null, emailForm(EMAIL));
+      await loginWithCodeAction(null, codeForm(EMAIL, lastSentCode()));
+      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
+
+      await lockThroughTheAction(EMAIL, 70 * MINUTE);
+      const notices = lockNotices(EMAIL);
+      expect(notices).toHaveLength(2);
+      expect(notices[1]![0].subject).toContain("1 hora");
+    });
+
     it("counts the notice in the hourly send cap, and sends none once the cap is spent", async () => {
       process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "5";
       await world.db

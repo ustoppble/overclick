@@ -230,7 +230,7 @@ export async function loginWithCodeAction(
     after(async () => {
       try {
         const notice = await claimLockNotice(db(), email);
-        if (notice) await sendEmail(lockNoticeEmail(notice.to));
+        if (notice) await sendEmail(lockNoticeEmail(notice.to, notice.lockMs));
       } catch (err) {
         console.error(
           `[login-code] sending the lock notice failed (${err instanceof Error ? err.name : "unknown"})`,

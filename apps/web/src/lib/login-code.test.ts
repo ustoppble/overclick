@@ -8,7 +8,14 @@ import { setMemberActive } from "./invitations";
 import * as session from "./session";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
-import { MAX_CODE_USER_FAILURES, chargeCodeFailure, lockStartedAt } from "./login-rate-limit";
+import {
+  MAX_CODE_USER_FAILURES,
+  chargeCodeFailure,
+  clearCodeUserFailures,
+  codeLoginLock,
+  lockStartedAt,
+} from "./login-rate-limit";
+import { sweepLoginRows } from "./login-housekeeping";
 import {
   LOGIN_CODE_TTL_MS,
   MAX_LOGIN_CODE_ATTEMPTS,
@@ -391,17 +398,17 @@ describe("login codes", () => {
       await guess(2 * MINUTE, 5);
 
       await guess(HOUR + 5 * MINUTE, 5);
-      await guess(HOUR + 7 * MINUTE, MAX_CODE_USER_FAILURES - 5);
-      const relocked = await issueLoginCode(world.db, EMAIL, at(HOUR + 9 * MINUTE));
+      await guess(HOUR + 7 * MINUTE, MAX_CODE_USER_FAILURES - 6);
+      const open = await issueLoginCode(world.db, EMAIL, at(HOUR + 9 * MINUTE));
       expect(
-        await redeemLoginCode(world.db, EMAIL, relocked!.code, at(HOUR + 9 * MINUTE + 1000)),
-      ).toBeNull();
-
-      // A fixed hour from that tenth guess, and open after it.
-      const open = await issueLoginCode(world.db, EMAIL, at(2 * HOUR + 10 * MINUTE));
-      expect(
-        await redeemLoginCode(world.db, EMAIL, open!.code, at(2 * HOUR + 10 * MINUTE + 1000)),
+        await redeemLoginCode(world.db, EMAIL, open!.code, at(HOUR + 9 * MINUTE + 1000)),
       ).toEqual({ userId });
+
+      await guess(HOUR + 11 * MINUTE, 1);
+      const relocked = await issueLoginCode(world.db, EMAIL, at(HOUR + 13 * MINUTE));
+      expect(
+        await redeemLoginCode(world.db, EMAIL, relocked!.code, at(HOUR + 13 * MINUTE + 1000)),
+      ).toBeNull();
     });
 
     it("lets a guess that was already past the check when the lock began change nothing", async () => {
@@ -436,6 +443,80 @@ describe("login codes", () => {
       expect(
         await redeemLoginCode(world.db, EMAIL, open!.code, at(HOUR + 5 * MINUTE + 1000)),
       ).toEqual({ userId });
+    });
+
+    describe("the lock doubles while the guessing goes on", () => {
+      /** Ten wrong guesses from `when`; the lock starts at the tenth, which this returns. */
+      async function lockFrom(when: number): Promise<number> {
+        await guess(when, 5);
+        await guess(when + 2 * MINUTE, 5);
+        return when + 2 * MINUTE + 1000;
+      }
+
+      /** Whether the account's own right code is turned away at `when`. */
+      async function shutAt(when: number): Promise<boolean> {
+        const issued = await issueLoginCode(world.db, EMAIL, at(when));
+        return (await redeemLoginCode(world.db, EMAIL, issued!.code, at(when + 1000))) === null;
+      }
+
+      /** Locks from `when` and says the lock lasted `hours`: shut a minute before, open a minute after. */
+      async function expectLockOf(when: number, hours: number): Promise<number> {
+        const start = await lockFrom(when);
+        expect(await shutAt(start + hours * HOUR - 2 * MINUTE)).toBe(true);
+        expect(await shutAt(start + hours * HOUR + MINUTE)).toBe(false);
+        return start + hours * HOUR + 3 * MINUTE;
+      }
+
+      it("lasts 1, 2, 4, 8 and 16 hours for each new round of ten, then stays at 24", async () => {
+        let next = 0;
+        for (const hours of [1, 2, 4, 8, 16, 24, 24]) {
+          next = await expectLockOf(next, hours);
+        }
+      });
+
+      it("starts over at one hour after a sign-in that works", async () => {
+        let next = await expectLockOf(0, 1);
+        next = await expectLockOf(next, 2);
+        await clearCodeUserFailures(world.db, userId);
+        await expectLockOf(next, 1);
+      });
+
+      it("keeps doubling when the new lock comes within a day of the last one ending", async () => {
+        let next = await expectLockOf(0, 1);
+        next = await expectLockOf(next, 2);
+        await expectLockOf(next + 23 * HOUR, 4);
+      });
+
+      it("starts over at one hour after a day with no new lock", async () => {
+        let next = await expectLockOf(0, 1);
+        next = await expectLockOf(next, 2);
+        await expectLockOf(next + 24 * HOUR + 5 * MINUTE, 1);
+      });
+
+      it("keeps the count of locks through the housekeeping sweep", async () => {
+        let next = 0;
+        for (const hours of [1, 2, 4, 8, 16]) next = await expectLockOf(next, hours);
+        await sweepLoginRows(world.db, at(next + 20 * HOUR));
+        await expectLockOf(next + 20 * HOUR, 24);
+      });
+
+      it("does not count guesses made during a longer lock, nor let them stretch it or raise the next one", async () => {
+        let next = await expectLockOf(0, 1);
+        const start = await lockFrom(next);
+        // Thirty wrong guesses while the two-hour lock holds.
+        for (let i = 0; i < 6; i++) await guess(start + 10 * MINUTE + i * 10 * MINUTE, 5);
+        expect(await shutAt(start + 2 * HOUR - 2 * MINUTE)).toBe(true);
+        expect(await shutAt(start + 2 * HOUR + MINUTE)).toBe(false);
+        next = start + 2 * HOUR + 3 * MINUTE;
+        await expectLockOf(next, 4);
+      });
+
+      it("reports the length of the lock that holds", async () => {
+        let next = await expectLockOf(0, 1);
+        const start = await lockFrom(next);
+        const lock = await codeLoginLock(world.db, userId, at(start + MINUTE));
+        expect(lock).toEqual({ start: at(start), ms: 2 * HOUR });
+      });
     });
 
     it("is per account: another account's codes still work", async () => {
