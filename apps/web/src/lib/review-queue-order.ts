@@ -16,3 +16,27 @@ export function nextInQueue(ids: string[], currentId: string): string | null {
   if (at < 0) return rest[0]!;
   return ids[at + 1] ?? rest[0]!;
 }
+
+/**
+ * The To review list's lines, in the queue's order, and its number. The
+ * number is the queue's length, the count the chip carries, and not however
+ * many lines happened to load (E1 review, B2): a card the line query could not
+ * read is named in `missing` instead of quietly lowering the count.
+ */
+export function joinReviewQueue<
+  Entry extends { id: string },
+  Card extends { id: string },
+>(
+  queue: readonly Entry[],
+  cards: readonly Card[],
+): { rows: (Omit<Entry, "id"> & { card: Card })[]; count: number; missing: string[] } {
+  const byId = new Map(cards.map((card) => [card.id, card]));
+  const rows: (Omit<Entry, "id"> & { card: Card })[] = [];
+  const missing: string[] = [];
+  for (const { id, ...rest } of queue) {
+    const card = byId.get(id);
+    if (card) rows.push({ ...rest, card });
+    else missing.push(id);
+  }
+  return { rows, count: queue.length, missing };
+}

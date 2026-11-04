@@ -14,8 +14,11 @@ export async function loadGlobalCounts(
   database: Database,
   workspaceId: string,
   principal: MaybePrincipal,
+  /** The reader's projects, already read through the same scope (E1 review, M1). */
+  known?: Parameters<typeof readReviewScope>[3],
 ): Promise<GlobalCounts> {
-  const scope = await readReviewScope(database, workspaceId, principal);
-  const counts = await countCardsByStatus(database, principal, scope);
+  const scope = await readReviewScope(database, workspaceId, principal, known);
+  // Only the two statuses the bar shows: the archive is most of the table.
+  const counts = await countCardsByStatus(database, principal, scope, ["em_execucao", "feito"]);
   return { running: counts.em_execucao, review: counts.feito };
 }

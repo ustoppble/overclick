@@ -85,3 +85,10 @@ export function createBoardSignatureLimiter(
 }
 
 export const boardSignatureLimiter = createBoardSignatureLimiter();
+
+/**
+ * The global bar's own 60 s poll (`globalBarCountsAction`), away from the
+ * board: callable by any signed-in session like the signature, so it gets the
+ * same allowance, counted apart (E1 review, M2).
+ */
+export const globalBarCountsLimiter = createBoardSignatureLimiter();

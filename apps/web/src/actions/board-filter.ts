@@ -1,20 +1,14 @@
 "use server";
 
 import { and, eq, inArray } from "drizzle-orm";
-import { mission, organization, project, task, user } from "@agent-board/db";
-import { isReleaseVersion } from "@agent-board/mcp-core";
+import { organization, project, user } from "@agent-board/db";
 import {
   DEFAULT_BOARD_PERIOD,
   DEFAULT_BOARD_PERIOD_FIELD,
-  NO_MISSION,
-  encodeFacetSelection,
   encodeOrganizationSelection,
   encodeProjectSelection,
-  encodeReleaseSelection,
   isBoardPeriod,
   isBoardPeriodField,
-  isTaskPriority,
-  isTaskType,
   type BoardFilter,
 } from "../lib/board-filter";
 import { EMPTY_BOARD_TOTALS, type BoardTotals } from "../lib/board-totals";
@@ -23,22 +17,24 @@ import type { ActionResult } from "../lib/action-result";
 import { getSession } from "../lib/cookies";
 import { db } from "../lib/db";
 import { loadModelPrices } from "../lib/prices";
-import {
-  missionScope,
-  organizationScope,
-  projectScope,
-  taskScope,
-} from "../lib/scope";
+import { organizationScope, projectScope } from "../lib/scope";
 import { sessionPrincipal } from "../lib/web-scope";
 
-export async function setBoardFilterAction(
-  input: BoardFilter,
-): Promise<ActionResult> {
-  const session = await getSession();
-  if (!session) return { ok: false, error: "Not signed in." };
-  const principal = await sessionPrincipal(session);
-  if (!principal) return { ok: false, error: "Not signed in." };
+type Reader = { userId: string; principal: NonNullable<Awaited<ReturnType<typeof sessionPrincipal>>> };
 
+async function reader(): Promise<Reader | null> {
+  const session = await getSession();
+  if (!session) return null;
+  const principal = await sessionPrincipal(session);
+  if (!principal) return null;
+  return { userId: session.userId, principal };
+}
+
+/** The organizations and projects asked for, if the reader may see every one of them. */
+async function checkScope(
+  principal: Reader["principal"],
+  input: { organizationIds: string[]; projectIds: string[] },
+): Promise<{ ok: true; organizationIds: string[]; projectIds: string[] } | { ok: false; error: string }> {
   const organizationIds = [...new Set(input.organizationIds)];
   if (organizationIds.length > 0) {
     const found = await db()
@@ -60,68 +56,65 @@ export async function setBoardFilterAction(
       return { ok: false, error: "Project not found." };
     }
   }
+  return { ok: true, organizationIds, projectIds };
+}
 
-  if (input.missionId && input.missionId !== NO_MISSION) {
-    const [miss] = await db()
-      .select({ id: mission.id })
-      .from(mission)
-      .where(and(eq(mission.id, input.missionId), missionScope(principal)))
-      .limit(1);
-    if (!miss) return { ok: false, error: "Mission not found." };
-  }
+/**
+ * What the board remembers of a filter (navigation plan E4, F2): the scope
+ * and the period, and nothing else. The mission, the facets and the release
+ * live in the URL only; their columns stay on the user, unread and unwritten,
+ * until the card that drops them.
+ */
+export async function setBoardFilterAction(
+  input: BoardFilter,
+): Promise<ActionResult> {
+  const who = await reader();
+  if (!who) return { ok: false, error: "Not signed in." };
 
-  if (!input.types.every(isTaskType)) {
-    return { ok: false, error: "Task type not found." };
-  }
-  if (!input.priorities.every(isTaskPriority)) {
-    return { ok: false, error: "Task priority not found." };
-  }
+  const scope = await checkScope(who.principal, input);
+  if (!scope.ok) return scope;
   if (input.period !== undefined && !isBoardPeriod(input.period)) {
     return { ok: false, error: "Period not found." };
   }
   if (input.periodBy !== undefined && !isBoardPeriodField(input.periodBy)) {
     return { ok: false, error: "Period date not found." };
   }
-  if (typeof input.resolvedIn === "string") {
-    // The filter offers releases only, so only a release can be stored as
-    // one — a branch name in resolved_in is not a selection (OCL-128).
-    if (!isReleaseVersion(input.resolvedIn)) {
-      return { ok: false, error: "Release not found." };
-    }
-    const ws = await db().query.workspace.findFirst({ columns: { id: true } });
-    if (!ws) return { ok: false, error: "Workspace not found." };
-    const [release] = await db()
-      .select({ value: task.resolvedIn })
-      .from(task)
-      .innerJoin(project, eq(task.projectId, project.id))
-      .where(
-        and(
-          eq(project.workspaceId, ws.id),
-          eq(task.resolvedIn, input.resolvedIn),
-          projectScope(principal),
-          taskScope(principal),
-        ),
-      )
-      .limit(1);
-    if (!release) return { ok: false, error: "Release not found." };
-  }
 
   await db()
     .update(user)
     .set({
       // One column per dimension, same shape: "all", or the ids joined.
-      boardOrganizationId: encodeOrganizationSelection(organizationIds),
+      boardOrganizationId: encodeOrganizationSelection(scope.organizationIds),
       // One column holds the whole selection: "all", or the ids joined.
-      boardProjectId: encodeProjectSelection(projectIds),
-      boardMissionId: input.missionId,
-      boardTaskTypes: encodeFacetSelection([...new Set(input.types)]),
-      boardPriorities: encodeFacetSelection([...new Set(input.priorities)]),
-      boardResolvedIn: encodeReleaseSelection(input.resolvedIn),
+      boardProjectId: encodeProjectSelection(scope.projectIds),
       boardPeriod: input.period ?? DEFAULT_BOARD_PERIOD,
       boardPeriodBy: input.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD,
     })
-    .where(eq(user.id, session.userId));
+    .where(eq(user.id, who.userId));
 
+  return { ok: true };
+}
+
+/**
+ * The scope picked in the global bar (E4): only the organization/project
+ * pair is written, so a page that is not the board (Missões, Consumo) never
+ * touches the remembered period.
+ */
+export async function setBoardScopeAction(input: {
+  organizationIds: string[];
+  projectIds: string[];
+}): Promise<ActionResult> {
+  const who = await reader();
+  if (!who) return { ok: false, error: "Not signed in." };
+  const scope = await checkScope(who.principal, input);
+  if (!scope.ok) return scope;
+  await db()
+    .update(user)
+    .set({
+      boardOrganizationId: encodeOrganizationSelection(scope.organizationIds),
+      boardProjectId: encodeProjectSelection(scope.projectIds),
+    })
+    .where(eq(user.id, who.userId));
   return { ok: true };
 }
 

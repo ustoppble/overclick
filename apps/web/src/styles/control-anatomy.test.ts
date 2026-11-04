@@ -269,12 +269,14 @@ describe("the filter line is one line, and what does not fit steps aside instead
     expect(wraps).toBe(false);
   });
 
-  it("collapses in order: the cost's support, the period date, the count and the clear label", () => {
+  it("collapses in order: the cost's support, the 'Mostrar' word, then the long period phrase (E4)", () => {
     expect(declares(inAtRules(".nb .board-total .bt-sub"), "display", "none")).toBe(true);
-    expect(declares(inAtRules(".nb .topbar-l2 .period-by-filter"), "display", "none")).toBe(true);
-    expect(declares(inAtRules(".nb .topbar-l2 .ff-sheet-only"), "display", "block")).toBe(true);
-    expect(declares(inAtRules(".nb .topbar-l2 .filter-result:not(.narrowed)"), "display", "none")).toBe(true);
-    expect(declares(inAtRules(".nb .topbar-l2 .clear-board-filters .cbf-label"), "display", "none")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-l2 .period-trigger .show-prefix"), "display", "none")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-l2 .period-trigger .period-long"), "display", "none")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-l2 .period-trigger .period-short"), "display", "inline")).toBe(true);
+    // the period date, the count and Clear left the line in E4: nothing to fold
+    expect(declares(inAtRules(".nb .topbar-l2 .period-by-filter"), "display", "none")).toBe(false);
+    expect(declares(inAtRules(".nb .topbar-l2 .filter-result:not(.narrowed)"), "display", "none")).toBe(false);
   });
 
   it("never lets the scope or the mission shrink below their triggers' floor", () => {

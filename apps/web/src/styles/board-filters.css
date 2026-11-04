@@ -1,0 +1,140 @@
+/* ============================================================
+   BOARD FILTER LINE — navigation plan E4 (variant A)
+
+   The line under the global bar: Missão · Tipo · Prioridade · Mostrar: … ·
+   Mais, and the chips of what narrows the board under it. Its own sheet, so
+   the stages that rework nebula.css do not fight over it (plan §3.3).
+
+   Rules kept from E1 (plan §3.5): nothing new under 12px, no stacked opacity
+   on text, radius 4/8/12, spacing 4/8/12/16/24/32/48, 200ms motion on colour
+   and background only, no colour of its own: a picked filter is text-1 with
+   its count, never a tint.
+   ============================================================ */
+
+/* ---------- type and priority: a trigger each (the Control anatomy) ---------- */
+.nb .facet-menu { position: relative; display: inline-flex; flex: none; min-width: 0; }
+.nb .topbar-l2 .type-trigger,
+.nb .topbar-l2 .priority-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  height: 32px;
+  min-width: 96px;
+  padding: 0 var(--oc-space-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-2);
+  font: 500 13px/16px var(--oc-font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--oc-duration-micro) var(--oc-ease-atmosphere),
+    color var(--oc-duration-micro) var(--oc-ease-atmosphere);
+}
+.nb .topbar-l2 .type-trigger:hover,
+.nb .topbar-l2 .priority-trigger:hover { background: var(--oc-surface-hover); color: var(--oc-text-1); }
+.nb .topbar-l2 .type-trigger:focus-visible,
+.nb .topbar-l2 .priority-trigger:focus-visible { outline: none; box-shadow: var(--oc-focus-ring); }
+.nb .topbar-l2 .type-trigger.on,
+.nb .topbar-l2 .priority-trigger.on {
+  color: var(--oc-text-1);
+  border-color: var(--oc-border-strong);
+  background: var(--oc-surface-hover);
+}
+.nb .topbar-l2 .type-trigger .nb-icon,
+.nb .topbar-l2 .priority-trigger .nb-icon,
+.nb .topbar-l2 .ff-trigger .nb-icon { flex: none; color: var(--oc-text-3); }
+/* the menus behind them: options at the 13px of every control */
+.nb .fm-panel { width: 224px; }
+.nb .fm-panel .ff-opt {
+  min-height: 32px;
+  font: 500 13px/16px var(--oc-font-ui);
+  letter-spacing: 0;
+}
+.nb .fm-panel .ff-section h3,
+.nb .period-panel .period-group h3 {
+  margin: 0;
+  padding: var(--oc-space-1) var(--oc-space-2);
+  font: 600 12px/16px var(--oc-font-ui);
+  letter-spacing: var(--oc-tracking-wide);
+  text-transform: uppercase;
+  color: var(--oc-text-3);
+}
+.nb .fm-panel .ff-opt-count { font: 500 12px/16px var(--oc-font-data); }
+
+/* ---------- Mostrar: the period, written out ---------- */
+.nb .period-trigger .show-prefix { color: var(--oc-text-3); }
+.nb .period-trigger .period-long { color: var(--oc-text-1); }
+.nb .period-trigger .period-short { display: none; color: var(--oc-text-1); }
+.nb .period-panel { display: flex; flex-direction: column; gap: var(--oc-space-2); min-width: 240px; }
+.nb .period-group + .period-group { padding-top: var(--oc-space-2); border-top: 1px solid var(--oc-border); }
+
+/* ---------- the chips line ---------- */
+.nb .filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--oc-space-2);
+  padding: var(--oc-space-3) 0 0;
+  font: 500 12px/16px var(--oc-font-ui);
+  color: var(--oc-text-2);
+}
+.nb .fc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-1);
+  max-width: 320px;
+  height: 28px;
+  padding: 0 var(--oc-space-1) 0 var(--oc-space-2);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-surface);
+}
+.nb .fc-k { flex: none; color: var(--oc-text-3); }
+.nb .fc-v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--oc-text-1); }
+.nb .fc-x,
+.nb .fc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--oc-radius-control-sm);
+  background: transparent;
+  color: var(--oc-text-3);
+  font: 500 12px/16px var(--oc-font-ui);
+  cursor: pointer;
+  transition: background-color var(--oc-duration-micro) var(--oc-ease-atmosphere),
+    color var(--oc-duration-micro) var(--oc-ease-atmosphere);
+}
+.nb .fc-x { flex: none; width: 20px; height: 20px; padding: 0; }
+.nb .fc-btn { height: 28px; padding: 0 var(--oc-space-2); color: var(--oc-text-2); border-radius: var(--oc-radius-control); }
+.nb .fc-x:hover,
+.nb .fc-btn:hover { background: var(--oc-surface-hover); color: var(--oc-text-1); }
+.nb .fc-x:focus-visible,
+.nb .fc-btn:focus-visible { outline: none; box-shadow: var(--oc-focus-ring); }
+.nb .fc-count { color: var(--oc-text-3); font-variant-numeric: tabular-nums; }
+
+/* ---------- what steps aside on the line, in order ----------
+   Under 1440 the "Mostrar:" word goes (the phrase still says it); under 1100
+   the phrase keeps its short form ("30 dias"), with the whole reading on the
+   trigger's title. The cost's support and word go in nebula.css. */
+@media (min-width: 769px) and (max-width: 1439px) {
+  .nb .topbar-l2 .period-trigger .show-prefix { display: none; }
+}
+@media (min-width: 769px) and (max-width: 1099px) {
+  .nb .topbar-l2 .period-trigger .period-long { display: none; }
+  .nb .topbar-l2 .period-trigger .period-short { display: inline; }
+}
+
+/* ---------- the phone: the line is the Filtros sheet ---------- */
+@media (max-width: 768px), (orientation: landscape) and (max-height: 500px) {
+  .nb .topbar-more.open .facet-menu,
+  .nb .topbar-more.open .type-trigger,
+  .nb .topbar-more.open .priority-trigger { display: flex; width: 100%; }
+  .nb .topbar-more.open .type-trigger,
+  .nb .topbar-more.open .priority-trigger { height: 40px; justify-content: space-between; }
+  .nb .topbar-more.open .facet-menu,
+  .nb .topbar-more.open .period-filter,
+  .nb .topbar-more.open .facet-filters { grid-column: 1 / -1; }
+  .nb .filter-chips { padding-top: var(--oc-space-2); }
+}

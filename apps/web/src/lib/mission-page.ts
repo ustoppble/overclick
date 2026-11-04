@@ -147,15 +147,30 @@ export async function loadMissionList(
   database: Database,
   workspaceId: string,
   principal: MaybePrincipal,
+  /**
+   * The scope of the global bar (E4). Empty is every organization or every
+   * project. A mission belongs to an organization; under a project scope it
+   * shows when it holds cards in those projects, counted there, or when it
+   * holds none yet, since it is where the next card of the organization goes.
+   */
+  scope: { organizationIds: string[]; projectIds: string[] } = { organizationIds: [], projectIds: [] },
 ): Promise<MissionListItem[]> {
-  const missions = await database.query.mission.findMany({
-    where: and(eq(mission.workspaceId, workspaceId), missionScope(principal)),
+  const inOrganizations = await database.query.mission.findMany({
+    where: and(
+      eq(mission.workspaceId, workspaceId),
+      missionScope(principal),
+      scope.organizationIds.length > 0
+        ? inArray(mission.organizationId, scope.organizationIds)
+        : undefined,
+    ),
     orderBy: desc(mission.updatedAt),
     columns: { id: true, title: true, status: true, objective: true, updatedAt: true },
   });
-  if (missions.length === 0) return [];
+  if (inOrganizations.length === 0) return [];
 
-  const projectIds = await visibleProjectIds(database, workspaceId, principal);
+  const visible = await visibleProjectIds(database, workspaceId, principal);
+  const projectIds =
+    scope.projectIds.length > 0 ? visible.filter((id) => scope.projectIds.includes(id)) : visible;
   const counted =
     projectIds.length === 0
       ? []
@@ -172,7 +187,7 @@ export async function loadMissionList(
             and(
               inArray(
                 task.missionId,
-                missions.map((item) => item.id),
+                inOrganizations.map((item) => item.id),
               ),
               inArray(task.projectId, projectIds),
               taskScope(principal),
@@ -194,11 +209,33 @@ export async function loadMissionList(
     names.set(row.missionId, set);
   }
 
+  // Under a project scope, a mission whose cards all sit elsewhere leaves.
+  const missions =
+    scope.projectIds.length === 0
+      ? inOrganizations
+      : await missionsWithoutCardsElsewhere(database, inOrganizations, counts, principal);
   return missions.map((item) => ({
     ...item,
     counts: counts.get(item.id) ?? emptyCounts(),
     projectNames: [...(names.get(item.id) ?? [])].sort((a, b) => a.localeCompare(b)),
   }));
+}
+
+/** The missions with cards in scope, plus the ones the reader sees no card of at all. */
+async function missionsWithoutCardsElsewhere<T extends { id: string }>(
+  database: Database,
+  missions: T[],
+  inScope: Map<string, MissionStatusTotals>,
+  principal: MaybePrincipal,
+): Promise<T[]> {
+  const rest = missions.filter((item) => !inScope.has(item.id)).map((item) => item.id);
+  if (rest.length === 0) return missions;
+  const elsewhere = await database
+    .selectDistinct({ missionId: task.missionId })
+    .from(task)
+    .where(and(inArray(task.missionId, rest), taskScope(principal)));
+  const taken = new Set(elsewhere.map((row) => row.missionId));
+  return missions.filter((item) => inScope.has(item.id) || !taken.has(item.id));
 }
 
 /**

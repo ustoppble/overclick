@@ -540,3 +540,7 @@
   list-style: none;
   color: var(--nebula-text-secondary);
 }
+
+/* the period the page counts, written out (navigation plan E4) */
+.ins-head .ins-period { margin: 0; font-size: 13px; line-height: 20px; color: var(--oc-text-2); }
+.ins-head .ins-period b { font-weight: 500; color: var(--oc-text-1); }

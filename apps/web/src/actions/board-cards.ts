@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { project, workspace } from "@agent-board/db";
 import type { BoardCard, BoardCardDetail } from "../app/board/board";
 import { toBoardCardDetail, toBoardCards } from "../lib/board-card";
@@ -34,7 +34,7 @@ type BoardReader = {
   principal: Principal;
   session: { userId: string };
   ws: typeof workspace.$inferSelect;
-  projects: { id: string }[];
+  projects: { id: string; name: string; organizationId: string }[];
 };
 
 async function boardReader(
@@ -46,10 +46,13 @@ async function boardReader(
   if (!principal) return null;
   const ws = await db().query.workspace.findFirst();
   if (!ws) return null;
+  // Name and organization too: the global bar's counts resolve the
+  // remembered scope from this same list instead of reading it again.
   const projects = await db()
-    .select({ id: project.id })
+    .select({ id: project.id, name: project.name, organizationId: project.organizationId })
     .from(project)
-    .where(and(eq(project.workspaceId, ws.id), projectScope(principal)));
+    .where(and(eq(project.workspaceId, ws.id), projectScope(principal)))
+    .orderBy(asc(project.createdAt));
   return { principal, session, ws, projects };
 }
 
@@ -163,7 +166,7 @@ export async function boardSignatureAction(): Promise<
         reader.projects.map((item) => item.id),
         reader.principal,
       ),
-      loadGlobalCounts(db(), reader.ws.id, reader.principal),
+      loadGlobalCounts(db(), reader.ws.id, reader.principal, { projects: reader.projects }),
     ]);
     return { signature, counts };
   } finally {

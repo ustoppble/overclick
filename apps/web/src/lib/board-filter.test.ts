@@ -720,7 +720,7 @@ describe("active filter count", () => {
         priorities: ["urgente", "alta"],
         resolvedIn: "v1.2.0",
       }),
-    ).toBe(6);
+    ).toBe(5);
   });
 
   it("leaves the scope out: it lives in the global bar, not behind Filtros (E4)", () => {

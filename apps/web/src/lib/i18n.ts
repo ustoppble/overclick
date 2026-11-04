@@ -707,6 +707,30 @@ const en = {
     organizationsSub: "Each business and its projects",
     logout: "Log out",
   },
+  /**
+   * The board's scope, search and filter line (navigation plan E4): the
+   * scope and the search moved up to the global bar, the filter line reads
+   * "Show: …" for the period, and Clear and Back to 7 days are two buttons.
+   */
+  filterLine: {
+    scope: "Scope",
+    scopeOrganizations: "Organizations",
+    scopeProjects: "Projects",
+    searchShortcut: "⌘K",
+    show: "Show:",
+    periodPhrase: (by: "updated" | "created", period: "7d" | "14d" | "30d" | "all") =>
+      `${by === "created" ? "created" : "updated"} ${
+        period === "all" ? "at any time" : `in the last ${Number.parseInt(period, 10)} days`
+      }`,
+    periodShort: { "7d": "7 days", "14d": "14 days", "30d": "30 days", all: "All time" },
+    periodSection: "Period",
+    more: "More",
+    backTo7: "Back to 7 days",
+    clearKeeps: "clearing keeps scope and period",
+    chipMission: "Mission",
+    chipSearch: "Search",
+    removeChip: (label: string) => `Remove ${label}`,
+  },
   /** The To review list and the card it opens (navigation plan E1, F1). */
   review: {
     title: "To review",
@@ -1007,7 +1031,7 @@ const ptBR: Dict = {
     clearMission: "Limpar filtro de missão",
     searchMissions: "Buscar missões",
     noMissionMatch: "Nenhuma missão corresponde.",
-    searchCards: "Pesquisar cards",
+    searchCards: "Buscar cards",
     clearSearch: "Limpar pesquisa do board",
     settings: "Configurações",
     logout: "Sair",
@@ -1520,6 +1544,25 @@ const ptBR: Dict = {
     organizations: "Organizações",
     organizationsSub: "Cada negócio e os seus projetos",
     logout: "Sair",
+  },
+  filterLine: {
+    scope: "Escopo",
+    scopeOrganizations: "Organizações",
+    scopeProjects: "Projetos",
+    searchShortcut: "⌘K",
+    show: "Mostrar:",
+    periodPhrase: (by: "updated" | "created", period: "7d" | "14d" | "30d" | "all") =>
+      `${by === "created" ? "criados" : "atualizados"} ${
+        period === "all" ? "em qualquer data" : `nos últimos ${Number.parseInt(period, 10)} dias`
+      }`,
+    periodShort: { "7d": "7 dias", "14d": "14 dias", "30d": "30 dias", all: "Tudo" },
+    periodSection: "Período",
+    more: "Mais",
+    backTo7: "Voltar a 7 dias",
+    clearKeeps: "limpar mantém escopo e período",
+    chipMission: "Missão",
+    chipSearch: "Busca",
+    removeChip: (label: string) => `Remover ${label}`,
   },
   review: {
     title: "Para revisar",

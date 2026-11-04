@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { mission, project } from "@agent-board/db";
+import { mission, organization, project, user } from "@agent-board/db";
 import { Icon } from "../../components/icon";
 import { NebulaAtmosphere } from "../../components/nebula-atmosphere";
 import { CliMark } from "../../components/cli-mark";
@@ -8,16 +8,17 @@ import { Wordmark } from "../../components/wordmark";
 import {
   NO_MISSION,
   boardFilterFromQuery,
-  filterBoardCards,
+  encodeOrganizationSelection,
+  encodeProjectSelection,
 } from "../../lib/board-filter";
+import { narrowUsageRows } from "../../lib/board-totals-query";
 import { getSession } from "../../lib/cookies";
-import { missionScope, projectScope } from "../../lib/scope";
+import { missionScope, organizationScope, projectScope } from "../../lib/scope";
 import { pagePrincipal } from "../../lib/web-scope";
 import { dict } from "../../lib/i18n";
 import { db } from "../../lib/db";
 import {
   computeInsights,
-  filterMissionAttempts,
   loadInsightAttemptRows,
   loadMissionAttemptRows,
   loadReopenRows,
@@ -64,10 +65,9 @@ function describeFilter(
   },
   t: InsightsCopy,
 ): string | null {
+  // The scope is not here: since E4 it is written in the global bar, the
+  // same on the board and on this page.
   const parts: string[] = [];
-  if (filter.projectIds.length > 0) {
-    parts.push(t.filterProjects(filter.projectIds.length));
-  }
   if (filter.missionId === NO_MISSION) parts.push(t.filterNoMission);
   else if (filter.missionId) parts.push(t.filterMission);
   if (filter.types.length > 0) parts.push(t.filterTypes(filter.types));
@@ -556,9 +556,9 @@ export default async function InsightsPage({
 
   // The board hands its filter over in the link. Same filter, same rows, same
   // aggregation: the total on the topbar and the numbers here are one answer.
-  const [projectRows, missionRows] = await Promise.all([
+  const [projectRows, missionRows, organizationRows, [me]] = await Promise.all([
     db()
-      .select({ id: project.id })
+      .select({ id: project.id, organizationId: project.organizationId })
       .from(project)
       .where(and(eq(project.workspaceId, ws.id), projectScope(principal)))
       .orderBy(asc(project.createdAt)),
@@ -566,24 +566,50 @@ export default async function InsightsPage({
       .select({ id: mission.id })
       .from(mission)
       .where(and(eq(mission.workspaceId, ws.id), missionScope(principal))),
+    db()
+      .select({ id: organization.id })
+      .from(organization)
+      .where(and(eq(organization.workspaceId, ws.id), organizationScope(principal)))
+      .orderBy(asc(organization.name)),
+    db()
+      .select({
+        organizationId: user.boardOrganizationId,
+        projectId: user.boardProjectId,
+        period: user.boardPeriod,
+        periodBy: user.boardPeriodBy,
+      })
+      .from(user)
+      .where(eq(user.id, session.userId))
+      .limit(1),
   ]);
   const t = insightsCopy(ws.language);
   // The wordmark is shared chrome, so its label comes from the shared
   // dictionary and not from this page's own copy.
   const shared = dict(ws.language);
+  // The board's filter, read the board's way (E4): the URL wins, and the
+  // remembered scope and period fill what it does not say. The period now
+  // narrows this page too (D6), by the same rule as the board's total, so the
+  // two report one answer for one link.
   const filter = boardFilterFromQuery(
     {
+      organizations: one(params.organizations),
       projects: one(params.projects),
       mission: one(params.mission),
       types: one(params.types),
       priorities: one(params.priorities),
       release: one(params.release),
+      period: one(params.period),
+      periodBy: one(params.periodBy),
     },
     projectRows,
     missionRows,
+    undefined,
+    organizationRows,
+    me ?? null,
   );
-  const filtered = filterBoardCards(attemptRows, filter);
-  const filteredMissionAttempts = filterMissionAttempts(missionAttemptRows, filter);
+  const narrowed = narrowUsageRows(attemptRows, missionAttemptRows, filter);
+  const filtered = narrowed.attempts;
+  const filteredMissionAttempts = narrowed.missionAttempts;
   const filterNote = describeFilter(filter, t);
 
   const insights = computeInsights(
@@ -633,7 +659,7 @@ export default async function InsightsPage({
             <div className="spacer" />
             {/* The arrow was a character inside the label; it is the set's own
                 glyph now, silent because the word beside it says where it goes. */}
-            <a className="btn-ghost ins-back" href="/home">
+            <a className="btn-ghost ins-back" href="/board">
               <Icon name="back" label={null} size={14} />
               {t.backToBoard}
             </a>
@@ -651,13 +677,20 @@ export default async function InsightsPage({
         <header className="ins-head">
           <h1>{t.title}</h1>
           <p className="page-sub">{t.sub}</p>
+          {/* The period this page counts, written out like on the board. */}
+          <p className="ins-period">
+            {shared.filterLine.show}{" "}
+            <b>{shared.filterLine.periodPhrase(filter.periodBy ?? "updated", filter.period ?? "7d")}</b>
+          </p>
           {filterNote ? (
             <p className="ins-filter">
               {t.filteredBy} <b>{filterNote}</b>{" "}
               <a
                 href={usageTabHref(tab, {
-                  period: params.period,
-                  periodBy: params.periodBy,
+                  organizations: encodeOrganizationSelection(filter.organizationIds),
+                  projects: encodeProjectSelection(filter.projectIds),
+                  period: filter.period,
+                  periodBy: filter.periodBy,
                 })}
               >
                 <Icon name="clear" label={null} size={12} />
@@ -689,7 +722,7 @@ export default async function InsightsPage({
             <Icon name="empty" label={null} size={26} className="ins-empty-icon" />
             <p className="ins-empty-title">{t.emptyTitle}</p>
             <p className="ins-empty-body">{t.empty}</p>
-            <a className="btn-ghost ins-empty-cta" href="/home">
+            <a className="btn-ghost ins-empty-cta" href="/board">
               <Icon name="back" label={null} size={14} />
               {t.emptyCta}
             </a>

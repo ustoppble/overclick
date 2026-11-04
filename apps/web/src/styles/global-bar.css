@@ -130,6 +130,189 @@
 .global-bar .gb-avatar[aria-expanded="true"],
 .global-bar .gb-avatar:focus-visible { outline: none; box-shadow: var(--oc-focus-ring); }
 
+/* ---------- the scope (navigation plan E4) ----------
+   Organization › projects in one Control, right after the wordmark. The same
+   anatomy as every trigger; with nothing to choose it is the same box with a
+   quiet border, as fixed text (F17). */
+.global-bar .gb-scope-wrap { position: relative; display: inline-flex; min-width: 0; flex: 0 1 auto; }
+.global-bar .gb-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  height: 32px;
+  min-width: 96px;
+  max-width: 320px;
+  padding: 0 var(--oc-space-2);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-1);
+  font: 500 13px/16px var(--oc-font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--oc-duration-micro) var(--oc-ease-atmosphere),
+    color var(--oc-duration-micro) var(--oc-ease-atmosphere);
+}
+.global-bar .gb-scope:hover { background: var(--oc-surface-hover); }
+.global-bar .gb-scope:focus-visible { outline: none; box-shadow: var(--oc-focus-ring); }
+.global-bar .gb-scope-fixed { border-color: transparent; cursor: default; }
+.global-bar .gb-scope-fixed:hover { background: transparent; }
+.global-bar .gb-scope .nb-icon { flex: none; color: var(--oc-text-3); }
+.global-bar .gb-scope-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--oc-radius-control-sm);
+  background: var(--oc-surface-on);
+  color: var(--oc-text-1);
+  font: 600 12px/1 var(--oc-font-ui);
+}
+.global-bar .gb-scope-org,
+.global-bar .gb-scope-proj { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.global-bar .gb-scope-sep { flex: none; color: var(--oc-text-3); }
+.global-bar .gb-scope-panel {
+  position: absolute;
+  top: calc(100% + var(--oc-space-2));
+  left: 0;
+  z-index: var(--oc-z-menu);
+  display: flex;
+  flex-direction: column;
+  gap: var(--oc-space-2);
+  width: 288px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--oc-space-2);
+  background: var(--oc-surface-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-card);
+  box-shadow: var(--oc-shadow-panel);
+}
+.global-bar .gb-scope-panel section + section { padding-top: var(--oc-space-2); border-top: 1px solid var(--oc-border); }
+.global-bar .gb-scope-panel h3 {
+  margin: 0;
+  padding: var(--oc-space-1) var(--oc-space-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: var(--oc-tracking-wide);
+  text-transform: uppercase;
+  color: var(--oc-text-3);
+}
+.global-bar .gb-scope-row { display: flex; align-items: center; gap: var(--oc-space-1); }
+.global-bar .gb-scope-opt {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 var(--oc-space-2);
+  border: 0;
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-2);
+  font: 500 13px/16px var(--oc-font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.global-bar .gb-scope-opt:hover,
+.global-bar .gb-scope-opt:focus-visible { outline: none; background: var(--oc-surface-hover); color: var(--oc-text-1); }
+.global-bar .gb-scope-opt.on { color: var(--oc-text-1); }
+.global-bar .gb-scope-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-radius-control-sm);
+}
+.global-bar .gb-scope-opt.on .gb-scope-box { background: var(--oc-surface-on); }
+.global-bar .gb-scope-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.global-bar .gb-scope-only {
+  flex: none;
+  height: 24px;
+  padding: 0 var(--oc-space-2);
+  border: 0;
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-3);
+  font: 500 12px/1 var(--oc-font-ui);
+  cursor: pointer;
+}
+.global-bar .gb-scope-only:hover,
+.global-bar .gb-scope-only:focus-visible { outline: none; background: var(--oc-surface-hover); color: var(--oc-text-1); }
+
+/* ---------- the search (E4) ----------
+   A field on the widest bars; under 1280 it is the first thing to step
+   aside, into an icon that opens the field over the bar. */
+.global-bar .gb-search { position: relative; display: inline-flex; flex: none; }
+.global-bar .gb-search-form {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  width: 240px;
+  height: 32px;
+  margin: 0;
+  padding: 0 var(--oc-space-2);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-surface-input);
+  color: var(--oc-text-3);
+}
+.global-bar .gb-search-form:focus-within { border-color: var(--oc-border-strong); box-shadow: var(--oc-focus-ring); }
+.global-bar .gb-search-form .nb-icon { flex: none; }
+.global-bar .gb-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--oc-text-1);
+  font: 400 13px/16px var(--oc-font-ui);
+}
+.global-bar .gb-search-input::placeholder { color: var(--oc-text-3); }
+.global-bar .gb-search-input::-webkit-search-cancel-button { display: none; }
+.global-bar .gb-kbd {
+  flex: none;
+  padding: 0 var(--oc-space-1);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control-sm);
+  color: var(--oc-text-3);
+  font: 500 12px/16px var(--oc-font-data);
+}
+.global-bar .gb-search-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-2);
+  cursor: pointer;
+}
+.global-bar .gb-search-btn:hover { background: var(--oc-surface-hover); color: var(--oc-text-1); }
+.global-bar .gb-search-btn:focus-visible { outline: none; box-shadow: var(--oc-focus-ring); }
+/* words are typed though the field is folded away: a dot says so */
+.global-bar .gb-search-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--oc-text-1);
+}
+
 /* ---------- the avatar menu ---------- */
 .gb-menu {
   position: absolute;
@@ -217,10 +400,24 @@
 .gb-tabbar { display: none; }
 
 /* ---------- what steps aside, in order ----------
-   ≥1280 everything; under 1280 "em execução" keeps its number only; under 900
-   the places keep their mark only; under 768 the places and the review count
-   go down to the bottom bar, where Review is a tab of its own. */
+   The order is fixed (E4, nav README §2) and check:topbar holds it: ≥1280
+   everything; under 1280 the search turns into its icon, then "em execução"
+   keeps its number only; under 900 the places keep their mark only; under 768
+   the places and the review count go down to the bottom bar, where Review is
+   a tab of its own, and the scope keeps the organization only. */
 @media (max-width: 1279px) {
+  .global-bar .gb-search-form { display: none; }
+  .global-bar .gb-search-btn { display: inline-flex; }
+  .global-bar .gb-search.open .gb-search-form {
+    display: flex;
+    position: absolute;
+    top: calc(100% + var(--oc-space-2));
+    right: 0;
+    z-index: var(--oc-z-menu);
+    width: min(320px, calc(100vw - 32px));
+    background: var(--oc-surface-3);
+    box-shadow: var(--oc-shadow-panel);
+  }
   .global-bar .gb-chip-run .gb-lbl { display: none; }
 }
 @media (max-width: 1099px) {
@@ -236,6 +433,10 @@
   .global-bar .gb-places,
   .global-bar .gb-chip-run,
   .global-bar .gb-chip-review { display: none; }
+  /* the scope shrinks to the organization; the project is in its panel */
+  .global-bar .gb-scope .gb-scope-proj { display: none; }
+  .global-bar .gb-scope .gb-scope-sep { display: none; }
+  .global-bar .gb-scope { max-width: 40vw; }
   .gb-tabbar {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

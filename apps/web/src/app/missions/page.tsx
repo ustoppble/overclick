@@ -1,4 +1,6 @@
+import { and, asc, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
+import { organization, project, user } from "@agent-board/db";
 import { NebulaAtmosphere } from "../../components/nebula-atmosphere";
 import { getSession } from "../../lib/cookies";
 import { db } from "../../lib/db";
@@ -6,6 +8,8 @@ import { formatElapsed, formatMoney, formatTokens } from "../../lib/format";
 import { dict, isLang } from "../../lib/i18n";
 import { loadMissionList, loadMissionUsage } from "../../lib/mission-page";
 import { loadModelPrices } from "../../lib/prices";
+import { boardFilterFromQuery } from "../../lib/board-filter";
+import { organizationScope, projectScope } from "../../lib/scope";
 import { pagePrincipal } from "../../lib/web-scope";
 import { MissionProgressBar } from "../board/mission-progress-bar";
 import { MissionStatus } from "./mission-status";
@@ -42,8 +46,34 @@ export default async function MissionsPage({
   const params = await searchParams;
   const showDone = params.status === "done";
   const prices = ws.pricingEnabled ? await loadModelPrices(db(), ws.id) : [];
+  // The scope of the global bar (E4): the URL's, or the remembered one.
+  const [projectRows, organizationRows, [me]] = await Promise.all([
+    db()
+      .select({ id: project.id, organizationId: project.organizationId })
+      .from(project)
+      .where(and(eq(project.workspaceId, ws.id), projectScope(principal)))
+      .orderBy(asc(project.createdAt)),
+    db()
+      .select({ id: organization.id })
+      .from(organization)
+      .where(and(eq(organization.workspaceId, ws.id), organizationScope(principal)))
+      .orderBy(asc(organization.name)),
+    db()
+      .select({ organizationId: user.boardOrganizationId, projectId: user.boardProjectId })
+      .from(user)
+      .where(eq(user.id, session.userId))
+      .limit(1),
+  ]);
+  const scope = boardFilterFromQuery(
+    { organizations: one(params.organizations), projects: one(params.projects) },
+    projectRows,
+    [],
+    undefined,
+    organizationRows,
+    { organizationId: me?.organizationId ?? null, projectId: me?.projectId ?? null, period: null, periodBy: null },
+  );
   const [missions, usage] = await Promise.all([
-    loadMissionList(db(), ws.id, principal),
+    loadMissionList(db(), ws.id, principal, scope),
     loadMissionUsage(db(), ws.id, ws.pricingEnabled, prices, principal),
   ]);
   const active = missions.filter((item) => item.status !== "concluida");
@@ -137,4 +167,10 @@ export default async function MissionsPage({
       <div className="nebula-glass-fade viewport-fade" aria-hidden="true" />
     </div>
   );
+}
+
+/** One value of a query parameter; a repeated one reads as its first. */
+function one(value: string | string[] | undefined): string | null {
+  const first = Array.isArray(value) ? value[0] : value;
+  return first ?? null;
 }
