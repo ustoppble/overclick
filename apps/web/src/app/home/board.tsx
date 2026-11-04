@@ -126,8 +126,13 @@ export type BoardCard = {
   ranCli: string | null;
   /** Every distinct CLI that attempted this card, including earlier reopens. */
   executors: string[];
-  /** What ran in one value: "sonnet-5", or "sonnet-5 → fable-5" when the usage switched model. */
+  /**
+   * What ran in one value: "sonnet-5", or "sonnet-5 → fable-5" when the usage
+   * switched model. The claimed model reads as the claim spelled it.
+   */
   harnessChain: string | null;
+  /** The effort the latest claim declared, beside the model on the line (E2). */
+  effort: string | null;
   /** Where the attempt's current model identity came from. */
   modelSource: "declared" | "harness" | "measured" | null;
   /** True when this card waits on the review of whoever is looking at it. */
@@ -145,6 +150,28 @@ export type BoardCard = {
   telemetryLine: TelemetrySegment[];
 };
 
+/**
+ * One attempt as the panel lists it (E2): what the run recorded, never a
+ * choice the board made.
+ */
+export type AttemptView = {
+  /** 1 for the first attempt, in the order they started. */
+  n: number;
+  cli: string | null;
+  /** The model as the claim registered it. */
+  model: string | null;
+  effort: string | null;
+  modelSource: "declared" | "harness" | "measured" | null;
+  duration: string | null;
+  /** Null while money is off, or when nothing was priced. */
+  cost: string | null;
+  /** Null while the attempt is still open. */
+  result: "success" | "failure" | "abandoned" | null;
+  at: string;
+  /** The short hash its delivery carried. */
+  commit: string | null;
+};
+
 /** What the detail panel adds to a card, loaded when the card is opened. */
 export type BoardCardDetail = {
   id: string;
@@ -158,6 +185,8 @@ export type BoardCardDetail = {
    * The board records the harness that executed; it never plans one (OCL-202).
    */
   harness: string | null;
+  /** Every attempt on the card, oldest first (E2). */
+  attempts: AttemptView[];
   /** Whatever claimed the card, for every status; the line's copy is the running card's only. */
   executor: string | null;
   /** The models the usage recorded, set only when they are not what the claim declared. */
@@ -441,8 +470,12 @@ function Card({
 }) {
   const exec = card.status === "em_execucao";
   const dim = card.status === "validado";
-  const harness =
-    card.harnessChain ?? (exec ? (card.executor ?? t.board.agent) : null);
+  // The record reads "model · effort" (E2), the model as it was registered.
+  const harness = card.harnessChain
+    ? [card.harnessChain, card.effort].filter(Boolean).join(" · ")
+    : exec
+      ? (card.executor ?? t.board.agent)
+      : null;
   const activate = () => (selectable ? onToggleSelect(card.id) : onOpen(card));
   // The cost lives at the top of the card (ux-v2 §3), on the id's own line,
   // so the footer never has to compete with it for room. What is left of the
@@ -607,6 +640,65 @@ function CardRow({
           this row, and the mark is read faster than the word anyway. */}
       <CliMark cli={card.ranCli} />
       {num ? <span className={`ml-num tel-${num.kind}`}>{num.text}</span> : null}
+    </div>
+  );
+}
+
+/**
+ * Every attempt on the card, newest on top (E2): the CLI, then "model ·
+ * effort" as the run registered them, then how long, what it cost, how it
+ * ended, when and the commit. It replaces the one-attempt "Ran on" line; the
+ * models the usage measured beyond the claim stay under it.
+ */
+function Attempts({ card, t }: { card: OpenBoardCard; t: Dict }) {
+  if (card.attempts.length === 0) return null;
+  return (
+    <div className="d-sec d-attempts" data-count={card.attempts.length}>
+      <SectionLabel
+        icon="harness"
+        text={t.record.attempts}
+        right={<span className="d-progress">{card.attempts.length}</span>}
+      />
+      <ol className="d-attempt-list">
+        {[...card.attempts].reverse().map((attempt) => (
+          <li key={attempt.n} className="d-attempt">
+            <span className="d-attempt-n">#{attempt.n}</span>
+            <CliMark cli={attempt.cli} />
+            <span className="d-attempt-run">
+              {[attempt.model, attempt.effort].filter(Boolean).join(" · ") ||
+                attempt.cli ||
+                "—"}
+            </span>
+            {attempt.modelSource === "harness" ? (
+              <span className="selo">{t.detail.modelSourceHarness}</span>
+            ) : null}
+            {attempt.modelSource === "declared" ? (
+              <span className="selo">{t.detail.modelSourceDeclared}</span>
+            ) : null}
+            <span className="d-attempt-meta">
+              {[
+                attempt.duration,
+                attempt.cost,
+                t.record.result[attempt.result ?? "running"],
+                attempt.at,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              {attempt.commit ? (
+                <>
+                  {" · "}
+                  <span className="d-attempt-commit">{attempt.commit}</span>
+                </>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ol>
+      {card.harnessRan ? (
+        <p className="d-mono d-harness-ran">
+          {t.detail.harnessRan} {card.harnessRan}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1311,36 +1403,8 @@ function Detail({
         <div className="d-rail">
           <div className="d-sec d-grid">
             <MissionField card={card} missions={missions} t={t} />
-            <div>
-              <SectionLabel icon="harness" text={t.detail.harness} />
-              <p className="d-mono d-harness">
-                <CardCli card={card} />
-                <span>{card.harness ?? "—"}</span>
-              </p>
-              {/* The card line folds the claim and the usage into one value;
-                  here they stay apart, so the effort the claim declared and
-                  the models the usage measured are both readable. */}
-              {card.harnessRan ? (
-                <p className="d-mono d-harness-ran">
-                  {t.detail.harnessRan} {card.harnessRan}
-                </p>
-              ) : null}
-              {card.modelSource === "harness" ? (
-                <p>
-                  <span className="tag feature">
-                    {t.detail.modelSourceHarness}
-                  </span>
-                </p>
-              ) : null}
-              {card.modelSource === "declared" ? (
-                <p>
-                  <span className="tag feature">
-                    {t.detail.modelSourceDeclared}
-                  </span>
-                </p>
-              ) : null}
-            </div>
           </div>
+          <Attempts card={card} t={t} />
           <div className="d-sec">
             <SectionLabel icon="roles" text={t.detail.roles} />
             <div className="d-roles">

@@ -1500,14 +1500,14 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden;
 }
-/* one line only: planned and actual harness, then time and tokens — cost
-   moved to the id-row (ux-v2 §3) and never reaches here. nowrap is the whole
-   rule. When the column cannot hold everything, the line gives up characters
-   instead of gaining a second row: tokens shrink first and end in an
-   ellipsis, the model chain second, and the clock never shrinks, because
-   that is why anyone reads this line. */
+/* the record of what ran ("model · effort", E2), then time and tokens — cost
+   moved to the id-row (ux-v2 §3) and never reaches here. The record is never
+   cut: when the column cannot hold the line, what follows it wraps to a
+   second row instead. Within a row, tokens still shrink first and end in an
+   ellipsis, and the clock never shrinks, because that is why anyone reads
+   this line. */
 .nb .card-foot {
-  display: flex; align-items: center; flex-wrap: nowrap; gap: 4px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 2px 4px;
   overflow: hidden;
   border-top: 1px solid var(--nebula-plan-divider);
   margin-top: 2px; padding-top: 3px;
@@ -1517,7 +1517,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .card-foot > * { flex: none; min-width: 0; white-space: nowrap; }
 .nb .card-foot .meta-harness {
   color: var(--nebula-mist); letter-spacing: 0.03em;
-  flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis;
+  flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
 }
 /* the numbers: tokens give way first, eight times faster than the chain */
 .nb .card-foot .tel-tokens { flex: 0 8 auto; overflow: hidden; text-overflow: ellipsis; }
@@ -1785,6 +1785,15 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Tentativas (E2): one row per attempt, the record first, the rest after it.
+   A row wraps rather than cut what ran. */
+.nb .d-attempt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.nb .d-attempt { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: 12px; color: var(--nebula-text-secondary); }
+.nb .d-attempt .cli-mark { width: 15px; height: 15px; flex: none; }
+.nb .d-attempt-n { font-family: var(--nebula-font-mono); color: var(--nebula-text-tertiary); flex: none; }
+.nb .d-attempt-run { font-family: var(--nebula-font-mono); color: var(--nebula-mist-light); min-width: 0; overflow-wrap: anywhere; }
+.nb .d-attempt-meta { flex-basis: 100%; padding-left: 0; color: var(--nebula-text-tertiary); overflow-wrap: anywhere; }
+.nb .d-attempt-commit { font-family: var(--nebula-font-mono); }
 .nb .d-roles .cli-mark { width: 13px; height: 13px; vertical-align: -2px; margin: 0 4px 0 2px; }
 .nb .d-roles { display: flex; gap: var(--nebula-space-2) var(--nebula-space-4); flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .nb .d-roles .rl { font-size: 11.5px; color: var(--nebula-text-tertiary); min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2033,24 +2042,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .preview.ghost { opacity: .35; }
 .nb .preview b { color: var(--nebula-mist-glow); font-weight: 500; }
 
-/* executores (grid de CLIs) */
-.nb .seen-sugg { margin-bottom: 18px; }
-.nb .seen-sugg .sec-cap { margin-top: 0; }
-.nb .seen-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.nb .seen-chip { display: inline-flex; align-items: center; gap: 8px;
-  background: var(--nebula-panel-solid); border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill);
-  padding: 6px 8px 6px 14px; font-size: 12px; color: var(--nebula-text-primary); }
-.nb .seen-chip b { font-weight: var(--nebula-weight-medium); }
-.nb .seen-chip small { font-family: var(--nebula-font-label); font-size: 10px; color: var(--nebula-text-tertiary); }
-/* A chip button stays dense, but not so dense a mouse has to aim: 32px is
-   the floor here, and on a phone the chip itself becomes a full row so the
-   button clears 44px without the chip growing into a card. */
-.nb .seen-add { background: transparent; border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill); color: var(--nebula-text-secondary);
-  font-size: 12px; font-weight: 500; padding: 4px 12px; min-height: 32px; cursor: pointer; white-space: nowrap; }
-.nb .seen-add:hover:not(:disabled) { color: var(--nebula-text-primary); border-color: var(--oc-border-hover); }
-.nb .seen-add:disabled { opacity: .4; cursor: not-allowed; }
-.nb .seen-add:focus-visible { outline: none; box-shadow: var(--nebula-focus-ring-offset); }
-
 /* preços: um modelo que já rodou aqui e continua sem preço */
 .nb .price-alert { border: 1px solid rgb(var(--oc-warn-3-rgb) / .32); border-radius: var(--oc-radius-card);
   background: rgb(var(--oc-warn-3-rgb) / .05); padding: 12px 14px; }
@@ -2059,54 +2050,15 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   font-size: 9.5px; font-family: var(--nebula-font-label); color: rgb(var(--oc-warn-2-rgb) / .9);
   border: 1px solid rgb(var(--oc-warn-3-rgb) / .35); border-radius: var(--oc-radius-pill); padding: 1px 8px;
   letter-spacing: .04em; }
-.nb .seen-note { font-size: 11.5px; color: var(--nebula-text-tertiary); margin-top: 8px; line-height: 1.5; }
-.nb .exec-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.nb .exec {
+/* The executors grid left with E2. This rule was the grid's tile, and the
+   card in execution, its phone row and the detail's status chip carry the
+   same "exec" class, so it stays for them alone, at the specificity it always
+   had: removing it would change the running card. */
+.nb :where(.card, .ml-row, .d-status).exec {
   background: var(--nebula-plan-bg); border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-tile); padding: 13px 14px;
   cursor: pointer; transition: border-color .18s, transform .18s;
 }
-.nb .exec:hover { border-color: rgb(var(--oc-white-rgb) / .18); }
-.nb .exec.on { border-color: rgb(var(--oc-accent-rgb) / .45); }
-.nb .exec .row { display: flex; align-items: center; gap: 10px; }
-.nb .exec .logo {
-  width: 30px; height: 30px; border-radius: var(--oc-radius-note); display: flex; align-items: center; justify-content: center;
-  font-family: var(--nebula-font-mono); font-size: 10px; background: rgb(var(--oc-white-rgb) / .045);
-  border: 1px solid var(--nebula-glass-border); color: var(--nebula-mist-glow); flex: none;
-}
-.nb .exec .logo svg { width: 19px; height: 19px; display: block; }
-.nb .exec .name { font-size: 13px; font-weight: 500; line-height: 1.2; flex: 1; min-width: 0; }
-.nb .exec .check { width: 16px; height: 16px; border-radius: var(--oc-radius-tick); border: 1px solid rgb(var(--oc-white-rgb) / .2); display: flex; align-items: center; justify-content: center; font-size: 10px; color: transparent; transition: all .18s; }
-.nb .exec.on .check { background: var(--nebula-mist-glow); border-color: var(--nebula-mist-glow); color: var(--oc-accent-contrast); }
-.nb .exec .models { max-height: 0; overflow: hidden; transition: max-height .2s ease-out, margin .2s; display: flex; gap: 6px; flex-wrap: wrap; }
-.nb .exec.on .models { max-height: 90px; margin-top: 10px; }
-@media (pointer: coarse) {
-  .nb .exec.on .models { max-height: 160px; }
-  .nb .exec .models { gap: var(--oc-space-2); }
-}
-.nb .mchip {
-  font-family: var(--nebula-font-label); font-size: 10px; border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill); padding: 3px 9px; color: var(--nebula-text-secondary); cursor: pointer; transition: all .15s;
-  /* A1 exception: the chip lives inside .models, which clips for the
-     max-height animation, so the control itself grows to the floor. */
-  min-height: var(--oc-tap-min);
-}
-@media (pointer: coarse) {
-  .nb .mchip { min-height: var(--oc-tap); }
-}
-.nb .mchip.on { background: rgb(var(--oc-accent-rgb) / .14); border-color: var(--oc-border-strong); color: var(--nebula-mist-glow); }
-.nb .mchip .x { margin-left: 6px; opacity: .5; transition: opacity .15s; }
-.nb .mchip .x:hover { opacity: 1; }
-.nb .mchip-add { font-family: var(--nebula-font-label); font-size: 10px; background: transparent; border: 1px dashed var(--nebula-glass-border); border-radius: var(--oc-radius-pill); padding: 3px 9px; color: var(--nebula-text-secondary); width: 78px; outline: none; transition: border-color .15s; }
-.nb .mchip-add:focus { border-color: var(--oc-border-strong); color: var(--nebula-mist-glow); }
-.nb .mchip-add::placeholder { color: var(--nebula-text-secondary); opacity: .6; }
-.nb .exec-add { border: 1px dashed rgb(var(--oc-white-rgb) / .28); background: transparent; }
-.nb .exec-add:hover { border-color: rgb(var(--oc-white-rgb) / .45); }
-.nb .exec-add.on { border-color: rgb(var(--oc-accent-rgb) / .5); }
-.nb .exec-add .logo { border: 1px dashed rgb(var(--oc-white-rgb) / .22); background: transparent; color: var(--nebula-text-secondary); font-size: 14px; font-family: var(--nebula-font-sans); }
-.nb .exec-add .name { color: var(--nebula-text-secondary); font-weight: 500; }
-.nb .exec-add.on .name { color: var(--nebula-text-primary); }
-.nb .exec-add.on .models { max-height: 120px; }
-.nb .exec-add .models .input { padding: 7px 10px; font-size: 11.5px; border-radius: var(--oc-radius-control); }
-.nb .exec-add .note { font-family: var(--nebula-font-label); font-size: 9.5px; letter-spacing: .04em; color: var(--nebula-text-tertiary); line-height: 1.5; width: 100%; }
+.nb :where(.card, .ml-row, .d-status).exec:hover { border-color: rgb(var(--oc-white-rgb) / .18); }
 .nb .hint {
   margin-top: 16px; padding: 11px 14px 11px 16px; border-radius: var(--oc-radius-box); background: rgb(var(--oc-surface-2-rgb) / .6);
   border: 1px solid var(--nebula-glass-border); border-left: 2px solid var(--nebula-mist);
@@ -2269,7 +2221,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 /* Prose in settings stops at a line somebody can read, not at the width of
    the page: a note running the full 1020px is a note nobody finishes. */
 .nb .tabpane .policy-note,
-.nb .tabpane .seen-note,
 .nb .tabpane .page-sub,
 .nb .tabpane .upd-mode-note,
 .nb .tabpane .upd-state,
@@ -2307,23 +2258,12 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .policy td:last-child { padding-right: 0; }
 .nb .policy .act { font-size: 12.5px; font-weight: 500; line-height: 1.35; }
 .nb .policy .act small { display: block; font-family: var(--nebula-font-label); font-size: 9.5px; color: var(--nebula-text-tertiary); letter-spacing: .04em; line-height: 1.45; margin-top: 1px; font-weight: 400; }
-/* The line of succession reads left to right and never wraps: three links
-   sharing one cell, each one giving up width before the row gives up a line. */
-.nb .policy .chain { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; }
-.nb .policy .chain .link { display: flex; align-items: center; gap: 4px; flex: 1 1 0; min-width: 0; }
-.nb .policy .chain .link .sel { width: auto; flex: 1 1 auto; }
-/* the arrow lives in CSS so the narrow layout can turn it downward */
-.nb .policy .chain i { flex: none; font-style: normal; font-size: 10px; color: var(--nebula-text-tertiary); }
-.nb .policy .chain i::before { content: "\2192"; }
-/* Named by the policy, missing from the executor: visible, never silently dropped. */
-.nb .policy .chain .sel.orphan { border-color: var(--nebula-warn, var(--oc-warn-deep)); }
 /* every control in a table cell is the width of its share, not of its text */
 .nb .policy .sel { width: 100%; min-width: 0; padding: 6px 20px 6px 7px; background-position: right 7px center; text-overflow: ellipsis; }
 .nb .policy td .input { width: 100%; max-width: 140px; padding: 6px 9px; font-size: 12px; }
 .nb .policy .who { font-family: var(--nebula-font-label); font-size: 10px; line-height: 1.45; color: var(--nebula-mist-light); letter-spacing: .03em; overflow-wrap: anywhere; }
 .nb .policy .who small { display: block; font-size: 9.5px; color: var(--nebula-text-tertiary); margin-top: 2px; }
 .nb .policy .who .dim { color: var(--nebula-text-tertiary); }
-.nb .policy .who .seen-add { margin-top: 6px; }
 .nb .sel {
   appearance: none; -webkit-appearance: none;
   background: rgb(var(--oc-surface-deep-rgb) / .6) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' stroke='%238C96AB' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 10px center;
@@ -2361,31 +2301,14 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
     font-family: var(--nebula-font-label); font-size: 9px; letter-spacing: .08em;
     text-transform: uppercase; color: var(--nebula-text-tertiary); margin-bottom: 5px;
   }
-  /* the title of the block, the chain and the signature take the full width */
-  .nb .policy td.act, .nb .policy td.chain, .nb .policy td.who { grid-column: 1 / -1; }
+  /* the title of the block and the signature take the full width */
+  .nb .policy td.act, .nb .policy td.who { grid-column: 1 / -1; }
   .nb .policy td.act::before { content: none; }
   .nb .policy td.act { padding-bottom: 2px; }
-  /* the two one-word choices are placed, not flowed, so they share a line
-     instead of each claiming one with the chain sitting between them */
-  .nb .policy.harness td.act { grid-area: 1 / 1 / 2 / -1; }
-  .nb .policy.harness td:nth-child(2) { grid-area: 2 / 1 / 3 / 2; }
-  .nb .policy.harness td:nth-child(4) { grid-area: 2 / 2 / 3 / 3; }
-  .nb .policy.harness td.chain { grid-area: 3 / 1 / 4 / -1; }
-  .nb .policy.harness td.who { grid-area: 4 / 1 / 5 / -1; }
   /* the signature is a caption and a name: one line, not two */
   .nb .policy td.who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 10px; }
   .nb .policy td.who::before { margin-bottom: 0; }
   .nb .policy td.who small { display: inline; }
-  /* The line of succession reads downward when there is no room across. The
-     arrow keeps a column of its own so the first choice starts on the same
-     edge as the fallbacks under it, instead of standing 16px to their left. */
-  .nb .policy .chain { flex-direction: column; align-items: stretch; gap: 6px; }
-  .nb .policy .chain .link {
-    display: grid; grid-template-columns: 16px minmax(0, 1fr);
-    align-items: center; gap: 0; flex: none;
-  }
-  .nb .policy .chain .link > .sel { grid-column: 2; }
-  .nb .policy .chain i::before { content: "\2193"; }
   /* a control under a thumb, not a control for a mouse */
   .nb .policy .sel { min-height: 40px; }
   .nb .policy td .input { max-width: none; min-height: 40px; }
@@ -3319,18 +3242,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .gen-row .btn-new { flex: 1 1 auto; }
   .nb .save-row .btn-new { }
 
-  /* the suggestion chip becomes the row it always wanted to be, which is
-     what buys its button the full target without inflating the desktop */
-  .nb .seen-row { flex-direction: column; align-items: stretch; }
-  .nb .seen-chip { justify-content: space-between; padding: 8px 8px 8px 14px; }
-  .nb .seen-row > .btn-new { }
-
-  /* the executors grid: three cards across a phone is three cards nobody can
-     read the name of */
-  .nb .exec-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-  .nb .exec.on .models { max-height: 180px; }
-  .nb .exec-add.on .models { max-height: 220px; }
-
   /* ---------- wizard ---------- */
   .nb .wizard { --wiz-pad: 20px; max-width: 100%; padding-top: 22px; }
   /* on a phone .nb pays 16px top and 48px bottom */
@@ -3368,7 +3279,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    up the last of its side padding rather than the width of its inputs. */
 @media (max-width: 380px) {
   .nb .wizard { --wiz-pad: 14px; }
-  .nb .exec-grid { grid-template-columns: 1fr; }
   .nb .settabs { gap: 14px; }
 }
 
@@ -3442,13 +3352,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   /* the convention line is prose in mono, and it reads at a measure too */
   .nb .preview { max-width: 80ch; }
 }
-
-/* The chips of a checked CLI were clipped by a fixed 90px: the last row of
-   models, and the field that adds one, were cut in half by the box that was
-   supposed to reveal them. The cap is now high enough to hold what is there,
-   and it is still a cap, so the open and closed states still animate. */
-.nb .wizard .exec.on .models { max-height: 260px; }
-.nb .wizard .exec-add.on .models { max-height: 300px; }
 
 /* ---------- wizard: the notes under the terminal blocks ---------- */
 /* 9.5px of mono with no leading, run across the full width of the panel, was
