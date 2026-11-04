@@ -54,3 +54,20 @@ export async function readBodyCapped(request: Request, maxBytes: number): Promis
   }
   return { ok: true, text: text + decoder.decode() };
 }
+
+/**
+ * The ceilings, in one place so a route and its test agree on them.
+ *
+ * - pair: the body is `{"code":"123456"}`; a kilobyte is already generous.
+ * - githubRelease: a release payload is a few KB of notes and asset links;
+ *   GitHub's own cap is 25 MB, which this route has no reason to accept.
+ * - mcp: tool calls carry briefings, evidence and transcripts; 4 MiB is far
+ *   above anything an agent sends and far below what exhausts the process.
+ * - mcpBatch: JSON-RPC messages in one array; each one rebuilds work.
+ */
+export const BODY_LIMITS = {
+  pair: 1024,
+  githubRelease: 1024 * 1024,
+  mcp: 4 * 1024 * 1024,
+  mcpBatch: 20,
+} as const;
