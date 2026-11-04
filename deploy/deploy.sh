@@ -32,35 +32,28 @@ export COMPOSE_FILE=deploy/docker-compose.cloud.yml
 # an existing Traefik: leaving it out recreates the container without its route,
 # which takes the site down while the container looks perfectly healthy.
 COMPOSE=(docker compose -p "$COMPOSE_PROJECT_NAME")
-OVERLAY=0
 if [ -f deploy/docker-compose.traefik.yml ] && grep -qE '^OVERCLICK_HOST=.+' deploy/.env 2>/dev/null; then
   export COMPOSE_FILE="$COMPOSE_FILE:deploy/docker-compose.traefik.yml"
-  OVERLAY=1
   echo "==> proxy overlay on (OVERCLICK_HOST set)"
 fi
 
 # A previous accidental root-compose deploy used this exact container name.
-# Remove only that known orphan, and remove its old quickstart volume only when
-# Docker confirms that no remaining container references it. Never use `down`
-# here: the legacy and hosted projects shared a project name during the
-# incident, so a project-wide down could take the healthy app with it.
+# Remove only that known orphan container. Its old quickstart volume
+# (overclick_pgdata) is data and is never deleted here: nothing in this script
+# can prove a validated dump of that volume, so it stays and the operator is told
+# how to drop it by hand. Never use `down` here: the legacy and hosted projects
+# shared a project name during the incident, so a project-wide down could take
+# the healthy app with it. This is a mutation, so it only runs after the backup
+# and the rollback tag below.
 remove_legacy_orphans() {
-  local referencing_containers
-
   if docker container inspect overclick-postgres-1 >/dev/null 2>&1; then
     echo "==> removing legacy orphan container overclick-postgres-1"
     docker container rm -f overclick-postgres-1 >/dev/null
   fi
 
   if docker volume inspect overclick_pgdata >/dev/null 2>&1; then
-    if ! referencing_containers="$(docker ps -a --filter volume=overclick_pgdata --format '{{.ID}}')"; then
-      echo "==> retaining overclick_pgdata because its references could not be inspected"
-    elif [ -n "$referencing_containers" ]; then
-      echo "==> retaining overclick_pgdata because a container still references it"
-    else
-      echo "==> removing legacy orphan volume overclick_pgdata"
-      docker volume rm overclick_pgdata >/dev/null
-    fi
+    echo "==> legacy volume overclick_pgdata kept: it is data and this deploy has no dump of it."
+    echo "    Once you no longer need it: docker volume rm overclick_pgdata"
   fi
 }
 
@@ -133,7 +126,6 @@ for row in rows:
   fi
 }
 
-remove_legacy_orphans
 assert_deploy_project_files
 
 # Always probe by exec'ing into the app container over the docker socket,
@@ -150,6 +142,66 @@ probe() {
     2>/dev/null || echo "000"
 }
 
+# The image compose builds for the app service. Everything below that tags or
+# removes images only ever names this repository.
+APP_IMAGE="${COMPOSE_PROJECT_NAME}-app"
+ROLLBACK_PREFIX="rollback-"
+
+# Keep the image that is serving right now under a rollback tag before the build
+# replaces `latest`. Rolling back is then `docker tag` + `up -d --no-build`,
+# with no rebuild (README, "Rolling back").
+tag_rollback() {
+  local container image_id version tag
+  container="$("${COMPOSE[@]}" ps -q app 2>/dev/null | head -n 1)"
+  if [ -z "$container" ]; then
+    echo "==> no running app container; nothing to keep for rollback"
+    return 0
+  fi
+  image_id="$(docker inspect --format '{{.Image}}' "$container")"
+  version="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' apps/web/package.json | head -n 1)"
+  tag="${APP_IMAGE}:${ROLLBACK_PREFIX}v${version:-unknown}-$(date -u +%Y%m%dT%H%M%SZ)"
+  docker tag "$image_id" "$tag"
+  echo "==> rollback image: ${tag}"
+}
+
+# Disk: every deploy leaves its build cache (about 4 GB) and the previous image
+# behind. Once the new app is healthy, drop build cache older than
+# OVERCLICK_BUILD_CACHE_MAX_AGE (default 24h; the cache is shared by every build
+# on the host, so this is an age filter and never a full prune) and keep, of the
+# rollback images, only the most recently tagged one. The running image is
+# `latest`; nothing is removed while a container still uses it.
+cleanup_disk() {
+  local max_age="${OVERCLICK_BUILD_CACHE_MAX_AGE:-24h}" newest="" newest_time="" ref tagged
+  echo "==> pruning build cache older than ${max_age}"
+  docker builder prune --force --filter "until=${max_age}" || echo "==> build cache prune failed; continuing"
+
+  while IFS= read -r ref; do
+    tagged="$(docker image inspect --format '{{.Metadata.LastTagTime}}' "$ref" 2>/dev/null || true)"
+    if [ -z "$newest" ] || [[ "$tagged" > "$newest_time" ]]; then
+      newest="$ref"
+      newest_time="$tagged"
+    fi
+  done < <(docker image ls "$APP_IMAGE" --format '{{.Repository}}:{{.Tag}}' | grep -F ":${ROLLBACK_PREFIX}" || true)
+
+  [ -n "$newest" ] || return 0
+  echo "==> keeping rollback image ${newest}"
+  while IFS= read -r ref; do
+    [ "$ref" = "$newest" ] && continue
+    echo "==> removing old rollback image ${ref}"
+    docker rmi "$ref" >/dev/null || echo "==> could not remove ${ref}; continuing"
+  done < <(docker image ls "$APP_IMAGE" --format '{{.Repository}}:{{.Tag}}' | grep -F ":${ROLLBACK_PREFIX}" || true)
+}
+
+# Before anything changes: a restorable copy of the database and of deploy/.env
+# (mode 600, in a 700 directory, newest 7 kept; see deploy/backup.sh), then the
+# rollback tag. Both come before EVERY mutation below (orphan removal, pull,
+# build, restart). A failed backup stops the deploy, since the whole point is
+# being able to go back.
+echo "==> backing up"
+deploy/backup.sh pre-deploy
+tag_rollback
+remove_legacy_orphans
+
 echo "==> pulling"
 git pull --ff-only
 
@@ -165,6 +217,9 @@ for _ in $(seq 1 60); do
     200 | 30?)
       echo "==> up (HTTP ${code}) on ${WHERE}"
       "${COMPOSE[@]}" ps --format '{{.Service}} {{.Status}}'
+      # Only after the app is proven healthy: a failed deploy keeps the old
+      # images and cache it may need to be rolled back.
+      cleanup_disk
       exit 0
       ;;
   esac

@@ -40,13 +40,13 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       # corepack reads packageManager from package.json, so the lockfile is
       # resolved by the pinned pnpm 9.15.9 and not by whatever the runner ships.
       - run: corepack enable
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -83,3 +83,11 @@ jobs:
       # itself red here for a while without anyone finding out. Runs against stub
       # CLIs, no network.
       - run: scripts/test-plugin-package.sh
+
+      # The deploy scripts decide whether a hosted instance can be restored, so
+      # they get a linter and tests of their own: backup before any mutation,
+      # fail closed on a broken docker, the compose-project guard. Fake docker,
+      # no server.
+      - run: shellcheck deploy/deploy.sh deploy/backup.sh scripts/test-deploy-safety.sh
+      - run:
+      - run: scripts/test-deploy-safety.sh
