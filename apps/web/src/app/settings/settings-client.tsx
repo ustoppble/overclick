@@ -3,6 +3,10 @@
 import type { AutoUpdateRecord, UpdateMode } from "@agent-board/db";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import type { ReactNode } from "react";
+import type { SettingsGroupId } from "./groups";
+import { SettingsGroupsNav } from "./settings-groups-nav";
+import { ProjectCreateForm } from "./project-create-form";
 import { saveClaimTimeoutAction } from "../../actions/claims";
 import { saveLanguageAction } from "../../actions/language";
 import { savePricesAction, savePricingEnabledAction } from "../../actions/prices";
@@ -32,6 +36,21 @@ import {
   ProjectContextEditor,
   type ProjectContextRow,
 } from "./project-context-editor";
+
+/** Which panel lives in which group (E5): the tabs became links to these. */
+export type SettingsView = SettingsGroupId | "my-agent";
+
+const PANE_VIEW: Record<string, SettingsView> = {
+  organizations: "organizations-projects",
+  projects: "organizations-projects",
+  prices: "prices",
+  recipes: "agents",
+  tokens: "agents",
+  team: "team",
+  claims: "agents",
+  language: "system",
+  updates: "system",
+};
 
 /** The three modes, in the order they escalate: silence, tell, act. */
 const UPDATE_MODES: readonly UpdateMode[] = ["off", "check", "auto"];
@@ -88,7 +107,8 @@ export function SettingsClient({
   pricingEnabled,
   claimTimeoutMinutes,
   /** The tab a link asked for (OCL-20), already validated on the server. */
-  initialTab,
+  view,
+  footer,
   unpricedModels,
   unpricedRanModels,
   recipes,
@@ -119,7 +139,13 @@ export function SettingsClient({
   prices: ModelPriceRow[];
   pricingEnabled: boolean;
   claimTimeoutMinutes: number;
-  initialTab: string;
+  /**
+   * What this page shows: one of the Settings groups, or "my-agent" for the
+   * member's own connections (and the admin's, at /account/agent).
+   */
+  view: SettingsView;
+  /** Server-rendered extras under the panels (Meu agente's links). */
+  footer?: ReactNode;
   /** Every model this board knows of, configured or seen, with no price row. */
   unpricedModels: string[];
   /**
@@ -152,25 +178,14 @@ export function SettingsClient({
   const t = dict(lang);
   const dateLocale = lang === "pt-BR" ? "pt-BR" : "en-US";
   const router = useRouter();
-  const [tab, setTab] = useState<string>(initialTab);
+  // The panel a pane belongs to is on screen when its group is the view; the
+  // tokens pane is also the whole of "Meu agente".
+  const shown = (pane: string) =>
+    pane === "tokens" && view === "my-agent" ? true : PANE_VIEW[pane] === view;
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  // A member manages their own tokens and pairing, nothing else (OCL-222).
-  const tabs = isAdmin
-    ? [
-        { id: "organizations", label: t.settings.tabOrganizations },
-        { id: "projects", label: t.settings.tabProjects },
-        { id: "prices", label: t.settings.tabPrices },
-        { id: "recipes", label: t.settings.tabRecipes },
-        { id: "tokens", label: t.settings.tabTokens },
-        { id: "team", label: t.settings.tabTeam },
-        { id: "claims", label: t.settings.tabClaims },
-        { id: "language", label: t.settings.tabLanguage },
-        { id: "updates", label: t.updates.tabUpdates },
-      ]
-    : [{ id: "tokens", label: t.settings.tabTokens }];
 
   // ---- update mode (off by default: no outbound request at all)
   const [updMode, setUpdMode] = useState<UpdateMode>(updateMode);
@@ -393,26 +408,12 @@ export function SettingsClient({
         {/* The wordmark and the way back live in the global bar now
             (navigation plan E1). */}
 
-        <h1>{t.settings.title}</h1>
-        <p className="page-sub">{t.settings.sub}</p>
+        <h1>{view === "my-agent" ? t.account.title : t.settings.title}</h1>
+        <p className="page-sub">{view === "my-agent" ? t.account.sub : t.settings.sub}</p>
 
-        <div className="settabs" role="tablist" aria-label={t.settings.title}>
-          {tabs.map((tb) => (
-            <button
-              key={tb.id}
-              type="button"
-              role="tab"
-              id={`settab-${tb.id}`}
-              aria-selected={tab === tb.id}
-              aria-controls={`setpane-${tb.id}`}
-              className={tab === tb.id ? "on" : ""}
-              onClick={() => { setTab(tb.id); setErr(null); setMsg(null); }}
-            >
-              {tb.label}
-            </button>
-          ))}
-        </div>
-
+        <div className={view === "my-agent" ? undefined : "sgroups-layout"}>
+        {view === "my-agent" ? null : <SettingsGroupsNav current={view} t={t} />}
+        <div className="sgroups-main">
         {/* A save that failed and a save that worked both have to reach a
             screen reader, and neither may be the first thing a sighted user
             misses because it printed below the fold. */}
@@ -422,30 +423,33 @@ export function SettingsClient({
         {isAdmin ? (<>
         {/* ---- ORGANIZATIONS ---- */}
         <div
-          className={`tabpane${tab === "organizations" ? " active" : ""}`}
+          className={`tabpane${shown("organizations") ? " active" : ""}`}
           id="setpane-organizations"
-          role="tabpanel"
-          aria-labelledby="settab-organizations"
         >
           <OrganizationContextEditor organizations={organizations} lang={lang} />
         </div>
 
         {/* ---- PROJECT CONTEXT ---- */}
         <div
-          className={`tabpane${tab === "projects" ? " active" : ""}`}
+          className={`tabpane${shown("projects") ? " active" : ""}`}
           id="setpane-projects"
-          role="tabpanel"
-          aria-labelledby="settab-projects"
         >
-          <ProjectContextEditor projects={projects} lang={lang} />
+          <ProjectCreateForm
+            organizations={organizations}
+            projects={projects}
+            lang={lang}
+          />
+          <ProjectContextEditor
+            key={projects.map((row) => row.id).join(",")}
+            projects={projects}
+            lang={lang}
+          />
         </div>
 
         {/* ---- MODEL PRICES ---- */}
         <div
-          className={`tabpane${tab === "prices" ? " active" : ""}`}
+          className={`tabpane${shown("prices") ? " active" : ""}`}
           id="setpane-prices"
-          role="tabpanel"
-          aria-labelledby="settab-prices"
         >
           <p className="page-sub">{t.settings.pricesSub}</p>
           {/* The switch comes first: everything below it only matters once
@@ -605,10 +609,8 @@ export function SettingsClient({
 
         {/* ---- USAGE RECIPES ---- */}
         <div
-          className={`tabpane${tab === "recipes" ? " active" : ""}`}
-          id="setpane-recipes"
-          role="tabpanel"
-          aria-labelledby="settab-recipes"
+          className={`tabpane${shown("recipes") ? " active" : ""}`}
+          id="usage-recipes"
         >
           <p className="page-sub">{t.settings.recipesSub}</p>
           {/* The Executors tab left with E2: the board records what ran and
@@ -695,10 +697,8 @@ export function SettingsClient({
 
         {/* ---- TOKENS ---- */}
         <div
-          className={`tabpane${tab === "tokens" ? " active" : ""}`}
-          id="setpane-tokens"
-          role="tabpanel"
-          aria-labelledby="settab-tokens"
+          className={`tabpane${shown("tokens") ? " active" : ""}`}
+          id="connections"
         >
           {/* Same offer as onboarding step three, for everyone who already
               walked past it: the plugin first, the hand-written MCP entry
@@ -834,10 +834,8 @@ export function SettingsClient({
         {/* ---- TEAM ---- */}
         {isAdmin && team ? (
           <div
-            className={`tabpane${tab === "team" ? " active" : ""}`}
+            className={`tabpane${shown("team") ? " active" : ""}`}
             id="setpane-team"
-            role="tabpanel"
-            aria-labelledby="settab-team"
           >
             <TeamPanel {...team} origin={origin} t={t} dateLocale={dateLocale} />
           </div>
@@ -846,10 +844,8 @@ export function SettingsClient({
         {isAdmin ? (<>
         {/* ---- CLAIM LEASE ---- */}
         <div
-          className={`tabpane${tab === "claims" ? " active" : ""}`}
-          id="setpane-claims"
-          role="tabpanel"
-          aria-labelledby="settab-claims"
+          className={`tabpane${shown("claims") ? " active" : ""}`}
+          id="claim-timeout"
         >
           <div className="set-card">
             <div className="field" style={{ maxWidth: 320, marginBottom: 0 }}>
@@ -880,10 +876,8 @@ export function SettingsClient({
 
         {/* ---- LANGUAGE ---- */}
         <div
-          className={`tabpane${tab === "language" ? " active" : ""}`}
-          id="setpane-language"
-          role="tabpanel"
-          aria-labelledby="settab-language"
+          className={`tabpane${shown("language") ? " active" : ""}`}
+          id="language"
         >
           <div className="set-card">
             <div className="field" style={{ maxWidth: 320, marginBottom: 0 }}>
@@ -912,10 +906,8 @@ export function SettingsClient({
 
         {/* ---- UPDATES ---- */}
         <div
-          className={`tabpane${tab === "updates" ? " active" : ""}`}
-          id="setpane-updates"
-          role="tabpanel"
-          aria-labelledby="settab-updates"
+          className={`tabpane${shown("updates") ? " active" : ""}`}
+          id="updates"
         >
           {/* Three modes are one decision, so they read as one set of options
               with a border around them, not as three loose rows. */}
@@ -955,6 +947,9 @@ export function SettingsClient({
           />
         </div>
         </>) : null}
+        {view === "my-agent" ? footer : null}
+        </div>
+        </div>
       </div>
     </>
   );

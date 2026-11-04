@@ -1,0 +1,52 @@
+/* Settings in groups (E5). Own sheet: the group nav on the left, the panels on
+   the right. Grey only; the group you are in is the brightest text. */
+.nb .sgroups-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--nebula-space-8);
+  align-items: start;
+}
+.nb .sgroups-main { min-width: 0; }
+.nb .sgroups-nav ul { list-style: none; margin: 0; padding: 0; }
+.nb .sgroups-nav > ul > li { margin-bottom: var(--nebula-space-1); }
+.nb .sgroups-nav a {
+  display: block;
+  padding: var(--nebula-space-2) var(--nebula-space-3);
+  border-radius: var(--oc-radius-control);
+  font-size: 13px;
+  color: var(--nebula-text-secondary);
+  text-decoration: none;
+  transition: color 200ms, background-color 200ms;
+}
+.nb .sgroups-nav a:hover { color: var(--nebula-text-primary); }
+.nb .sgroups-nav a.on {
+  color: var(--nebula-text-primary);
+  background-color: var(--nebula-glass-border);
+}
+.nb .sgroups-nav a:focus-visible {
+  outline: none;
+  box-shadow: var(--oc-focus-ring-inset);
+}
+.nb .sgroups-sub { margin: 0 0 var(--nebula-space-2) var(--nebula-space-3); }
+.nb .sgroups-sub a {
+  padding: var(--nebula-space-1) var(--nebula-space-3);
+  font-size: 12px;
+}
+
+/* Under 900px the nav is a strip above the panels: one line, scrolling. */
+@media (max-width: 899px) {
+  .nb .sgroups-layout { grid-template-columns: minmax(0, 1fr); gap: var(--nebula-space-4); }
+  .nb .sgroups-nav > ul {
+    display: flex;
+    gap: var(--nebula-space-2);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .nb .sgroups-nav > ul > li { flex: none; margin-bottom: 0; }
+  .nb .sgroups-nav a { white-space: nowrap; }
+  .nb .sgroups-sub { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb .sgroups-nav a { transition: none; }
+}

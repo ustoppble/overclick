@@ -31,7 +31,7 @@ export function InstallNotice({
     <div className="update-banner nebula-glass" role="status">
       <div className="ub-head">
         <b>{t.board.memberInstalled(members.map((m) => m.email))}</b>
-        <a href="/settings?tab=team">{t.board.memberInstalledLink}</a>
+        <a href="/settings/team">{t.board.memberInstalledLink}</a>
         <div className="spacer" />
         <button className="btn-ghost oc-tappable" disabled={pending} onClick={dismiss}>
           {t.updates.dismiss}

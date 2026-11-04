@@ -93,7 +93,7 @@ export function TeamPanel({
       {msg ? <p className="wok" role="status">{msg}</p> : null}
 
       <div className="set-card">
-        <div className="sec-cap">{t.settings.teamInviteCap}</div>
+        <div className="sec-cap" id="invitations">{t.settings.teamInviteCap}</div>
         {canInvite ? (
           <form
             className="gen-row"
@@ -174,7 +174,7 @@ export function TeamPanel({
         )}
       </div>
 
-      <div className="sec-cap">{t.settings.teamPeopleCap}</div>
+      <div className="sec-cap" id="people">{t.settings.teamPeopleCap}</div>
       <div className="tok-list">
         {members.map((person) => (
           // No faded row for a deactivated person: the Reactivate button on it

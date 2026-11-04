@@ -62,7 +62,7 @@ export function ReleaseHeader({
     totals.missing > 0 ? t.board.totalMissing(totals.missing) : null,
     totals.costUnpriced > 0 ? t.board.totalUnpriced(totals.costUnpriced) : null,
   ].filter(Boolean) as string[];
-  const insightsHref = `/insights?${boardFilterToQuery(filter)}`;
+  const insightsHref = `/usage?${boardFilterToQuery(filter)}`;
 
   return (
     <section

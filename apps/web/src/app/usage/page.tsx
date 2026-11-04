@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { mission, project } from "@agent-board/db";
 import { Icon } from "../../components/icon";
 import { NebulaAtmosphere } from "../../components/nebula-atmosphere";
+import { CliMark } from "../../components/cli-mark";
+import { Wordmark } from "../../components/wordmark";
 import {
   NO_MISSION,
   boardFilterFromQuery,
@@ -11,6 +13,7 @@ import {
 import { getSession } from "../../lib/cookies";
 import { missionScope, projectScope } from "../../lib/scope";
 import { pagePrincipal } from "../../lib/web-scope";
+import { dict } from "../../lib/i18n";
 import { db } from "../../lib/db";
 import {
   computeInsights,
@@ -23,6 +26,7 @@ import {
   type ModelReopenInsight,
   type UsageTotals,
 } from "../../lib/insights";
+import { modelHarness, type ModelHarness } from "../../lib/model-harness";
 import { loadModelPrices } from "../../lib/prices";
 import { ShareBars, TrendChart } from "./charts";
 import { insightsCopy, type InsightsCopy } from "./copy";
@@ -36,6 +40,7 @@ import {
   formatTokens,
 } from "../../lib/format";
 import { buildDailyTrend } from "./trend";
+import { USAGE_TABS, usageTab, usageTabHref, usageTables, type UsageBlock } from "./tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -266,10 +271,13 @@ function GroupTable({
   pricingEnabled,
   showUnpriced = false,
   showUnverified = false,
+  harness,
 }: {
   rows: GroupTableRow[];
   fallbackLabel: string;
   t: InsightsCopy;
+  /** Only the by-model table: the CLI and the effort each model ran with. */
+  harness?: Map<string, ModelHarness>;
   /** Money is opt-in: with it off the cost column is not there at all. */
   pricingEnabled: boolean;
   showUnpriced?: boolean;
@@ -281,6 +289,8 @@ function GroupTable({
         <table className="ins-table">
           <colgroup>
             <col />
+            {harness ? <col className="ins-col-harness" /> : null}
+            {harness ? <col className="ins-col-harness" /> : null}
             {pricingEnabled ? <col className="ins-col-cost" /> : null}
             <col className="ins-col-tokens" />
             <col className="ins-col-time" />
@@ -290,6 +300,8 @@ function GroupTable({
           <thead>
             <tr>
               <th>{t.colName}</th>
+              {harness ? <th>{t.colCli}</th> : null}
+              {harness ? <th>{t.colEffort}</th> : null}
               {pricingEnabled ? <th className="num">{t.colCost}</th> : null}
               <th className="num">{t.colTokens}</th>
               <th className="num">{t.colTime}</th>
@@ -318,6 +330,7 @@ function GroupTable({
                       )}
                     </span>
                   </td>
+                  {harness ? <HarnessCells entry={harness.get(row.label ?? "")} t={t} /> : null}
                   {/* A row the board could not price says so. A zero here
                       would read as free work and shrink every comparison it
                       takes part in. */}
@@ -423,6 +436,48 @@ function GroupTable({
   );
 }
 
+/**
+ * The CLI mark and the effort a model ran with. "—" when nothing declared
+ * them: the claim records what the agent said, and the board never guesses.
+ */
+function HarnessCells({
+  entry,
+  t,
+}: {
+  entry: ModelHarness | undefined;
+  t: InsightsCopy;
+}) {
+  const clis = entry?.clis ?? [];
+  const efforts = entry?.efforts ?? [];
+  return (
+    <>
+      <td className="ins-harness">
+        {clis.length > 0 ? (
+          clis.map((cli) => (
+            <span key={cli} className="ins-harness-cli">
+              <CliMark cli={cli} />
+              <span className="ins-mono">{cli}</span>
+            </span>
+          ))
+        ) : (
+          <span className="ins-dim" title={t.notDeclared}>
+            —
+          </span>
+        )}
+      </td>
+      <td className="ins-harness">
+        {efforts.length > 0 ? (
+          <span className="ins-mono">{efforts.join(" · ")}</span>
+        ) : (
+          <span className="ins-dim" title={t.notDeclared}>
+            —
+          </span>
+        )}
+      </td>
+    </>
+  );
+}
+
 function ReopenTable({
   rows,
   t,
@@ -513,6 +568,9 @@ export default async function InsightsPage({
       .where(and(eq(mission.workspaceId, ws.id), missionScope(principal))),
   ]);
   const t = insightsCopy(ws.language);
+  // The wordmark is shared chrome, so its label comes from the shared
+  // dictionary and not from this page's own copy.
+  const shared = dict(ws.language);
   const filter = boardFilterFromQuery(
     {
       projects: one(params.projects),
@@ -547,14 +605,45 @@ export default async function InsightsPage({
       ? (v: number) => formatMoney(v, t.lang)
       : formatTokens;
   const unpricedModels = insights.byModel.filter((r) => r.costUnpriced > 0);
+  const tab = usageTab(params.by);
+  const blocks = new Set<UsageBlock>(usageTables(tab));
+  const harness = modelHarness(filtered);
+  // The scope and the period this page was opened with ride on every tab link.
+  const keep = Object.fromEntries(
+    Object.entries(params).filter(([key]) => key !== "by"),
+  );
+  const tabLabels: Record<(typeof USAGE_TABS)[number], string> = {
+    overview: t.tabOverview,
+    project: t.tabProject,
+    mission: t.tabMission,
+    agent: t.tabAgent,
+    model: t.tabModel,
+    release: t.tabRelease,
+    card: t.tabCard,
+  };
 
   return (
     <div className="nb nebula-surface">
       <NebulaAtmosphere />
 
-      {/* The wordmark, the way back and the crumb moved up to the global bar
-          (navigation plan E1), where Consumo is a place like the board. */}
       <div className="page ins-page">
+        <header className="ins-topbar-wrap">
+          <div className="ins-topbar-l1">
+            <Wordmark label={shared.board.homeLink} />
+            <div className="spacer" />
+            {/* The arrow was a character inside the label; it is the set's own
+                glyph now, silent because the word beside it says where it goes. */}
+            <a className="btn-ghost ins-back" href="/home">
+              <Icon name="back" label={null} size={14} />
+              {t.backToBoard}
+            </a>
+          </div>
+          <div className="ins-topbar-l2">
+            <div className="crumb">
+              {ws.name} / <b>{t.title}</b>
+            </div>
+          </div>
+        </header>
 
         {/* Title, what the page counts and the filter that qualifies both are
             one group with one gap, instead of three margins that had to be
@@ -565,13 +654,33 @@ export default async function InsightsPage({
           {filterNote ? (
             <p className="ins-filter">
               {t.filteredBy} <b>{filterNote}</b>{" "}
-              <a href="/insights">
+              <a
+                href={usageTabHref(tab, {
+                  period: params.period,
+                  periodBy: params.periodBy,
+                })}
+              >
                 <Icon name="clear" label={null} size={12} />
                 {t.clearFilter}
               </a>
             </p>
           ) : null}
         </header>
+
+        {/* One cut of the answer at a time. A tab is a link: F5 keeps it, the
+            browser's Back leaves it, and the scope and period stay on it. */}
+        <nav className="usage-tabs" aria-label={t.tabsLabel}>
+          {USAGE_TABS.map((id) => (
+            <a
+              key={id}
+              href={usageTabHref(id, keep)}
+              aria-current={tab === id ? "page" : undefined}
+              className={tab === id ? "on" : ""}
+            >
+              {tabLabels[id]}
+            </a>
+          ))}
+        </nav>
 
         {totals.attempts === 0 ? (
           /* An empty page is a state, not a missing one: it says what is
@@ -587,6 +696,7 @@ export default async function InsightsPage({
           </div>
         ) : (
           <>
+            {blocks.has("totals") ? (<>
             <div className="ins-tiles">
               {/* Tokens and time first: they are true on every plan. Money is
                   a layer this workspace switched on, or it is simply absent. */}
@@ -655,6 +765,9 @@ export default async function InsightsPage({
               </span>
             </div>
 
+            </>) : null}
+
+            {blocks.has("charts") ? (
             <div className="ins-charts">
               {/* the plot grows to meet the panel beside it instead of
                   leaving a band of empty glass under four days of bars */}
@@ -701,8 +814,10 @@ export default async function InsightsPage({
                 ) : null}
               </section>
             </div>
+            ) : null}
 
             <div className="ins-grid">
+              {blocks.has("project") ? (
               <section className="ins-panel nebula-glass">
                 <div className="ins-cap">
                   <span>{t.byProject}</span>
@@ -715,6 +830,8 @@ export default async function InsightsPage({
                 />
                 <SymbolsLegend t={t} />
               </section>
+              ) : null}
+              {blocks.has("mission") ? (
               <section className="ins-panel nebula-glass">
                 <div className="ins-cap">
                   <span>{t.byMission}</span>
@@ -727,6 +844,8 @@ export default async function InsightsPage({
                 />
                 <SymbolsLegend t={t} />
               </section>
+              ) : null}
+              {blocks.has("agent") ? (
               <section className="ins-panel nebula-glass">
                 <div className="ins-cap">
                   <span>{t.byExecutor}</span>
@@ -740,6 +859,8 @@ export default async function InsightsPage({
                 />
                 <SymbolsLegend t={t} />
               </section>
+              ) : null}
+              {blocks.has("model") ? (
               <section className="ins-panel nebula-glass">
                 <div className="ins-cap">
                   <span>{t.byModel}</span>
@@ -751,17 +872,37 @@ export default async function InsightsPage({
                   pricingEnabled={pricingEnabled}
                   showUnpriced
                   showUnverified
+                  harness={harness}
                 />
                 <SymbolsLegend t={t} />
+                <p className="ins-foot">{t.modelFromRecord}</p>
               </section>
+              ) : null}
+              {blocks.has("model") ? (
               <section className="ins-panel nebula-glass">
                 <div className="ins-cap">
                   <span>{t.reopenedByModel}</span>
                 </div>
                 <ReopenTable rows={insights.reopensByModel} t={t} />
               </section>
+              ) : null}
+              {blocks.has("release") ? (
+              <section className="ins-panel nebula-glass">
+                <div className="ins-cap">
+                  <span>{t.byRelease}</span>
+                </div>
+                <GroupTable
+                  rows={insights.byRelease}
+                  fallbackLabel={t.noRelease}
+                  t={t}
+                  pricingEnabled={pricingEnabled}
+                />
+                <SymbolsLegend t={t} />
+              </section>
+              ) : null}
             </div>
 
+            {blocks.has("card") ? (
             <section className="ins-panel nebula-glass ins-cards">
               <div className="ins-cap">
                 <span>{pricingEnabled ? t.perCard : t.perCardNoMoney}</span>
@@ -776,6 +917,7 @@ export default async function InsightsPage({
               />
               <SymbolsLegend t={t} />
             </section>
+            ) : null}
           </>
         )}
       </div>
