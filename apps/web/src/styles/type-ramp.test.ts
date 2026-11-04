@@ -12,18 +12,33 @@ interface Violation {
 
 const RAMP = new Set<number>(TYPE_RAMP_PX);
 
+/**
+ * The literal size a declaration sets, in px, or null when it sets none.
+ * A token (var(--...)) or a responsive clamp() carries no literal value to
+ * hold to a fixed ramp; only a bare `<number>px` is checked, in `font-size`
+ * and in the `font` shorthand (`font: 500 13px/16px …`), which is where the
+ * newer sheets declare their size.
+ */
+function literalFontSize(prop: string, value: string): number | null {
+  if (prop === "font-size") {
+    const match = /^(\d+(?:\.\d+)?)px$/.exec(value);
+    return match ? Number(match[1]) : null;
+  }
+  if (prop === "font") {
+    const match = /(?:^|\s)(\d+(?:\.\d+)?)px(?=\/|\s|$)/.exec(value);
+    return match ? Number(match[1]) : null;
+  }
+  return null;
+}
+
 function findFontSizeViolations(file: string, css: string): Violation[] {
   const violations: Violation[] = [];
   for (const rule of parseRules(css)) {
     for (const decl of parseDeclarations(rule.body)) {
-      if (decl.prop !== "font-size") continue;
-      // A token (var(--...)) or a responsive clamp() carries no literal
-      // value to hold to a fixed ramp; only a bare `<number>px` is checked.
-      const match = /^(\d+(?:\.\d+)?)px$/.exec(decl.value);
-      if (!match) continue;
-      const px = Number(match[1]);
+      const px = literalFontSize(decl.prop, decl.value);
+      if (px == null) continue;
       if (!RAMP.has(px)) {
-        violations.push({ file, selector: rule.selector, value: decl.value });
+        violations.push({ file, selector: rule.selector, value: `${px}px` });
       }
     }
   }
@@ -41,7 +56,7 @@ describe("the type ramp holds (ux-v2 §2, checklist item 3's sibling)", () => {
     findFontSizeViolations(file, css),
   );
 
-  it("declares only 22/16/13/12/11px, or an explicitly allowlisted legacy escape", () => {
+  it("declares only 22/16/13/12px, or an explicitly allowlisted legacy escape", () => {
     const undeclared = allViolations.filter((v) => !known.has(violationKey(v)));
     expect(
       undeclared,
@@ -57,6 +72,27 @@ describe("the type ramp holds (ux-v2 §2, checklist item 3's sibling)", () => {
     expect(
       stale,
       stale.map((v) => `${v.file} ${v.selector} (${v.value}) — fixed, remove from the allowlist`).join("\n"),
+    ).toEqual([]);
+  });
+
+  it("has no step below 12px (navigation plan E7: nothing under 12)", () => {
+    expect(Math.min(...TYPE_RAMP_PX)).toBeGreaterThanOrEqual(12);
+    expect([...TYPE_RAMP_PX]).toEqual([22, 16, 13, 12]);
+  });
+
+  it("keeps no escape below 12px: the floor has no exceptions", () => {
+    const below = KNOWN_TYPE_RAMP_EXCEPTIONS.filter((v) => parseFloat(v.value) < 12);
+    expect(
+      below,
+      below.map((v) => `${v.file} ${v.selector} (${v.value})`).join("\n"),
+    ).toEqual([]);
+  });
+
+  it("no audited sheet declares a size below 12px, allowlisted or not", () => {
+    const below = allViolations.filter((v) => parseFloat(v.value) < 12);
+    expect(
+      below,
+      below.map((v) => `${v.file} ${v.selector} declares ${v.value}`).join("\n"),
     ).toEqual([]);
   });
 

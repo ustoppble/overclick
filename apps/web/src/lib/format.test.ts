@@ -5,9 +5,11 @@ import {
   formatElapsed,
   formatMoney,
   formatMoneyOrNone,
+  formatCalendarDate,
   formatShortDate,
   formatShortDateTime,
   formatTokens,
+  workspaceTimeZone,
 } from "./format";
 
 /** Intl inserts narrow/no-break spaces between symbol and figure. */
@@ -78,19 +80,59 @@ describe("approx", () => {
 });
 
 describe("formatShortDate", () => {
-  // Built from local parts, so the test reads the same in any timezone.
-  const nov3 = new Date(2026, 10, 3, 14, 5);
+  // Instants, not local parts: the day a date falls on is the workspace's,
+  // so the test pins the instant and reads the same in any process TZ.
+  const now = new Date("2026-11-04T12:00:00Z");
+  const nov3 = new Date("2026-11-03T17:05:00Z"); // 14:05 in São Paulo
 
   it("puts the day first in Portuguese, so 3 November never reads as 11 March", () => {
-    expect(formatShortDate(nov3, "pt-BR")).toBe("03/11");
+    expect(formatShortDate(nov3, "pt-BR", now)).toBe("03/11");
   });
 
   it("keeps the month first in English", () => {
-    expect(formatShortDate(nov3, "en")).toBe("11/03");
+    expect(formatShortDate(nov3, "en", now)).toBe("11/03");
   });
 
   it("spells the time after the date in the reader's own order", () => {
-    expect(flat(formatShortDateTime(nov3, "pt-BR"))).toBe("03/11, 14:05");
-    expect(flat(formatShortDateTime(nov3, "en"))).toBe("11/03, 02:05 PM");
+    expect(flat(formatShortDateTime(nov3, "pt-BR", now))).toBe("03/11, 14:05");
+    expect(flat(formatShortDateTime(nov3, "en", now))).toBe("11/03, 05:05 PM");
+  });
+
+  it("adds the year when it is not this year, so last November is not this one", () => {
+    const lastYear = new Date("2025-11-03T17:05:00Z");
+    expect(formatShortDate(lastYear, "pt-BR", now)).toBe("03/11/2025");
+    expect(formatShortDate(lastYear, "en", now)).toBe("11/03/2025");
+    expect(flat(formatShortDateTime(lastYear, "pt-BR", now))).toBe("03/11/2025, 14:05");
+  });
+
+  it("decides the day in the workspace's zone, so the server and the browser agree", () => {
+    // 01:30 UTC on 4 November is still 3 November in São Paulo.
+    const lateNight = new Date("2026-11-04T01:30:00Z");
+    expect(formatShortDate(lateNight, "pt-BR", now)).toBe("03/11");
+    expect(flat(formatShortDateTime(lateNight, "pt-BR", now))).toBe("03/11, 22:30");
+    // and the year turns over in that zone too, not in the server's
+    const newYearsEve = new Date("2027-01-01T01:00:00Z");
+    expect(formatShortDate(newYearsEve, "pt-BR", now)).toBe("31/12");
+  });
+
+  it("names one zone per workspace language", () => {
+    expect(workspaceTimeZone("pt-BR")).toBe("America/Sao_Paulo");
+    expect(workspaceTimeZone("en")).toBe("UTC");
+  });
+});
+
+describe("formatCalendarDate", () => {
+  it("spells a stored calendar day in the reader's order, never as ISO (E0 review)", () => {
+    expect(formatCalendarDate("2026-09-01", "pt-BR")).toBe("01/09/2026");
+    expect(formatCalendarDate("2026-09-01", "en")).toBe("09/01/2026");
+  });
+
+  it("does not move the day by a time zone: a calendar day has none", () => {
+    expect(formatCalendarDate("2026-01-01", "pt-BR")).toBe("01/01/2026");
+    expect(formatCalendarDate("2026-12-31", "en")).toBe("12/31/2026");
+  });
+
+  it("leaves a value it cannot read as it came", () => {
+    expect(formatCalendarDate("sometime", "pt-BR")).toBe("sometime");
   });
 });

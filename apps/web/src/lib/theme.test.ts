@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BASE_THEME,
   DEFAULT_THEME,
   THEMES,
   THEME_BOOT_SCRIPT,
@@ -11,12 +12,19 @@ import {
 } from "./theme";
 
 describe("themes", () => {
-  it("ships exactly the three the doctrine names", () => {
-    expect([...THEMES]).toEqual(["nebula", "xai", "overclock"]);
+  it("ships exactly the three the doctrine names, in the order the picker shows them", () => {
+    expect([...THEMES]).toEqual(["xai", "overclock", "nebula"]);
   });
 
-  it("defaults to the board's current look, so an install that never chose sees no change", () => {
-    expect(DEFAULT_THEME).toBe("nebula");
+  it("opens on xai for anyone who never chose, members included (navigation plan E7)", () => {
+    expect(DEFAULT_THEME).toBe("xai");
+  });
+
+  it("keeps nebula as the base: the contract every theme overrides, on :root", () => {
+    // What a newcomer sees and what the CSS falls back to are two answers
+    // now. The base declares every token; the default is just a choice.
+    expect(BASE_THEME).toBe("nebula");
+    expect(DEFAULT_THEME).not.toBe(BASE_THEME);
   });
 
   it("recognises the three and nothing else", () => {
@@ -44,12 +52,14 @@ describe("the cookie the choice lives in", () => {
   });
 
   it("answers the default when there is no cookie at all", () => {
+    expect(themeFromCookieHeader("")).toBe("xai");
     expect(themeFromCookieHeader("")).toBe(DEFAULT_THEME);
     expect(themeFromCookieHeader(null)).toBe(DEFAULT_THEME);
     expect(themeFromCookieHeader("ab_session=x")).toBe(DEFAULT_THEME);
   });
 
   it("answers the default when the value is not a theme, however it got there", () => {
+    expect(themeFromCookieHeader(`${THEME_COOKIE}=dracula`)).toBe("xai");
     expect(themeFromCookieHeader(`${THEME_COOKIE}=dracula`)).toBe(DEFAULT_THEME);
     expect(themeFromCookieHeader(`${THEME_COOKIE}=%E0%A4%A`)).toBe(DEFAULT_THEME);
   });
@@ -94,7 +104,8 @@ describe("the no-flash boot script", () => {
   });
 
   it("puts the default there when nothing is stored or the value is unknown", () => {
-    expect(runBoot("")).toBe(DEFAULT_THEME);
+    expect(runBoot("")).toBe("xai");
+    expect(runBoot(`${THEME_COOKIE}=nebula`)).toBe("nebula");
     expect(runBoot("ab_session=x")).toBe(DEFAULT_THEME);
     expect(runBoot(`${THEME_COOKIE}=dracula`)).toBe(DEFAULT_THEME);
   });
