@@ -183,6 +183,29 @@ const FONT_STATE = `(async () => {
   };
 })()`;
 
+/**
+ * Chromium keeps writing into its profile until it has really exited, so
+ * deleting the directory right after kill() races those writes (ENOTEMPTY,
+ * intermittently). Ask it to stop, wait for the exit, and only then let go.
+ */
+async function stopChrome(chrome, graceMs = 5000) {
+  if (chrome.pid === undefined || chrome.exitCode !== null || chrome.signalCode !== null) return;
+  const exited = new Promise((resolve) => chrome.once("exit", resolve));
+  chrome.kill("SIGTERM");
+  const timer = setTimeout(() => chrome.kill("SIGKILL"), graceMs);
+  await exited;
+  clearTimeout(timer);
+}
+
+/** Node retries ENOTEMPTY/EBUSY on its own with maxRetries; a last miss is only a leftover temp dir. */
+function removeProfile(profile) {
+  try {
+    fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  } catch (error) {
+    console.warn(`could not remove ${profile}: ${error.code ?? error.message}`);
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const origin = new URL(args.url || process.env.BOARD_URL || "http://localhost:3000").origin;
@@ -319,8 +342,8 @@ async function main() {
     }
   } finally {
     cdp?.close();
-    chrome.kill();
-    fs.rmSync(profile, { recursive: true, force: true });
+    await stopChrome(chrome);
+    removeProfile(profile);
   }
 
   if (failed) {
