@@ -998,7 +998,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   padding-left: 0; border-left: 0;
 }
 /* "Mover para missão" closes the level on the right (ux-v2 §3) */
-.nb .topbar-l2 .move-btn { margin-left: auto; }
 /* In the sheet the level's controls stack one per row, and a row that does
    not own the full width reads as a different kind of control than the one
    under it. The count keeps its dividing rule on the level, where it stands
@@ -2410,17 +2409,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .card.selectable { cursor: pointer; }
 .nb .card.picked { border-color: var(--oc-border-strong); box-shadow: 0 0 0 1px rgb(var(--oc-accent-rgb) / 0.18); }
 .nb .card-pick { flex: 0 0 auto; margin: 0; accent-color: var(--oc-accent); cursor: pointer; }
-/* the bar only exists while a selection does, so it sits over the board */
-.nb .bulk-bar {
-  position: fixed; z-index: var(--oc-z-bar); left: 50%; bottom: 24px; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
-  background: var(--oc-modal-bg);
-}
-.nb .bulk-count {
-  font-family: var(--nebula-font-label); font-size: 11px; letter-spacing: 0.04em;
-  color: var(--nebula-text-secondary);
-}
-.nb .bulk-err { font-size: 12px; color: var(--oc-danger); max-width: 320px; }
 .nb .btn-ghost.on { color: var(--nebula-text-primary); border-color: var(--oc-border-strong); }
 
 /* ============================================================
@@ -2596,7 +2584,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .topbar-more.open .crumb { display: contents; }
   .nb .topbar-more.open .crumb > .project-filter:only-child { grid-column: 1 / -1; }
   .nb .topbar-more.open .mission-filter,
-  .nb .topbar-more.open .move-btn,
   .nb .topbar-more.open .filter-result:last-child { grid-column: 1 / -1; }
   .nb .topbar-more.open .mission-filter,
   .nb .topbar-more.open .mf-chip,
@@ -2825,7 +2812,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   }
   /* the drawn corners belong to a card; a sheet has the screen's own */
   .nb .detail.nebula-corners::before { content: none; }
-  .nb .bulk-bar { max-width: calc(100vw - 20px); flex-wrap: wrap; row-gap: 8px; }
 
   /* ============================================================
      AGB-68: the panel, laid out for the width it actually gets.

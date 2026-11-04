@@ -7,6 +7,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }))
 vi.mock("../../actions/missions", () => ({
   assignCardsToMissionAction: async () => ({ ok: true, previous: [] }),
   createMissionAction: async () => ({ ok: false, error: "x" }),
+  restoreCardMissionsAction: async () => ({ ok: true }),
 }));
 vi.mock("../../actions/discard", () => ({
   discardCardsAction: async () => ({ ok: true, discarded: [], kept: [] }),
@@ -114,5 +115,18 @@ describe("Selecionar (navigation plan E6)", () => {
       }),
     );
     expect(ready).not.toMatch(/<button[^>]*disabled=""[^>]*>Descartar 2 cards</);
+  });
+});
+
+describe("what a partial discard says about the cards that stayed", () => {
+  it("keeps the first sentence of the tool's refusal, whole parentheses only", async () => {
+    const { firstSentence } = await import("./selection-bar");
+    expect(firstSentence("Card not found.")).toBe("Card not found.");
+    expect(
+      firstSentence(
+        "AGB-4 is in execution and its claim is live (held by claude, last activity 2026-11-04T05:02:37.461Z). Release it first.",
+      ),
+    ).toBe("AGB-4 is in execution and its claim is live (held by claude, last activity 2026-11-04T05:02:37.461Z).");
+    expect(firstSentence("Live claim (held by x. y) here. More.")).toBe("Live claim.");
   });
 });

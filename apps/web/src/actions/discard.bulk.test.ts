@@ -181,7 +181,7 @@ describe("discardCardsAction (bulk discard)", () => {
     const mixed = await discardCardsAction([memberCardId, adminCards[1]!], "lote");
     expect(mixed.ok).toBe(false);
     if (mixed.ok) return;
-    expect(mixed.kept.find((k) => k.id === adminCards[1])?.error).toBe("Card not found.");
+    expect(mixed.kept?.find((k) => k.id === adminCards[1])?.error).toBe("Card not found.");
     expect(await statuses([adminCards[0]!, adminCards[1]!])).toEqual({
       [adminCards[0]!]: "aberto",
       [adminCards[1]!]: "aberto",

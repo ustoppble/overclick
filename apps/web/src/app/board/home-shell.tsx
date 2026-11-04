@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { publishGlobalCounts } from "../../components/global-bar/counts-channel";
 import {
   setBoardSearch,
@@ -15,7 +15,6 @@ import {
   boardSignatureAction,
   searchBoardCardsAction,
 } from "../../actions/board-cards";
-import { assignCardsToMissionAction } from "../../actions/missions";
 import {
   NO_MISSION,
   TASK_PRIORITIES,
@@ -42,8 +41,14 @@ import {
   searchWithServerHits,
 } from "../../lib/board-window";
 import type { BoardTotals } from "../../lib/board-totals";
-import { dict, type Dict } from "../../lib/i18n";
+import { dict } from "../../lib/i18n";
 import { Icon } from "../../components/icon";
+import {
+  SelectionBar,
+  SelectionNoticeLine,
+  SelectToggle,
+  type SelectionNotice,
+} from "../../components/board/selection-bar";
 import { Board, type BoardCard, type BoardMissionOption } from "./board";
 import { BoardTotal } from "./board-total";
 import { FacetMenu, MoreFilters } from "./facet-filters";
@@ -67,84 +72,6 @@ export type BoardOrganizationOption = {
   hasContext: boolean;
 };
 export type { BoardMissionOption };
-
-/**
- * The bulk move: pick cards on the board, send the whole selection into a
- * mission, or out of one. An instance that ran before missions existed has
- * every card loose, and fixing that one detail panel at a time is not a fix.
- */
-function BulkMissionBar({
-  selected,
-  missions,
-  onDone,
-  onClear,
-  t,
-}: {
-  selected: string[];
-  missions: BoardMissionOption[];
-  onDone: () => void;
-  onClear: () => void;
-  t: Dict;
-}) {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  const [missionId, setMissionId] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-
-  const assign = () =>
-    start(async () => {
-      setErr(null);
-      const r = await assignCardsToMissionAction(selected, missionId || null);
-      if (!r.ok) {
-        setErr(r.error);
-        return;
-      }
-      onDone();
-      router.refresh();
-    });
-
-  return (
-    <div className="bulk-bar nebula-glass">
-      <span className="bulk-count">
-        {selected.length === 0
-          ? t.board.pickCardsHint
-          : t.board.selectedCount(selected.length)}
-      </span>
-      <label className="filter-chip">
-        <select
-          aria-label={t.board.assignTo}
-          value={missionId}
-          disabled={pending}
-          onChange={(event) => setMissionId(event.target.value)}
-        >
-          <option value="">{t.board.noMission}</option>
-          {missions.map((miss) => (
-            <option key={miss.id} value={miss.id}>
-              {miss.title}
-            </option>
-          ))}
-        </select>
-      </label>
-      {err ? <span className="bulk-err">{err}</span> : null}
-      <button
-        className="btn-ghost"
-        type="button"
-        disabled={pending}
-        onClick={onClear}
-      >
-        {t.board.cancelSelection}
-      </button>
-      <button
-        className="d-btn-pri"
-        type="button"
-        disabled={pending || selected.length === 0}
-        onClick={assign}
-      >
-        {pending ? t.board.assigning : t.board.assign}
-      </button>
-    </div>
-  );
-}
 
 export function HomeShell({
   lang,
@@ -184,8 +111,11 @@ export function HomeShell({
   const t = dict(lang);
   const [filter, setFilter] = useState<BoardFilter>(initialFilter);
   const [totals, setTotals] = useState<BoardTotals>(initialTotals);
+  // Selecionar (navigation plan E6): an explicit mode, on from the button on
+  // the filter line, and what the bar left behind once it acted.
   const [picking, setPicking] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const [notice, setNotice] = useState<SelectionNotice | null>(null);
   // The words are typed in the global bar (E4); they reach the board through
   // the search channel, and the address's ?q= seeds both ends.
   const [searchQuery, setSearchQuery] = useState(initialQuery);
@@ -426,10 +356,24 @@ export function HomeShell({
     );
   }
 
-  function stopPicking() {
+  const stopPicking = useCallback(() => {
     setPicking(false);
     setSelected([]);
-  }
+  }, []);
+
+  // A card that left the board (moved out of the filter, discarded by an
+  // agent) leaves the selection too: the bar counts only what is on screen.
+  useEffect(() => {
+    if (selected.length === 0) return;
+    const onScreen = new Set(visible.map((card) => card.id));
+    if (selected.some((id) => !onScreen.has(id))) {
+      setSelected((current) => current.filter((id) => onScreen.has(id)));
+    }
+  }, [visible, selected]);
+  const shortIds = useMemo(
+    () => new Map(cards.map((card) => [card.id, card.shortId])),
+    [cards],
+  );
 
   function clearSearch() {
     setBoardSearch("");
@@ -518,23 +462,19 @@ export function HomeShell({
               onReleaseChange={(resolvedIn) => apply({ ...filter, resolvedIn })}
               t={t}
             />
-            {/* ux-v2 §3: "Mover para missão" appears only with cards
-                selected, right-aligned — an impossible action with nothing
-                picked has no reason to sit on the bar (OCL-86). */}
-            {selected.length > 0 ? (
-              <button
-                className={`btn-ghost move-btn${picking ? " on" : ""}`}
-                type="button"
-                onClick={() => {
-                  setFiltersOpen(false);
-                  if (picking) stopPicking();
-                  else setPicking(true);
-                }}
-              >
-                {picking ? t.board.cancelSelection : t.board.moveToMission}
-              </button>
-            ) : null}
           </div>
+          {/* Always on the line, outside the phone's Filtros sheet: the mode
+              is one tap away at every width (E6). */}
+          <SelectToggle
+            on={picking}
+            onToggle={() => {
+              setFiltersOpen(false);
+              setNotice(null);
+              if (picking) stopPicking();
+              else setPicking(true);
+            }}
+            t={t}
+          />
           <button
             className="filters-btn"
             type="button"
@@ -599,13 +539,27 @@ export function HomeShell({
       />
 
       {picking ? (
-        <BulkMissionBar
+        <SelectionBar
           selected={selected}
+          shortIds={shortIds}
           missions={missions}
-          onDone={stopPicking}
-          onClear={stopPicking}
+          organizationId={
+            filter.organizationIds.length === 1 ? filter.organizationIds[0]! : null
+          }
+          viewerRole={viewerRole}
+          onMoved={(next) => {
+            stopPicking();
+            setNotice(next);
+          }}
+          onDiscarded={(next) => {
+            stopPicking();
+            setNotice(next);
+          }}
+          onCancel={stopPicking}
           t={t}
         />
+      ) : notice ? (
+        <SelectionNoticeLine notice={notice} onChange={setNotice} t={t} />
       ) : null}
     </>
   );

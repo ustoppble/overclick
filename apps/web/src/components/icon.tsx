@@ -80,6 +80,13 @@ const ART = {
   chevronLeft: <path d="M14.5 6l-6 6 6 6" />,
   chevronRight: <path d="M9.5 6l6 6-6 6" />,
   check: <path d="M4.5 12.5l5 5 10-10" />,
+  // the board's Selecionar mode (navigation plan E6): a box already ticked
+  select: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <path d="M8.5 12l2.5 2.5 4.5-5" />
+    </>
+  ),
   plus: <path d="M12 5v14M5 12h14" />,
   external: (
     <>
