@@ -1,5 +1,6 @@
-/* Settings in groups (E5). Own sheet: the group nav on the left, the panels on
-   the right. Grey only; the group you are in is the brightest text. */
+/* Settings in groups (E5). Own sheet: the menu on the left, the page on the
+   right. Every item is a page; a group with sections is a label over them.
+   Grey only; the page you are on is the brightest text. */
 .nb .sgroups-layout {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
@@ -27,13 +28,19 @@
   outline: none;
   box-shadow: var(--oc-focus-ring-inset);
 }
-.nb .sgroups-sub { margin: 0 0 var(--nebula-space-2) var(--nebula-space-3); }
-.nb .sgroups-sub a {
-  padding: var(--nebula-space-1) var(--nebula-space-3);
+/* A group's name is a label, not a link: it has no page of its own. */
+.nb .sgroups-label {
+  display: block;
+  padding: var(--nebula-space-2) var(--nebula-space-3) var(--nebula-space-1);
   font-size: 12px;
+  color: var(--nebula-text-tertiary);
 }
+.nb .sgroups-nav li.in > .sgroups-label { color: var(--nebula-text-secondary); }
+.nb .sgroups-sub { margin: 0 0 var(--nebula-space-2) var(--nebula-space-3); }
+.nb .sgroups-sub a { padding: var(--nebula-space-1) var(--nebula-space-3); }
 
-/* Under 900px the nav is a strip above the panels: one line, scrolling. */
+/* Under 900px the menu is a strip above the page: every page in one line,
+   scrolling, the group labels dropped. */
 @media (max-width: 899px) {
   .nb .sgroups-layout { grid-template-columns: minmax(0, 1fr); gap: var(--nebula-space-4); }
   .nb .sgroups-nav > ul {
@@ -42,9 +49,11 @@
     overflow-x: auto;
     scrollbar-width: none;
   }
-  .nb .sgroups-nav > ul > li { flex: none; margin-bottom: 0; }
-  .nb .sgroups-nav a { white-space: nowrap; }
-  .nb .sgroups-sub { display: none; }
+  .nb .sgroups-nav > ul > li,
+  .nb .sgroups-sub,
+  .nb .sgroups-sub > li { display: contents; }
+  .nb .sgroups-label { display: none; }
+  .nb .sgroups-nav a { flex: none; white-space: nowrap; padding: var(--nebula-space-2) var(--nebula-space-3); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -4,21 +4,21 @@ import { settingsTabDestination } from "../../lib/redirects";
 /**
  * Every `/settings?tab=…` link that already left the app (bookmarks, links
  * people sent each other, the cost popover's "no price" link) lands on the
- * group that holds that tab now, in one hop. The member has one place only:
- * Meu agente.
+ * page that holds that tab now, in one hop, with no anchor to follow. The
+ * member has one place only: Meu agente.
  */
 describe("the old Settings tabs find their group (E5, F11)", () => {
   const admin: Array<[string, string]> = [
-    ["exec", "/settings/agents"],
-    ["tokens", "/settings/agents#connections"],
-    ["recipes", "/settings/agents#usage-recipes"],
-    ["claims", "/settings/agents#claim-timeout"],
+    ["exec", "/settings/agents/connections"],
+    ["tokens", "/settings/agents/connections"],
+    ["recipes", "/settings/agents/usage-recipes"],
+    ["claims", "/settings/agents/claim-timeout"],
     ["organizations", "/settings/organizations-projects"],
     ["projects", "/settings/organizations-projects"],
-    ["team", "/settings/team"],
+    ["team", "/settings/team/people"],
     ["prices", "/settings/prices"],
-    ["language", "/settings/system"],
-    ["updates", "/settings/system"],
+    ["language", "/settings/system/language"],
+    ["updates", "/settings/system/updates"],
   ];
 
   it.each(admin)("admin ?tab=%s goes to %s", (tab, destination) => {
@@ -39,6 +39,10 @@ describe("the old Settings tabs find their group (E5, F11)", () => {
     expect(settingsTabDestination(["prices", "team"], "admin")).toBe(
       "/settings/prices",
     );
+  });
+
+  it.each(admin)("admin ?tab=%s lands on a page, not on an anchor", (tab) => {
+    expect(settingsTabDestination(tab, "admin")).not.toContain("#");
   });
 
   it("sends the member to Meu agente without a tab too", () => {

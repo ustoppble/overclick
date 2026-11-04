@@ -4,7 +4,7 @@ import type { AutoUpdateRecord, UpdateMode } from "@agent-board/db";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { ReactNode } from "react";
-import type { SettingsGroupId } from "./groups";
+import type { SettingsPlace } from "./groups";
 import { SettingsGroupsNav } from "./settings-groups-nav";
 import { ProjectCreateForm } from "./project-create-form";
 import { saveClaimTimeoutAction } from "../../actions/claims";
@@ -38,19 +38,21 @@ import {
   type ProjectContextRow,
 } from "./project-context-editor";
 
-/** Which panel lives in which group (E5): the tabs became links to these. */
-export type SettingsView = SettingsGroupId | "my-agent";
+/**
+ * Which panel lives on which Settings page: every item of the menu is a page
+ * of its own and shows its panel alone (E5, then one page per item).
+ */
+export type SettingsView = SettingsPlace | "my-agent";
 
 const PANE_VIEW: Record<string, SettingsView> = {
   organizations: "organizations-projects",
   projects: "organizations-projects",
   prices: "prices",
-  recipes: "agents",
-  tokens: "agents",
-  team: "team",
-  claims: "agents",
-  language: "system",
-  updates: "system",
+  recipes: "usage-recipes",
+  tokens: "connections",
+  claims: "claim-timeout",
+  language: "language",
+  updates: "updates",
 };
 
 /** The three modes, in the order they escalate: silence, tell, act. */
@@ -138,8 +140,9 @@ export function SettingsClient({
   pricingEnabled: boolean;
   claimTimeoutMinutes: number;
   /**
-   * What this page shows: one of the Settings groups, or "my-agent" for the
-   * member's own connections (and the admin's, at /account/agent).
+   * What this page shows: one Settings page (a group with no sections, or a
+   * section), or "my-agent" for the member's own connections (and the
+   * admin's, at /account/agent).
    */
   view: SettingsView;
   /** Server-rendered extras under the panels (Meu agente's links). */
@@ -175,8 +178,8 @@ export function SettingsClient({
 }) {
   const t = dict(lang);
   const router = useRouter();
-  // The panel a pane belongs to is on screen when its group is the view; the
-  // tokens pane is also the whole of "Meu agente".
+  // A pane is rendered only on its own page; the tokens pane is also the
+  // whole of "Meu agente".
   const shown = (pane: string) =>
     pane === "tokens" && view === "my-agent" ? true : PANE_VIEW[pane] === view;
   const [pending, start] = useTransition();
@@ -419,18 +422,15 @@ export function SettingsClient({
 
         {isAdmin ? (<>
         {/* ---- ORGANIZATIONS ---- */}
-        <div
-          className={`tabpane${shown("organizations") ? " active" : ""}`}
-          id="setpane-organizations"
-        >
+        {shown("organizations") ? (
+        <div className="tabpane active" id="setpane-organizations">
           <OrganizationContextEditor organizations={organizations} lang={lang} />
         </div>
+        ) : null}
 
         {/* ---- PROJECT CONTEXT ---- */}
-        <div
-          className={`tabpane${shown("projects") ? " active" : ""}`}
-          id="setpane-projects"
-        >
+        {shown("projects") ? (
+        <div className="tabpane active" id="setpane-projects">
           <ProjectCreateForm
             organizations={organizations}
             projects={projects}
@@ -442,12 +442,11 @@ export function SettingsClient({
             lang={lang}
           />
         </div>
+        ) : null}
 
         {/* ---- MODEL PRICES ---- */}
-        <div
-          className={`tabpane${shown("prices") ? " active" : ""}`}
-          id="setpane-prices"
-        >
+        {shown("prices") ? (
+        <div className="tabpane active" id="setpane-prices">
           <p className="page-sub">{t.settings.pricesSub}</p>
           {/* The switch comes first: everything below it only matters once
               somebody decides this board should talk about money at all. */}
@@ -603,12 +602,11 @@ export function SettingsClient({
             </button>
           </div>
         </div>
+        ) : null}
 
         {/* ---- USAGE RECIPES ---- */}
-        <div
-          className={`tabpane${shown("recipes") ? " active" : ""}`}
-          id="usage-recipes"
-        >
+        {shown("recipes") ? (
+        <div className="tabpane active" id="usage-recipes">
           <p className="page-sub">{t.settings.recipesSub}</p>
           {/* The Executors tab left with E2: the board records what ran and
               never chooses it, so the tab that names the CLIs says who does. */}
@@ -690,13 +688,12 @@ export function SettingsClient({
             </button>
           </div>
         </div>
+        ) : null}
         </>) : null}
 
         {/* ---- TOKENS ---- */}
-        <div
-          className={`tabpane${shown("tokens") ? " active" : ""}`}
-          id="connections"
-        >
+        {shown("tokens") ? (
+        <div className="tabpane active" id="connections">
           {/* Same offer as onboarding step three, for everyone who already
               walked past it: the plugin first, the hand-written MCP entry
               folded away under it (OCL-102). */}
@@ -827,23 +824,19 @@ export function SettingsClient({
           </div>
           </details>
         </div>
+        ) : null}
 
-        {/* ---- TEAM ---- */}
-        {isAdmin && team ? (
-          <div
-            className={`tabpane${shown("team") ? " active" : ""}`}
-            id="setpane-team"
-          >
-            <TeamPanel {...team} origin={origin} t={t} lang={asLang(lang)} />
+        {/* ---- TEAM: the people and the invitations are a page each ---- */}
+        {isAdmin && team && (view === "people" || view === "invitations") ? (
+          <div className="tabpane active" id={`setpane-team-${view}`}>
+            <TeamPanel {...team} section={view} origin={origin} t={t} lang={asLang(lang)} />
           </div>
         ) : null}
 
         {isAdmin ? (<>
         {/* ---- CLAIM LEASE ---- */}
-        <div
-          className={`tabpane${shown("claims") ? " active" : ""}`}
-          id="claim-timeout"
-        >
+        {shown("claims") ? (
+        <div className="tabpane active" id="claim-timeout">
           <div className="set-card">
             <div className="field" style={{ maxWidth: 320, marginBottom: 0 }}>
               <label htmlFor="settings-claim-timeout">
@@ -870,12 +863,11 @@ export function SettingsClient({
             </button>
           </div>
         </div>
+        ) : null}
 
         {/* ---- LANGUAGE ---- */}
-        <div
-          className={`tabpane${shown("language") ? " active" : ""}`}
-          id="language"
-        >
+        {shown("language") ? (
+        <div className="tabpane active" id="language">
           <div className="set-card">
             <div className="field" style={{ maxWidth: 320, marginBottom: 0 }}>
               <label htmlFor="settings-language">{t.settings.langLabel}</label>
@@ -900,12 +892,11 @@ export function SettingsClient({
             </button>
           </div>
         </div>
+        ) : null}
 
         {/* ---- UPDATES ---- */}
-        <div
-          className={`tabpane${shown("updates") ? " active" : ""}`}
-          id="updates"
-        >
+        {shown("updates") ? (
+        <div className="tabpane active" id="updates">
           {/* Three modes are one decision, so they read as one set of options
               with a border around them, not as three loose rows. */}
           <div className="set-card upd-modes">
@@ -943,6 +934,7 @@ export function SettingsClient({
             lang={lang}
           />
         </div>
+        ) : null}
         </>) : null}
         {view === "my-agent" ? footer : null}
         </div>

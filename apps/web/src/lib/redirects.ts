@@ -19,18 +19,19 @@ export const ORGANIZATIONS_DESTINATION = "/settings/organizations-projects";
 /** Where the admin lands on `/settings` with no tab, or one nobody knows. */
 const ADMIN_DEFAULT = "/settings/organizations-projects";
 
+/** Each old tab, as the Settings page that holds it now: a page, no anchor. */
 const TAB_DESTINATIONS: Record<string, string> = {
-  // The Executors tab left in E2; its old link opens the Agents group.
-  exec: "/settings/agents",
-  tokens: "/settings/agents#connections",
-  recipes: "/settings/agents#usage-recipes",
-  claims: "/settings/agents#claim-timeout",
+  // The Executors tab left in E2; its old link opens the Agents group's first page.
+  exec: "/settings/agents/connections",
+  tokens: "/settings/agents/connections",
+  recipes: "/settings/agents/usage-recipes",
+  claims: "/settings/agents/claim-timeout",
   organizations: "/settings/organizations-projects",
   projects: "/settings/organizations-projects",
-  team: "/settings/team",
+  team: "/settings/team/people",
   prices: "/settings/prices",
-  language: "/settings/system",
-  updates: "/settings/system",
+  language: "/settings/system/language",
+  updates: "/settings/system/updates",
 };
 
 /** The query as a string, repeated parameters kept and empty ones dropped. */
