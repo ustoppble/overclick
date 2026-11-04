@@ -70,7 +70,11 @@ describe("the attention amber is spent only where something waits for you", () =
   });
 
   it("no new rule paints with --oc-warn: only the ones that did before E1", () => {
-    expect(selectorsUsing(/--oc-(warn|chip-review|glow-pip)/)).toEqual(WARN_SELECTORS_BEFORE_E1);
+    // Fewer is fine (a later stage may delete one); a new one is not.
+    const added = selectorsUsing(/--oc-(warn|chip-review|glow-pip)/).filter(
+      (selector) => !WARN_SELECTORS_BEFORE_E1.includes(selector),
+    );
+    expect(added).toEqual([]);
   });
 
   it("the global bar sheet is one of the audited sheets", () => {
