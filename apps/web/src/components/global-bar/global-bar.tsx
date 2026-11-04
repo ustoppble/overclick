@@ -2,6 +2,7 @@ import { organization, project } from "@agent-board/db";
 import { and, asc, eq } from "drizzle-orm";
 import { getSession } from "../../lib/cookies";
 import { db } from "../../lib/db";
+import { loadVisiblePeople, readBoardPerson } from "../../lib/person-filter";
 import { countCardsByStatus, readReviewScope } from "../../lib/review-queue";
 import { organizationScope, projectScope } from "../../lib/scope";
 import { sessionPrincipal } from "../../lib/web-scope";
@@ -36,7 +37,13 @@ export async function GlobalBar({ current }: { current: GlobalPlace | null }) {
       .where(and(eq(organization.workspaceId, ws.id), organizationScope(principal)))
       .orderBy(asc(organization.name)),
   ]);
-  const remembered = await readReviewScope(db(), ws.id, principal, { projects });
+  // The person picker's choices: the people on a card this reader can see,
+  // read once for the list and for reading the remembered pick back.
+  const people = await loadVisiblePeople(db(), ws.id, principal);
+  const [remembered, rememberedPerson] = await Promise.all([
+    readReviewScope(db(), ws.id, principal, { projects, people }),
+    readBoardPerson(db(), ws.id, principal, undefined, { people }),
+  ]);
   const [counts, org] = await Promise.all([
     countCardsByStatus(db(), principal, remembered, ["em_execucao", "feito"]).then((byStatus) => ({
       running: byStatus.em_execucao,
@@ -67,6 +74,7 @@ export async function GlobalBar({ current }: { current: GlobalPlace | null }) {
           projectIds: remembered.projectIds,
         },
       }}
+      person={{ people, viewerId: principal.userId, remembered: rememberedPerson.choice }}
     />
   );
 }

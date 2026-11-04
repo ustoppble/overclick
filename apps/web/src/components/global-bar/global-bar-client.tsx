@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { logoutAction } from "../../actions/auth";
-import { setBoardScopeAction } from "../../actions/board-filter";
+import { setBoardPersonAction, setBoardScopeAction } from "../../actions/board-filter";
 import { globalBarCountsAction } from "../../actions/global-bar";
 import { ThemePicker } from "../../app/board/theme-picker";
 import {
@@ -22,6 +22,7 @@ import { StatusMark } from "../status-mark";
 import { Wordmark } from "../wordmark";
 import { BarSearch } from "./bar-search";
 import { subscribeGlobalCounts } from "./counts-channel";
+import { PersonPicker, personOnScreen, type PersonOption } from "./person-picker";
 import { onRestoredFromCache } from "./restore";
 import {
   ScopePicker,
@@ -61,6 +62,14 @@ export type BarScope = {
   remembered: ScopeValue;
 };
 
+/** What the bar knows of the person filter: the people offered and the remembered pick. */
+export type BarPerson = {
+  people: PersonOption[];
+  viewerId: string;
+  /** `all`, `me` or a user id, already read back against `people`. */
+  remembered: string;
+};
+
 /**
  * The scope on screen: the URL's when it says one, the remembered one when it
  * does not (E4, F2). Read with the board's own rules, so the bar and the page
@@ -97,6 +106,17 @@ function addressWithScope(next: ScopeValue): string {
   params.set("projects", encodeProjectSelection(next.projectIds));
   const path = cardIdFromPath(pathname) !== null ? "/board" : pathname;
   return `${path}?${params.toString()}`;
+}
+
+/** Where a new person lands: the same page with `?person=` (all drops it). */
+function addressWithPerson(next: string): string {
+  const { pathname, search } = window.location;
+  const params = new URLSearchParams(search);
+  if (next === "all") params.delete("person");
+  else params.set("person", next);
+  const path = cardIdFromPath(pathname) !== null ? "/board" : pathname;
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
 }
 
 /**
@@ -184,6 +204,7 @@ export function GlobalBarClient({
   organizationName,
   counts: initialCounts,
   scope,
+  person,
   reviewing: reviewingProp = false,
 }: {
   current: GlobalPlace | null;
@@ -194,6 +215,8 @@ export function GlobalBarClient({
   counts: GlobalCounts;
   /** The scope picker's choices and the remembered pick (E4). */
   scope: BarScope;
+  /** The person picker's choices and the remembered pick; absent, no picker. */
+  person?: BarPerson;
   /** The To review list is on screen: its chip and its tab read as current. */
   reviewing?: boolean;
 }) {
@@ -222,6 +245,18 @@ export function GlobalBarClient({
     // for whatever the address does not say.
     await setBoardScopeAction(next).catch(() => null);
     window.location.assign(addressWithScope(next));
+  }
+
+  // The person rides the address like the scope: `all` drops it, so the
+  // remembered "everyone" — stored first — is what the page reads.
+  const personValue = person
+    ? personOnScreen(person.people, person.viewerId, person.remembered, params)
+    : "all";
+  async function changePerson(next: string) {
+    if (moving) return;
+    setMoving(true);
+    await setBoardPersonAction(next).catch(() => null);
+    window.location.assign(addressWithPerson(next));
   }
 
   // The layout cannot read the query, so its numbers are the remembered
@@ -300,6 +335,15 @@ export function GlobalBarClient({
             onChange={(next) => void changeScope(next)}
             t={t}
           />
+          {person ? (
+            <PersonPicker
+              people={person.people}
+              viewerId={person.viewerId}
+              value={personValue}
+              onChange={(next) => void changePerson(next)}
+              t={t}
+            />
+          ) : null}
           <nav className="gb-places" aria-label={t.nav.places}>
             {PLACES.map((place) => (
               <a key={place.key} className="gb-place" href={place.href} aria-current={here(place.key)}>

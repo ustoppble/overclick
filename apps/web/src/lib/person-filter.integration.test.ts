@@ -1,4 +1,4 @@
-import { mcpToken, project, projectMember, task, user } from "@agent-board/db";
+import { mcpToken, project, projectMember, task, user, type Database } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { authenticateBearer } from "../mcp/auth";
@@ -58,6 +58,8 @@ describe("person filter: the cards linked to one person, inside the reader's sco
       await invokeTool(world.db, ctx, "task_create", card(title, { project_id: projectId })),
     ).task;
   const titles = (rows: { title: string }[]) => rows.map((row) => row.title).sort();
+  // The board's readers take the app's Database; the test world's is the same pool.
+  const database = () => world.db as unknown as Database;
 
   async function member(email: string, projects: string[]) {
     const [row] = await world.db
@@ -155,9 +157,9 @@ describe("person filter: the cards linked to one person, inside the reader's sco
   });
 
   it("'me' is what the reader wrote, holds or delivered", async () => {
-    const person = await readBoardPerson(world.db, world.workspaceId, alice, { person: PERSON_ME });
+    const person = await readBoardPerson(database(), world.workspaceId, alice, { person: PERSON_ME });
     expect(person.userId).toBe(alice.userId);
-    const rows = await loadBoardTasks(world.db, [world.projectId], alice, {
+    const rows = await loadBoardTasks(database(), [world.projectId], alice, {
       period: "all",
       personUserId: person.userId,
     });
@@ -165,9 +167,9 @@ describe("person filter: the cards linked to one person, inside the reader's sco
   });
 
   it("another person is what they wrote, hold or delivered, and nothing else", async () => {
-    const person = await readBoardPerson(world.db, world.workspaceId, alice, { person: bobId });
+    const person = await readBoardPerson(database(), world.workspaceId, alice, { person: bobId });
     expect(person.userId).toBe(bobId);
-    const rows = await loadBoardTasks(world.db, [world.projectId], alice, {
+    const rows = await loadBoardTasks(database(), [world.projectId], alice, {
       period: "all",
       personUserId: person.userId,
     });
@@ -175,15 +177,15 @@ describe("person filter: the cards linked to one person, inside the reader's sco
   });
 
   it("the people on offer are only the ones on a card the reader can see", async () => {
-    const forAlice = await loadVisiblePeople(world.db, world.workspaceId, alice);
+    const forAlice = await loadVisiblePeople(database(), world.workspaceId, alice);
     expect(forAlice.map((p) => p.email).sort()).toEqual([
       "admin@example.test",
       "alice@example.test",
       "bob@example.test",
     ]);
-    const forNobody = await loadVisiblePeople(world.db, world.workspaceId, null);
+    const forNobody = await loadVisiblePeople(database(), world.workspaceId, null);
     expect(forNobody).toEqual([]);
-    const everyone = await loadVisiblePeople(world.db, world.workspaceId, {
+    const everyone = await loadVisiblePeople(database(), world.workspaceId, {
       userId: world.adminUserId,
       role: "admin",
       organizationId: null,
@@ -192,11 +194,11 @@ describe("person filter: the cards linked to one person, inside the reader's sco
   });
 
   it("a member asking for someone outside their scope gets every person, never their cards", async () => {
-    const person = await readBoardPerson(world.db, world.workspaceId, alice, { person: outsiderId });
+    const person = await readBoardPerson(database(), world.workspaceId, alice, { person: outsiderId });
     expect(person.userId).toBeNull();
     expect(person.choice).toBe("all");
     // Even forced past the resolver, the filter stays inside the member's scope.
-    const forced = await loadBoardTasks(world.db, [world.projectId, sideProjectId], alice, {
+    const forced = await loadBoardTasks(database(), [world.projectId, sideProjectId], alice, {
       period: "all",
       personUserId: outsiderId,
     });
@@ -205,47 +207,47 @@ describe("person filter: the cards linked to one person, inside the reader's sco
 
   it("garbage and unknown ids read as everyone", async () => {
     for (const asked of ["x' or 1=1 --", "00000000-0000-0000-0000-000000000000", ""]) {
-      const person = await readBoardPerson(world.db, world.workspaceId, alice, { person: asked });
+      const person = await readBoardPerson(database(), world.workspaceId, alice, { person: asked });
       expect(person.userId).toBeNull();
     }
   });
 
   it("is remembered on the user, and the address wins over the memory", async () => {
     await world.db.update(user).set({ boardPerson: bobId }).where(eq(user.id, alice.userId));
-    expect((await readBoardPerson(world.db, world.workspaceId, alice)).userId).toBe(bobId);
+    expect((await readBoardPerson(database(), world.workspaceId, alice)).userId).toBe(bobId);
     expect(
-      (await readBoardPerson(world.db, world.workspaceId, alice, { person: PERSON_ME })).userId,
+      (await readBoardPerson(database(), world.workspaceId, alice, { person: PERSON_ME })).userId,
     ).toBe(alice.userId);
     expect(
-      (await readBoardPerson(world.db, world.workspaceId, alice, { person: "all" })).userId,
+      (await readBoardPerson(database(), world.workspaceId, alice, { person: "all" })).userId,
     ).toBeNull();
   });
 
   it("the running and to-review counts and the review list follow the person", async () => {
-    const all = await readReviewScope(world.db, world.workspaceId, alice, undefined, {
+    const all = await readReviewScope(database(), world.workspaceId, alice, undefined, {
       projects: "all",
     });
-    const everyone = await countCardsByStatus(world.db, alice, all, ["em_execucao", "feito"]);
+    const everyone = await countCardsByStatus(database(), alice, all, ["em_execucao", "feito"]);
     expect(everyone.em_execucao).toBe(1);
     expect(everyone.feito).toBe(1);
 
-    const mine = await readReviewScope(world.db, world.workspaceId, alice, undefined, {
+    const mine = await readReviewScope(database(), world.workspaceId, alice, undefined, {
       projects: "all",
       person: PERSON_ME,
     });
     expect(mine.personUserId).toBe(alice.userId);
-    const counted = await countCardsByStatus(world.db, alice, mine, ["em_execucao", "feito"]);
+    const counted = await countCardsByStatus(database(), alice, mine, ["em_execucao", "feito"]);
     expect(counted.em_execucao).toBe(0);
     expect(counted.feito).toBe(1);
-    expect((await loadReviewQueue(world.db, alice, mine)).map((e) => e.id)).toEqual([
+    expect((await loadReviewQueue(database(), alice, mine)).map((e) => e.id)).toEqual([
       ids.aliceDelivered,
     ]);
 
-    const bobs = await readReviewScope(world.db, world.workspaceId, alice, undefined, {
+    const bobs = await readReviewScope(database(), world.workspaceId, alice, undefined, {
       projects: "all",
       person: bobId,
     });
-    const bobCounts = await countCardsByStatus(world.db, alice, bobs, ["em_execucao", "feito"]);
+    const bobCounts = await countCardsByStatus(database(), alice, bobs, ["em_execucao", "feito"]);
     expect(bobCounts.em_execucao).toBe(1);
     expect(bobCounts.feito).toBe(0);
   });

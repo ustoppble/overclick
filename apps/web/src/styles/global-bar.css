@@ -246,6 +246,21 @@
 .global-bar .gb-scope-only:hover,
 .global-bar .gb-scope-only:focus-visible { outline: none; background: var(--oc-surface-hover); color: var(--oc-text-1); }
 
+/* ---------- the person (OCL person filter) ----------
+   Whose cards the board shows, right after the scope: the same trigger and
+   the same panel, one pick at a time (a round box). Picked, it reads as on —
+   neutral, not amber: a filter is not something waiting for the person. */
+.global-bar .gb-person { min-width: 0; max-width: 200px; }
+.global-bar .gb-person.on { background: var(--oc-surface-on); }
+.global-bar .gb-person-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.global-bar .gb-person-radio { border-radius: 50%; }
+.global-bar .gb-person-hint {
+  margin: 0;
+  padding: var(--oc-space-1) var(--oc-space-2);
+  font: 400 12px/16px var(--oc-font-ui);
+  color: var(--oc-text-3);
+}
+
 /* ---------- the search (E4) ----------
    A field on the widest bars; under 1280 it is the first thing to step
    aside, into an icon that opens the field over the bar. */
@@ -439,6 +454,10 @@
   .global-bar .gb-scope .gb-scope-proj { display: none; }
   .global-bar .gb-scope .gb-scope-sep { display: none; }
   .global-bar .gb-scope { max-width: 40vw; }
+  /* the person keeps its mark only; the name is in its title and its panel */
+  .global-bar .gb-person .gb-person-name,
+  .global-bar .gb-person .nb-icon:last-child { display: none; }
+  .global-bar .gb-person { min-width: 32px; padding: 0 var(--oc-space-2); }
   .gb-tabbar {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

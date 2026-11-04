@@ -48,7 +48,7 @@ export function personCondition(userId: string): SQL {
  * member is offered the people of their linked projects and nobody else.
  */
 export async function loadVisiblePeople(
-  database: Pick<Database, "select">,
+  database: Pick<Database, "select" | "selectDistinct">,
   workspaceId: string,
   principal: MaybePrincipal,
 ): Promise<VisiblePerson[]> {
@@ -106,7 +106,7 @@ function needsPeople(choice: string | null | undefined): boolean {
  * remembered one when it does not (the scope's rule, E4 F2).
  */
 export async function readBoardPerson(
-  database: Pick<Database, "select">,
+  database: Pick<Database, "select" | "selectDistinct">,
   workspaceId: string,
   principal: MaybePrincipal,
   override?: { person?: string },
