@@ -1250,7 +1250,8 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   color: var(--nebula-text-primary); font-size: 14px; font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
-.nb .release-usage small { flex-basis: 100%; color: var(--nebula-text-tertiary); }
+/* a <small> shrinks to `smaller` of its parent (~10px here) unless it says its size */
+.nb .release-usage small { flex-basis: 100%; color: var(--nebula-text-tertiary); font-size: 12px; }
 .nb .release-usage a { color: var(--nebula-mist); text-decoration: none; }
 .nb .release-usage a:hover { color: var(--nebula-text-primary); }
 .nb .release-relations {
@@ -2212,7 +2213,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   /* the signature is a caption and a name: one line, not two */
   .nb .policy td.who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12px; }
   .nb .policy td.who::before { margin-bottom: 0; }
-  .nb .policy td.who small { display: inline; }
+  .nb .policy td.who small { display: inline; font-size: 12px; }
   /* a control under a thumb, not a control for a mouse */
   .nb .policy .sel { min-height: 40px; }
   .nb .policy td .input { max-width: none; min-height: 40px; }
