@@ -48,4 +48,42 @@ describe("markdown renderer", () => {
     expect(html).toContain("<br/>");
     expect(html).not.toContain("**");
   });
+
+  describe("link allowlist (relative, https, http, mailto)", () => {
+    const link = (href: string) =>
+      renderToStaticMarkup(<Markdown text={`[x](${href})`} />);
+
+    it.each([
+      "https://example.com/a?b=1#c",
+      "http://example.com",
+      "mailto:a@example.com",
+      "/board",
+      "/cards/OCL-1?x=1",
+      "./sibling",
+      "../up",
+      "#anchor",
+      "?q=1",
+    ])("keeps %s as a link", (href) => {
+      expect(link(href)).toContain("<a ");
+    });
+
+    it.each([
+      "javascript:alert(1)",
+      "JaVaScRiPt:alert(1)",
+      " javascript:alert(1)",
+      "java\tscript:alert(1)",
+      "vbscript:x",
+      "data:text/html,<b>x</b>",
+      "file:///etc/passwd",
+      "ftp://example.com",
+      "blob:https://example.com/uuid",
+      "tel:123",
+      "//evil.example/path",
+      "/\\evil.example",
+      "\\\\evil.example",
+      "foo:bar",
+    ])("drops %s", (href) => {
+      expect(link(href)).not.toContain("<a ");
+    });
+  });
 });
