@@ -1,12 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
 import { EMERGENCY_LOGIN_PATH } from "@agent-board/db/emergency-login";
 import { INVITE_PATH } from "../lib/invitations";
 import { lockNoticeEmail, loginCodeEmail } from "../lib/login-code";
 import { signupCodeEmail } from "../lib/signup-code";
-import { config as proxyConfig } from "../proxy";
+import { config as proxyConfig, proxy } from "../proxy";
 
 const app = dirname(fileURLToPath(import.meta.url));
 const page = (route: string) => join(app, route, "page.tsx");
@@ -33,8 +34,16 @@ describe("the routes that already left the app do not move", () => {
     expect(INVITE_PATH).toBe("/invite/");
   });
 
-  it("the proxy still guards exactly the invitation links", () => {
-    expect(proxyConfig.matcher).toBe("/invite/:path*");
+  // The proxy also carries the CSP nonce now (SEC), so it runs on every page;
+  // what stays exact is whose links it may redirect: the invitations, only.
+  it("the proxy runs on pages and redirects only the invitation links", () => {
+    const re = new RegExp(`^${proxyConfig.matcher}$`);
+    expect(re.test("/invite/abc")).toBe(true);
+    expect(re.test("/_next/static/chunks/a.js")).toBe(false);
+    for (const path of ["/board", "/login", "/settings/team/people", "/missions/x%"]) {
+      const res = proxy(new NextRequest(`http://board.test${path}`));
+      expect(res.headers.get("location"), path).toBeNull();
+    }
   });
 
   it("the sign-in e-mails carry the code and no address of the app", () => {
