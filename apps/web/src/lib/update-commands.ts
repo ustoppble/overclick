@@ -15,26 +15,17 @@ import type { DeployMode } from "./deploy-mode";
  */
 
 /**
- * The one command that turns the updater on. It is a compose profile, so
- * enabling it is opt-in and the tradeoff stays explicit: that container gets
- * the docker socket, which is root on the host.
- */
-export function updaterEnableCommand(mode: DeployMode): string {
-  return mode === "hosted"
-    ? "docker compose -p overclick -f deploy/docker-compose.cloud.yml --profile updater up -d"
-    : "docker compose --profile updater up -d";
-}
-
-/**
- * What to run by hand when nobody wants a sidecar holding the socket. A
- * hosted instance only ever gets there through `./deploy/deploy.sh`: it holds
+ * What to run on the server to update a container instance: nothing in the app
+ * restarts a container, so this is the only way (the old updater sidecar held
+ * the docker socket, which is root on the host, and is gone). A hosted
+ * instance only ever gets there through `./deploy/deploy.sh`: it holds
  * the deploy lock, pins the compose project and files, and guards against the
  * legacy-orphan collision OCL-43 fixed. The quickstart command matches the
  * documented install, a git checkout that builds its own image with the root
  * compose file.
  */
 export function updateCommand(mode: DeployMode): string {
-  return mode === "hosted" ? "./deploy/deploy.sh" : "git pull && docker compose up -d --build";
+  return mode === "hosted" ? "./deploy/deploy.sh" : "git pull && docker compose up -d --build --remove-orphans";
 }
 
 /**

@@ -67,6 +67,7 @@ import {
   canonicalTranscriptModel,
   identityFromTranscript,
 } from "./transcript-model";
+import { logToolFailure, newErrorRef } from "./safe-log";
 import { usageFromTranscript } from "./transcript-usage";
 import {
   and,
@@ -469,10 +470,13 @@ export async function invokeTool(
     if (isMcpCoreError(error)) {
       return { ok: false, error };
     }
-    console.error(`[mcp] ${name} threw`, error);
+    // Logged by kind, code and a reference only: the raw error carries the
+    // failed SQL and its parameters (see safe-log).
+    const ref = newErrorRef();
+    logToolFailure(name, error, ref);
     return err(
       "INTERNAL",
-      `Unexpected server error while running ${name}. Check the ids and values you passed and try again; the server logs have the details.`,
+      `Unexpected server error while running ${name} (ref ${ref}). Check the ids and values you passed and try again; quote the ref to whoever runs the server.`,
     );
   }
 
@@ -2293,7 +2297,9 @@ async function missionAttemptStart(
 ) {
   return db.transaction(async (tx) => {
     const current = await findMission(tx, ctx, input.mission_id);
-    if (!current) {
+    // Seeing a mission is not orchestrating it: a member who cannot change it
+    // gets the answer of a mission that is not there.
+    if (!current || !canChangeMission(principalFromAuth(ctx), current)) {
       return err(
         "NOT_FOUND",
         `Mission ${input.mission_id} not found in this workspace. Call mission_list to see the available missions.`,
@@ -2377,6 +2383,7 @@ async function missionAttemptStart(
       .values({
         missionId: current.id,
         projectId,
+        openedByTokenId: ctx.tokenId,
         executor: JSON.stringify(executor),
         model: model || null,
         modelSource: model ? "declared" : null,
@@ -2435,8 +2442,9 @@ async function missionReportUsage(
   }
 
   return db.transaction(async (tx) => {
+    const principal = principalFromAuth(ctx);
     const current = await findMission(tx, ctx, input.mission_id);
-    if (!current) {
+    if (!current || !canChangeMission(principal, current)) {
       return err(
         "MISSION_ATTEMPT_NOT_FOUND",
         `Mission ${input.mission_id} not found in this workspace.`,
@@ -2456,7 +2464,16 @@ async function missionReportUsage(
       )
       .orderBy(desc(missionAttempt.startedAt))
       .limit(1);
-    if (!attempt) {
+    // Only the token that opened the attempt, or an admin, reports on it; an
+    // attempt with no recorded opener belongs to the admins. Anyone else gets
+    // the answer of an attempt that is not there.
+    if (
+      !attempt ||
+      !(
+        isAdmin(principal) ||
+        (attempt.openedByTokenId !== null && attempt.openedByTokenId === ctx.tokenId)
+      )
+    ) {
       return err(
         "MISSION_ATTEMPT_NOT_FOUND",
         `No open orchestration attempt was found for mission '${current.title}'.`,
@@ -4445,7 +4462,7 @@ async function applyUsageToLatestAttempt(
   // The file the card points at is the proof of which model ran; only that
   // earns "measured". Whatever the agent typed into usage.segments without a
   // readable transcript behind it is "declared" instead — see OCL-173.
-  const fromTranscript = identityFromTranscript({
+  const fromTranscript = await identityFromTranscript({
     cli: storedTranscript?.cli,
     path: storedTranscript?.path,
   });
@@ -4724,7 +4741,7 @@ async function taskDeliver(
     // is reachable and names one, that name wins over the claim and over
     // whatever the agent typed into usage.segments. Unreadable path → keep
     // the declared model (or the existing segments correction).
-    const fromTranscript = identityFromTranscript({
+    const fromTranscript = await identityFromTranscript({
       cli: transcript?.cli,
       path: transcript?.path,
     });

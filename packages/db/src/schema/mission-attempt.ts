@@ -37,6 +37,12 @@ export const missionAttempt = pgTable(
       onDelete: "set null",
     }),
     executor: text("executor"),
+    /**
+     * The MCP token that opened the attempt; only it (or an admin) may report
+     * on it. No foreign key: a web session is not a token row, and null (an
+     * attempt from before this column, or a revoked opener) is admin-only.
+     */
+    openedByTokenId: uuid("opened_by_token_id"),
     model: text("model"),
     /** Declared exactly, inferred from the harness, or corrected by usage. */
     modelSource: text("model_source").$type<AttemptModelSource>(),

@@ -9,7 +9,7 @@ import { db } from "../lib/db";
 import { emailConfigured, sendEmail } from "../lib/email";
 import { redeemEmergencyLogin } from "../lib/emergency-login";
 import { dict } from "../lib/i18n";
-import { countUsers, ensureWorkspace } from "../lib/instance";
+import { countUsers, createFirstAdminWithCode, ensureWorkspace } from "../lib/instance";
 import { sweepLoginRows } from "../lib/login-housekeeping";
 import {
   LOGIN_CODE_PATTERN,
@@ -24,12 +24,12 @@ import {
   clearCodeUserFailures,
   loginOrigin,
   refundCodeLoginOrigin,
+  noteSentEmail,
   withinCodeLoginBudget,
   withinCodeRequestBudget,
 } from "../lib/login-rate-limit";
 import {
   issueSignupCode,
-  redeemSignupCode,
   setupScope,
   signupCodeEmail,
 } from "../lib/signup-code";
@@ -84,7 +84,10 @@ export async function requestSetupCodeAction(
     after(async () => {
       try {
         const issued = await issueSignupCode(db(), setupScope(email), email);
-        if (issued) await sendEmail(signupCodeEmail("setup", email, issued.code));
+        if (issued) {
+          await sendEmail(signupCodeEmail("setup", email, issued.code));
+          await noteSentEmail(db());
+        }
       } catch (err) {
         console.error(
           `[login-code] issuing or sending a setup code failed (${err instanceof Error ? err.name : "unknown"})`,
@@ -118,24 +121,19 @@ export async function signupAction(
 
   const origin = await loginOrigin();
   const charge = await withinCodeLoginBudget(db(), email, origin);
-  if (!charge.ok || !(await redeemSignupCode(db(), setupScope(email), email, code))) {
+  if (!charge.ok) {
     return { error: (await authCopy()).errCode };
   }
-  // Read again: someone else may have finished setup while this code was typed.
-  if (!canCreateFirstAdmin(await countUsers())) {
-    return { error: (await authCopy()).errAdminExists };
-  }
-
-  const [created] = await db()
-    .insert(user)
-    .values({ email, role: "admin" })
-    .returning({
-      id: user.id,
-      sessionVersion: user.sessionVersion,
-    });
-
-  if (!created) {
-    return { error: (await authCopy()).errCreate };
+  // The count of accounts, the code and the admin are one transaction
+  // (`createFirstAdminWithCode`): two setups finishing together make one admin.
+  const created = await createFirstAdminWithCode(db(), email, code);
+  if (!created.ok) {
+    return {
+      error:
+        created.reason === "exists"
+          ? (await authCopy()).errAdminExists
+          : (await authCopy()).errCode,
+    };
   }
 
   await refundCodeLoginOrigin(db(), origin, charge);
@@ -174,6 +172,9 @@ export async function requestLoginCodeAction(
 
   await sweepLoginRows(db());
   const origin = await loginOrigin();
+  // A CAPTCHA/Turnstile token would be verified here, before any bucket is
+  // charged (see `withinCodeRequestBudget`); the owner has not opened the
+  // account and key it needs yet.
   if (await withinCodeRequestBudget(db(), email, origin)) {
     // Everything that depends on the address having an account — the insert
     // that finds one, the round trip to Resend — runs once the response is
@@ -183,7 +184,13 @@ export async function requestLoginCodeAction(
     after(async () => {
       try {
         const issued = await issueLoginCode(db(), email);
-        if (issued) await sendEmail(loginCodeEmail(email, issued.code));
+        // The cap was spent at admission, the same for every address
+        // (`withinCodeRequestBudget`): what happens here must not feed back
+        // into it, so the real send is only counted.
+        if (issued) {
+          await sendEmail(loginCodeEmail(email, issued.code));
+          await noteSentEmail(db());
+        }
       } catch (err) {
         // Only the error's kind: its message can quote the address.
         console.error(

@@ -29,7 +29,7 @@ import { eq } from "drizzle-orm";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   closeTestWorld,
   createTestWorld as createBaseTestWorld,
@@ -73,7 +73,14 @@ function createTestWorld(): Promise<TestWorld> {
 describe("MCP tool edge cases against a test db", () => {
   let world: TestWorld;
 
+  // The transcript fixtures live in the temp folder, which is not a
+  // transcript folder unless the operator's list says so.
+  beforeEach(() => {
+    vi.stubEnv("OVERCLICK_TRANSCRIPT_DIRS", tmpdir());
+  });
+
   afterEach(async () => {
+    vi.unstubAllEnvs();
     if (world) await closeTestWorld(world);
   });
 

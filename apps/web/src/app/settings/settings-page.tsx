@@ -20,9 +20,8 @@ import { detectDeployMode } from "../../lib/deploy-mode";
 import {
   SOURCE_UPDATE_COMMAND,
   updateCommand,
-  updaterEnableCommand,
 } from "../../lib/update-commands";
-import { APP_VERSION, readUpdaterState } from "../../lib/updates";
+import { APP_VERSION } from "../../lib/updates";
 import { SettingsClient } from "./settings-client";
 import { loadPendingInvitations, loadTeam } from "../../lib/invitations";
 import { publicOrigin } from "../../lib/public-url";
@@ -153,12 +152,8 @@ export async function SettingsPage({
     ?? (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
   const origin = publicOrigin() ?? `${proto}://${host}`;
 
-  // Read on the server, from the volume the sidecar shares: a mounted trigger
-  // directory says nothing, only a fresh heartbeat means somebody can pull.
-  const updater = await readUpdaterState();
-
-  // Which update advice can possibly apply here: a container can be recreated,
-  // a checkout can only be pulled and restarted.
+  // Which update advice applies here: a container is updated by a command on
+  // the server, a checkout can be pulled and restarted.
   const runtime = detectRuntime();
   // Hosted vs quickstart (OCL-73): picks the command that matches the compose
   // project this instance actually runs under, so a hosted instance is never
@@ -216,8 +211,6 @@ export async function SettingsPage({
         updateLog={ws.updateLog}
         version={APP_VERSION}
         runtime={runtime}
-        updater={updater}
-        enableCommand={updaterEnableCommand(deployMode)}
         manualCommand={updateCommand(deployMode)}
         sourceCommand={SOURCE_UPDATE_COMMAND}
         prices={prices}

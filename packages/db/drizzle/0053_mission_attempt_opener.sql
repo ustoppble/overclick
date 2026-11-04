@@ -1,0 +1,1 @@
+ALTER TABLE "mission_attempt" ADD COLUMN "opened_by_token_id" uuid;

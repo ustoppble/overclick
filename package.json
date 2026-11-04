@@ -21,5 +21,17 @@
     "check:topbar": "node scripts/topbar-one-line.mjs",
     "check:sheet": "node scripts/detail-sheet.mjs",
     "emergency-login": "pnpm --silent --filter @agent-board/db emergency-login"
+  },
+  "pnpm": {
+    "overrides": {
+      "proxy-addr": "^2.0.8",
+      "body-parser": "^2.4.0",
+      "qs": "^6.16.1",
+      "fast-uri": "^3.1.9",
+      "source-map-js": "^1.2.2",
+      "@hono/node-server": "^2.1.6",
+      "hono": "^4.13.16",
+      "ip-address": "^10.7.6"
+    }
   }
 }

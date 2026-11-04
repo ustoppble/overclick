@@ -15,6 +15,7 @@ export {
   normalizeShortId,
 } from "./short-id";
 export {
+  FIRST_ADMIN_LOCK_KEY,
   canCreateFirstAdmin,
   isValidEmail,
 } from "./first-access";

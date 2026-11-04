@@ -78,7 +78,8 @@ Two consumers read the environment in different ways:
   ```
 
   The template already points at the Docker Postgres from step 3. `AUTH_SECRET` must be
-  at least 32 characters (any long random string works for local dev).
+  32 random bytes written as base64 or hex: generate it with
+  `openssl rand -base64 32`. A long sentence or a repeated character is refused.
 
 - **The db scripts** (`db:migrate`, `db:seed`) read `DATABASE_URL` from the shell
   environment — they do not load `.env` files. Pass it inline as shown in step 5.
