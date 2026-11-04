@@ -1519,6 +1519,10 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   color: var(--nebula-mist); letter-spacing: 0.03em;
   flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
 }
+/* the "declared, not measured" seal repeats what the sheet says: it takes
+   whatever room the line has left and gives it up first, so the line only
+   wraps when the record and the numbers alone do not fit */
+.nb .card-foot .selo { flex: 1 1 0; max-width: max-content; }
 /* the numbers: tokens give way first, eight times faster than the chain */
 .nb .card-foot .tel-tokens { flex: 0 8 auto; overflow: hidden; text-overflow: ellipsis; }
 .nb .card-foot .tel-note { flex: 0 4 auto; overflow: hidden; text-overflow: ellipsis; }

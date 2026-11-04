@@ -38,6 +38,7 @@
  *   BOARD_COOKIE  value of the ab_session cookie, for a board behind login
  *   CHROME_BIN    path to a Chrome or Chromium binary
  *   WIDTHS        comma separated phone widths (default 390,320)
+ *   SHEET_CARD    short id of the card to open (default: the first that ran)
  *
  * Exit code is 0 when every width holds the rule and 1 when any breaks it.
  */
@@ -167,13 +168,37 @@ const SHOW_LIST = `(() => {
  * one (its line carries the CLI mark), so the attempts are there to measure.
  */
 const OPEN_CARD = `(() => {
+  const wanted = ${JSON.stringify(process.env.SHEET_CARD || "")};
   const rows = [...document.querySelectorAll(".board-mobile .ml-row, .board .card")]
     .filter((row) => row.getClientRects().length);
-  const ran = rows.find((row) => row.querySelector(".cli-mark, .cli-name, .meta-harness"));
-  const row = ran || rows[0];
+  const ranRow = (row) => Boolean(row.querySelector(".cli-mark, .cli-name, .meta-harness"));
+  const named = wanted
+    ? rows.find((row) => (row.querySelector(".cid")?.textContent || "").trim() === wanted)
+    : null;
+  const row = named || rows.find(ranRow) || rows[0];
   if (!row) return { opened: false, ran: false };
   row.click();
-  return { opened: true, ran: Boolean(ran) };
+  return { opened: true, ran: ranRow(row) };
+})()`;
+
+/**
+ * The phone shows one column at a time and opens on the first with cards,
+ * which may hold none that ran. Switch it to the done column then, so the
+ * card the guard opens has attempts to measure.
+ */
+const SHOW_RAN_COLUMN = `(() => {
+  const wanted = ${JSON.stringify(process.env.SHEET_CARD || "")};
+  const rows = [...document.querySelectorAll(".board-mobile .ml-row")];
+  const has = rows.some((row) =>
+    wanted
+      ? (row.querySelector(".cid")?.textContent || "").trim() === wanted
+      : row.querySelector(".cli-mark, .cli-name"));
+  const select = document.querySelector(".board-mobile .ml-status");
+  if (has || !select) return false;
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
+  setter.call(select, "feito");
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
 })()`;
 
 /** The attempts section of the open card: one row per attempt, inside the sheet. */
@@ -370,6 +395,7 @@ async function main() {
       );
       await cdp.send("Page.navigate", { url }, sessionId);
       await sleep(1500);
+      if (await evaluate(cdp, sessionId, SHOW_RAN_COLUMN)) await sleep(300);
 
       // The board is scrolled first, because the position it comes back to is
       // only a claim if it was not the top to begin with.
