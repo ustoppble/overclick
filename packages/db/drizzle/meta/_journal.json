@@ -372,6 +372,13 @@
       "when": 1793806640594,
       "tag": "0052_board_person",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793823754401,
+      "tag": "0053_mission_attempt_opener",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { mcpToken, project } from "@agent-board/db";
+import { mcpToken } from "@agent-board/db";
 import type { UpdateMode } from "@agent-board/db";
 import { getSession } from "../../../lib/cookies";
 import { db } from "../../../lib/db";
@@ -10,6 +10,7 @@ import { detectRuntime } from "../../../lib/runtime";
 import { APP_VERSION } from "../../../lib/updates";
 import { pagePrincipal } from "../../../lib/web-scope";
 import { SettingsClient } from "../../settings/settings-client";
+import { linkedProjectName } from "./linked-project";
 
 export const dynamic = "force-dynamic";
 
@@ -53,14 +54,7 @@ async function MyAgent({
     .from(mcpToken)
     .where(and(eq(mcpToken.workspaceId, ws.id), eq(mcpToken.ownerUserId, userId)))
     .orderBy(desc(mcpToken.createdAt));
-  const [proj] = organizationId
-    ? await db()
-        .select({ name: project.name })
-        .from(project)
-        .where(and(eq(project.workspaceId, ws.id), eq(project.organizationId, organizationId)))
-        .orderBy(asc(project.createdAt))
-        .limit(1)
-    : [];
+  const projectName = await linkedProjectName(db(), ws.id, { userId, role: admin ? "admin" : "member", organizationId });
   const { host, origin } = await requestOrigin();
   const t = dict(ws.language);
 
@@ -72,7 +66,7 @@ async function MyAgent({
         host={host}
         origin={origin}
         workspaceName={ws.name}
-        projectName={proj?.name ?? ws.name}
+        projectName={projectName ?? ws.name}
         organizations={[]}
         projects={[]}
         lang={ws.language}

@@ -1,9 +1,8 @@
 import { execFile } from "node:child_process";
-import { statSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { encodeRecipeSetting, factoryUsageRecipes, type UsageSegment } from "@agent-board/db";
 import { recipeForCli } from "../lib/recipes";
+import { safeTranscriptPath } from "./transcript-path";
 
 /** What the board measured off a transcript it could read. */
 export type TranscriptUsage = {
@@ -15,22 +14,6 @@ const NODE_PREFIX = 'node -e "';
 
 /** How long one recipe may run before the delivery gives up on it. */
 const RECIPE_TIMEOUT_MS = 10_000;
-
-/** `~/x` as the recipe printed it, resolved against this machine's home. */
-function expandHome(path: string): string {
-  if (path === "~") return homedir();
-  if (path.startsWith("~/")) return join(homedir(), path.slice(2));
-  return path;
-}
-
-function readable(path: string): boolean {
-  try {
-    statSync(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function runScript(script: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
@@ -71,8 +54,10 @@ export async function usageFromTranscript(input: {
 }): Promise<TranscriptUsage | null> {
   const raw = (input.path ?? "").trim();
   if (!raw) return null;
-  const path = expandHome(raw);
-  if (!readable(path)) return null;
+  // The recipe opens whatever path it is given, so the path is vetted first:
+  // a regular file under a known transcript folder, not a link, not huge.
+  const path = safeTranscriptPath(raw);
+  if (!path) return null;
 
   const recipe = recipeForCli(factoryUsageRecipes(), input.cli);
   if (!recipe || recipe.yields !== "tokens_per_model") return null;

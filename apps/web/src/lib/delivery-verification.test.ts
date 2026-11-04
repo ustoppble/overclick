@@ -100,25 +100,26 @@ describe("verifyDelivery", () => {
     const calls: string[][] = [];
     const result = await verifyDelivery(
       {
-        repoUrl: "./test-remote.git",
+        repoUrl: "https://git.example.com/test-remote.git",
         commit: "abc123",
         branch: "main",
       },
       {
+        lookup: async () => ["140.82.112.3"],
         git: async (args) => {
           calls.push(args);
-          if (args[0] === "ls-remote") return "def456\trefs/heads/main\n";
+          if (args.includes("ls-remote")) return "def456\trefs/heads/main\n";
           return "";
         },
       },
     );
 
     expect(result).toEqual({ status: "verified", unverified: false, warning: null });
-    expect(calls[0]).toEqual([
+    expect(calls[0]!.slice(-5)).toEqual([
       "ls-remote",
       "--refs",
       "--",
-      "./test-remote.git",
+      "https://git.example.com/test-remote.git",
       "refs/heads/main",
     ]);
     expect(calls.some((args) => args.includes("merge-base"))).toBe(true);

@@ -1,5 +1,5 @@
-import { readFileSync, statSync } from "node:fs";
 import { normalizeModelKey } from "@agent-board/db";
+import { readTranscriptLines, safeTranscriptPath } from "./transcript-path";
 
 /** Last distinct model the transcript named, plus the chain for the timeline. */
 export type TranscriptModelIdentity = {
@@ -32,9 +32,9 @@ function pushCanon(models: string[], raw: string) {
   if (model && !models.includes(model)) models.push(model);
 }
 
-function grokModels(file: string): string[] {
+async function grokModels(file: string): Promise<string[]> {
   const models: string[] = [];
-  for (const line of readFileSync(file, "utf8").split("\n")) {
+  for await (const line of readTranscriptLines(file)) {
     if (!line.trim()) continue;
     const entry = parseJsonLine(line) as {
       params?: { update?: { sessionUpdate?: string; usage?: { modelUsage?: Record<string, unknown> } } };
@@ -48,9 +48,9 @@ function grokModels(file: string): string[] {
   return models;
 }
 
-function codexModels(file: string): string[] {
+async function codexModels(file: string): Promise<string[]> {
   const models: string[] = [];
-  for (const line of readFileSync(file, "utf8").split("\n")) {
+  for await (const line of readTranscriptLines(file)) {
     if (!line.trim()) continue;
     const entry = parseJsonLine(line) as {
       type?: string;
@@ -77,25 +77,23 @@ function sniffKind(
 
 /**
  * The model the session actually ran, read off the file the card points at.
- * Null when the path is missing, unreadable, or names no model: the board
- * then keeps the declared model instead of inventing one.
+ * Null when the path is missing, unreadable, outside the folders where the
+ * CLIs keep transcripts (a link or a device never counts), or names no model:
+ * the board then keeps the declared model instead of inventing one.
  */
-export function identityFromTranscript(input: {
+export async function identityFromTranscript(input: {
   cli?: string | null;
   path?: string | null;
-}): TranscriptModelIdentity | null {
+}): Promise<TranscriptModelIdentity | null> {
   const path = (input.path ?? "").trim();
   if (!path) return null;
-  try {
-    if (!statSync(path).isFile()) return null;
-  } catch {
-    return null;
-  }
+  const file = safeTranscriptPath(path);
+  if (!file) return null;
   const kind = sniffKind(input.cli, path);
   if (!kind) return null;
   let models: string[] = [];
   try {
-    models = kind === "grok" ? grokModels(path) : codexModels(path);
+    models = kind === "grok" ? await grokModels(file) : await codexModels(file);
   } catch {
     return null;
   }

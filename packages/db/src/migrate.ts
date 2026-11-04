@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { requireDatabaseUrl } from "./env";
+import { describeError } from "./safe-error";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const MIGRATIONS_FOLDER = resolve(here, "../drizzle");
@@ -25,7 +26,8 @@ if (isDirect) {
       console.log("migrations applied");
     })
     .catch((err) => {
-      console.error(err);
+      // The driver's message carries the failed SQL; only its kind and code are logged.
+      console.error(`migrations failed: ${describeError("migrate", err)}`);
       process.exit(1);
     });
 }
