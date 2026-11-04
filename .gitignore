@@ -48,3 +48,6 @@ deploy/.env
 # python bytecode (docs/design/logo-variants/tools)
 __pycache__/
 *.pyc
+
+# hosted deploy backups (dumps and a copy of deploy/.env): never commit
+/backups/
