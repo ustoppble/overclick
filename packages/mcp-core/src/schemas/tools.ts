@@ -453,14 +453,16 @@ export const RepoUrlSchema = z
   .string()
   .url()
   .refine((value) => {
-    try {
-      const url = new URL(value);
-      if (!["https:", "ssh:", "file:"].includes(url.protocol)) return false;
-      if (url.protocol !== "file:" && !url.hostname) return false;
-      return !url.password && !(url.protocol === "https:" && url.username);
-    } catch {
-      return false;
-    }
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(value)?.[1]?.toLowerCase();
+    if (scheme === "file") return /^file:\/\//i.test(value);
+    if (scheme !== "https" && scheme !== "ssh") return false;
+    const authority = new RegExp(`^${scheme}://([^/?#]*)`, "i").exec(value)?.[1] ?? "";
+    const at = authority.lastIndexOf("@");
+    const userinfo = at >= 0 ? authority.slice(0, at) : "";
+    const host = (at >= 0 ? authority.slice(at + 1) : authority).replace(/:\d*$/, "");
+    if (!host) return false;
+    // No password anywhere, and no user at all on https (a token rides there).
+    return !userinfo.includes(":") && !(scheme === "https" && userinfo);
   }, "repo_url must be an https or ssh remote (or a file:// checkout) without credentials");
 
 const ProjectRefSchema = z

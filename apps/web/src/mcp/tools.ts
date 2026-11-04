@@ -4458,7 +4458,7 @@ async function applyUsageToLatestAttempt(
   // The file the card points at is the proof of which model ran; only that
   // earns "measured". Whatever the agent typed into usage.segments without a
   // readable transcript behind it is "declared" instead — see OCL-173.
-  const fromTranscript = identityFromTranscript({
+  const fromTranscript = await identityFromTranscript({
     cli: storedTranscript?.cli,
     path: storedTranscript?.path,
   });
@@ -4737,7 +4737,7 @@ async function taskDeliver(
     // is reachable and names one, that name wins over the claim and over
     // whatever the agent typed into usage.segments. Unreadable path → keep
     // the declared model (or the existing segments correction).
-    const fromTranscript = identityFromTranscript({
+    const fromTranscript = await identityFromTranscript({
       cli: transcript?.cli,
       path: transcript?.path,
     });

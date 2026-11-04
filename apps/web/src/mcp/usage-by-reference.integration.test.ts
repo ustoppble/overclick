@@ -1,10 +1,10 @@
 import { executionAttempt, task } from "@agent-board/db";
 import { TaskClaimOutputSchema } from "@agent-board/mcp-core";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bindRecipeSettings } from "@agent-board/db/domain";
 import { closeTestWorld, createTestWorld, type TestWorld } from "./test-db";
 import { invokeToolForTests as invokeTool } from "./test-tools";
@@ -17,7 +17,14 @@ import { invokeToolForTests as invokeTool } from "./test-tools";
 describe("usage by reference (OCL-211)", () => {
   let world: TestWorld;
   const dirs: string[] = [];
+  // The fixtures live in the temp folder, which is not a transcript folder
+  // unless the operator's list says so.
+  beforeEach(() => {
+    vi.stubEnv("OVERCLICK_TRANSCRIPT_DIRS", tmpdir());
+  });
+
   afterEach(async () => {
+    vi.unstubAllEnvs();
     if (world) await closeTestWorld(world);
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
@@ -148,6 +155,24 @@ describe("usage by reference (OCL-211)", () => {
     expect((delivered.value as { telemetry_incomplete_reason?: string }).telemetry_incomplete_reason).toContain(
       "the board cannot read /nowhere/on/this/board/session.jsonl",
     );
+  });
+
+  it("does not run the recipe on a symlink or on a file outside the known transcript folders", async () => {
+    const { card } = await claimCard();
+    const file = writeTranscript();
+    const link = join(join(file, ".."), "link.jsonl");
+    symlinkSync(file, link);
+    const viaLink = await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: card.id,
+      summary: "Through a link",
+      return: "ack",
+      transcript: { path: link },
+    });
+    expect(viaLink.ok).toBe(true);
+    if (!viaLink.ok) return;
+    expect(viaLink.value).toMatchObject({ changed: { telemetry_incomplete: true } });
+    const [attempt] = await world.db.select().from(executionAttempt);
+    expect(attempt?.usageSegments).toBeNull();
   });
 
   it("still refuses estimated: true without the recipe's reason", async () => {
