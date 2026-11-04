@@ -527,7 +527,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .filter-chip select {
   appearance: none; background: transparent; border: 0; padding: 0;
   color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 11px; letter-spacing: 0.04em; cursor: pointer; max-width: 180px;
+  font-size: 12px; letter-spacing: 0.04em; cursor: pointer; max-width: 180px;
 }
 .nb .filter-chip select:focus { outline: none; }
 
@@ -554,7 +554,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   display: flex; align-items: center; gap: 8px; width: 100%;
   padding: 6px 8px; background: transparent; border: 0; border-radius: var(--oc-radius-control);
   color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 11px; letter-spacing: 0.04em; text-align: left; cursor: pointer;
+  font-size: 12px; letter-spacing: 0.04em; text-align: left; cursor: pointer;
 }
 .nb .pf-opt:hover { background: var(--oc-surface-hover); color: var(--nebula-text-primary); }
 .nb .pf-opt.on { color: var(--nebula-text-primary); }
@@ -562,7 +562,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   flex: none; width: 14px; height: 14px; border-radius: var(--oc-radius-control-sm);
   border: 1px solid var(--nebula-glass-border);
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 10px; line-height: 1;
+  font-size: 12px; line-height: 1;
 }
 .nb .pf-opt.on .pf-box { border-color: rgb(var(--oc-accent-rgb) / 0.5); background: var(--oc-surface-on); }
 .nb .pf-opt-name {
@@ -571,7 +571,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .pf-context-status {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: var(--nebula-text-tertiary); font-size: 9px; letter-spacing: 0.02em;
+  color: var(--nebula-text-tertiary); font-size: 12px; letter-spacing: 0.02em;
 }
 .nb .pf-opt-count { flex: none; opacity: 0.65; font-variant-numeric: tabular-nums; }
 /* The option row: the toggle takes the space, `only` and the counts sit at
@@ -587,7 +587,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .pf-only {
   flex: none; padding: 2px 6px; border: 0; border-radius: var(--oc-radius-control-sm);
   background: var(--oc-surface-on); color: var(--nebula-text-secondary);
-  font-family: var(--nebula-font-label); font-size: 11px; letter-spacing: 0.04em;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: 0.04em;
   cursor: pointer; opacity: 0; visibility: hidden;
 }
 .nb .pf-opt-row:hover .pf-only,
@@ -607,7 +607,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .mf-trigger, .nb .mf-clear {
   appearance: none; background: transparent; border: 0; padding: 0;
   color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 11px; letter-spacing: 0.04em; cursor: pointer;
+  font-size: 12px; letter-spacing: 0.04em; cursor: pointer;
 }
 .nb .mf-chip.on .mf-trigger { color: var(--nebula-text-primary); }
 .nb .mf-label {
@@ -628,7 +628,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   width: 100%; margin-bottom: 6px; padding: 6px 8px;
   background: var(--oc-surface-input); border: 1px solid var(--nebula-glass-border);
   border-radius: var(--oc-radius-control); color: var(--nebula-text-primary);
-  font-family: var(--nebula-font-label); font-size: 11px; letter-spacing: 0.04em;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: 0.04em;
 }
 .nb .mf-search:focus { outline: none; border-color: var(--oc-border-strong); }
 .nb .mf-list { display: flex; flex-direction: column; max-height: 46vh; overflow-y: auto; }
@@ -636,7 +636,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   display: flex; align-items: center; gap: 10px; width: 100%;
   padding: 6px 8px; background: transparent; border: 0; border-radius: var(--oc-radius-control);
   color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 11px; letter-spacing: 0.04em; text-align: left; cursor: pointer;
+  font-size: 12px; letter-spacing: 0.04em; text-align: left; cursor: pointer;
 }
 .nb .mf-opt:hover { background: var(--oc-surface-hover); color: var(--nebula-text-primary); }
 .nb .mf-opt.on { color: var(--nebula-text-primary); background: rgb(var(--oc-white-rgb) / 0.08); }
@@ -651,13 +651,13 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .mf-opt-count { flex: none; opacity: 0.65; font-variant-numeric: tabular-nums; }
 .nb .mf-empty {
   margin: 0; padding: 8px; color: var(--nebula-text-secondary);
-  font-family: var(--nebula-font-label); font-size: 11px;
+  font-family: var(--nebula-font-label); font-size: 12px;
 }
 .nb .mf-create-trigger {
   width: 100%; margin-top: 6px; padding: 8px;
   border: 0; border-top: 1px solid var(--nebula-glass-border);
   background: transparent; color: var(--nebula-mist);
-  font-family: var(--nebula-font-label); font-size: 11px; text-align: left;
+  font-family: var(--nebula-font-label); font-size: 12px; text-align: left;
   cursor: pointer;
 }
 .nb .mf-create-trigger:hover { color: var(--nebula-text-primary); }
@@ -668,7 +668,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .mf-create label > span,
 .nb .mf-create-preview > span {
   color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+  font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
 }
 .nb .mf-create-head button {
   display: inline-flex; padding: 3px; border: 0; background: transparent;
@@ -689,7 +689,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-control);
   background: rgb(var(--oc-scrim-rgb) / 0.5);
 }
-.nb .mf-create-error { margin: 0; color: var(--oc-danger); font-size: 11px; line-height: 1.4; }
+.nb .mf-create-error { margin: 0; color: var(--oc-danger); font-size: 12px; line-height: 1.4; }
 
 /* ---------- period filter ----------
    Same family as the project and mission triggers: a 32px Control with a
@@ -727,7 +727,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .facet-filters { position: relative; display: inline-flex; min-width: 0; }
 .nb .ff-trigger {
   appearance: none; color: var(--nebula-text-secondary); cursor: pointer;
-  font-family: var(--nebula-font-label); font-size: 11px; letter-spacing: 0.04em;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: 0.04em;
 }
 .nb .ff-trigger.on {
   color: var(--nebula-text-primary); border-color: var(--oc-border-strong);
@@ -752,7 +752,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   flex: 1; min-width: 0; min-height: 30px; padding: 0;
   border: 0; outline: none; background: transparent;
   color: var(--nebula-text-primary); font-family: var(--nebula-font-label);
-  font-size: 11px; letter-spacing: 0.04em;
+  font-size: 12px; letter-spacing: 0.04em;
 }
 .nb .ff-search::placeholder { color: var(--nebula-text-tertiary); }
 .nb .ff-search-clear {
@@ -770,14 +770,14 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .ff-section h3 {
   margin: 0; padding: 4px 8px;
   color: var(--nebula-text-tertiary); font-family: var(--nebula-font-sans);
-  font-size: 11px; font-weight: 600;
+  font-size: 12px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase;
 }
 .nb .ff-list { display: flex; flex-direction: column; }
 .nb .ff-opt {
   display: flex; flex-direction: row; align-items: center; gap: 8px; width: 100%;
   padding: 6px 8px; border-radius: var(--oc-radius-control); color: var(--nebula-text-secondary);
-  font-family: var(--nebula-font-label); font-size: 11px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: 0.04em; cursor: pointer;
 }
 .nb .ff-opt:hover { background: var(--oc-surface-hover); color: var(--nebula-text-primary); }
@@ -800,14 +800,14 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   width: 100%; margin-top: 8px; padding: 8px;
   border: 0; border-top: 1px solid var(--nebula-glass-border);
   background: transparent; color: var(--nebula-mist);
-  font-family: var(--nebula-font-label); font-size: 11px; text-align: left;
+  font-family: var(--nebula-font-label); font-size: 12px; text-align: left;
   cursor: pointer;
 }
 .nb .ff-clear:hover:not(:disabled) { color: var(--nebula-text-primary); }
 .nb .ff-clear:disabled { opacity: 0.4; cursor: default; }
 .nb .filter-result {
   color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+  font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
   white-space: nowrap;
 }
 .nb .filter-result { padding-left: 8px; border-left: 1px solid var(--nebula-glass-border); }
@@ -947,7 +947,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
   background: var(--nebula-mist-glow); color: var(--nebula-btn-light-text);
-  font-family: var(--nebula-font-mono); font-size: 11px; font-weight: 600;
+  font-family: var(--nebula-font-mono); font-size: 12px; font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .nb .topbar-l2 .ff-query-badge {
@@ -993,7 +993,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    own: a hairline beside it only reads as one more thing to look at, and
    when the level wraps it would stand at the start of a line. */
 .nb .topbar-l2 .filter-result {
-  font-size: 11px; letter-spacing: 0.04em; text-transform: none;
+  font-size: 12px; letter-spacing: 0.04em; text-transform: none;
   color: var(--nebula-text-tertiary); font-variant-numeric: tabular-nums;
   padding-left: 0; border-left: 0;
 }
@@ -1045,7 +1045,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .board-total:hover .bt-lead { color: var(--nebula-dust-core); }
 .nb .board-total .bt-sub {
-  font-family: var(--nebula-font-mono); font-size: 11px;
+  font-family: var(--nebula-font-mono); font-size: 12px;
   letter-spacing: 0.04em; color: var(--nebula-text-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -1056,14 +1056,14 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 /* The stat's own label ("Custo"): money never leads unnamed (ux-v2 §4).
    Same quiet voice as the support numbers — the figure is the headline. */
 .nb .bt-label {
-  font-family: var(--nebula-font-mono); font-size: 11px;
+  font-family: var(--nebula-font-mono); font-size: 12px;
   letter-spacing: 0.04em; color: var(--nebula-text-tertiary);
 }
 .nb .bt-popover .bt-note {
   color: var(--nebula-text-primary);
 }
 .nb .board-total .bt-none {
-  font-family: var(--nebula-font-mono); font-size: 11px;
+  font-family: var(--nebula-font-mono); font-size: 12px;
   color: var(--nebula-text-secondary);
 }
 /* The reading of the figure, one line per fact, each caveat linked to where
@@ -1081,12 +1081,12 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   font-variant-numeric: tabular-nums; text-shadow: var(--nebula-glow-text);
 }
 .nb .bt-popover .bt-figure .bt-sub {
-  font-family: var(--nebula-font-mono); font-size: 11px;
+  font-family: var(--nebula-font-mono); font-size: 12px;
   letter-spacing: 0.04em; color: var(--nebula-text-tertiary);
   font-variant-numeric: tabular-nums;
 }
 .nb .bt-line {
-  font-family: var(--nebula-font-label); font-size: 11px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: 0.04em; color: var(--nebula-text-secondary);
 }
 .nb a.bt-line { text-decoration: none; }
@@ -1109,12 +1109,12 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .mission-form-label,
 .nb .mission-editor label > span {
   color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 9px; letter-spacing: 0.09em; text-transform: uppercase;
+  font-size: 12px; letter-spacing: 0.09em; text-transform: uppercase;
 }
 .nb .mission-status {
   padding: 2px 7px; border: 1px solid var(--nebula-glass-border);
   border-radius: var(--oc-radius-pill); color: var(--nebula-text-secondary);
-  font-family: var(--nebula-font-label); font-size: 9px; letter-spacing: 0.04em;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: 0.04em;
 }
 .nb .mission-status.ativa { color: var(--oc-ok); border-color: rgb(var(--oc-ok-rgb) / 0.3); }
 .nb .mission-status.pausada { color: var(--oc-warn); border-color: rgb(var(--oc-warn-rgb) / 0.3); }
@@ -1160,28 +1160,28 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   display: flex; align-items: baseline; gap: 5px; padding: 5px 8px;
   border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill);
   color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 9px; white-space: nowrap;
+  font-size: 12px; white-space: nowrap;
 }
-.nb .mission-count b { color: var(--nebula-text-primary); font-size: 11px; font-weight: 500; }
+.nb .mission-count b { color: var(--nebula-text-primary); font-size: 12px; font-weight: 500; }
 .nb .mission-context { grid-column: 1 / -1; border-top: 1px solid var(--nebula-glass-border); padding-top: 10px; }
 .nb .mission-context summary {
   width: max-content; color: var(--nebula-text-secondary);
-  font-family: var(--nebula-font-label); font-size: 10px; letter-spacing: 0.06em;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: 0.06em;
   cursor: pointer;
 }
 .nb .mission-context[open] summary { margin-bottom: 8px; color: var(--nebula-text-primary); }
 .nb .mission-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .nb .mission-delete-button {
   padding: 7px 12px; border: 1px solid rgb(var(--oc-danger-rgb) / 0.24); border-radius: var(--oc-radius-pill);
-  background: transparent; color: var(--oc-danger); font-size: 11px; cursor: pointer;
+  background: transparent; color: var(--oc-danger); font-size: 12px; cursor: pointer;
 }
 .nb .mission-delete-button:hover { background: rgb(var(--oc-danger-rgb) / 0.08); }
 .nb .mission-delete-button:disabled { opacity: 0.45; cursor: not-allowed; }
 .nb .mission-delete-confirm { display: flex; align-items: center; gap: 8px; }
-.nb .mission-delete-confirm > span { color: var(--oc-danger); font-size: 11px; }
+.nb .mission-delete-confirm > span { color: var(--oc-danger); font-size: 12px; }
 .nb .mission-error {
   margin: 10px 0 0; padding: 7px 10px; border-left: 2px solid rgb(var(--oc-danger-rgb) / 0.45);
-  border-radius: var(--oc-radius-badge); background: rgb(var(--oc-danger-rgb) / 0.06); color: var(--oc-danger); font-size: 11px;
+  border-radius: var(--oc-radius-badge); background: rgb(var(--oc-danger-rgb) / 0.06); color: var(--oc-danger); font-size: 12px;
 }
 .nb .mission-editor { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr); gap: 14px 18px; }
 .nb .mission-editor-fields { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 10px; }
@@ -1218,7 +1218,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .release-kicker,
 .nb .release-rel-label {
   display: block; color: var(--nebula-text-secondary);
-  font-family: var(--nebula-font-label); font-size: 9px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: 0.09em; text-transform: uppercase;
 }
 .nb .release-header h1 {
@@ -1234,17 +1234,17 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   display: inline-flex; align-items: baseline; gap: 5px; padding: 5px 8px;
   border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill);
   color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 9px; white-space: nowrap;
+  font-size: 12px; white-space: nowrap;
 }
 .nb .release-count b {
-  color: var(--nebula-text-primary); font-size: 11px; font-weight: 500;
+  color: var(--nebula-text-primary); font-size: 12px; font-weight: 500;
 }
 .nb .release-usage {
   display: flex; align-items: baseline; align-content: flex-start;
   gap: 7px 14px; flex-wrap: wrap; padding-top: 12px;
   border-top: 1px solid var(--nebula-glass-border);
   color: var(--nebula-text-secondary); font-family: var(--nebula-font-mono);
-  font-size: 11px;
+  font-size: 12px;
 }
 .nb .release-usage b {
   color: var(--nebula-text-primary); font-size: 14px; font-weight: 500;
@@ -1262,7 +1262,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   appearance: none; padding: 4px 8px; border: 1px solid var(--nebula-glass-border);
   border-radius: var(--oc-radius-pill); background: var(--oc-surface-subtle);
   color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 10px; line-height: 1.25; cursor: pointer;
+  font-size: 12px; line-height: 1.25; cursor: pointer;
 }
 .nb .release-chip:hover:not(.static) {
   color: var(--nebula-text-primary); border-color: var(--oc-border-strong);
@@ -1270,7 +1270,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .release-chip.static { cursor: default; }
 .nb .release-empty {
   color: var(--nebula-text-tertiary); font-family: var(--nebula-font-label);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 /* ---------- board ---------- */
@@ -1291,7 +1291,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .col-head {
   display: flex; align-items: center; gap: var(--nebula-space-2);
   padding: 2px 6px 10px; line-height: 16px; white-space: nowrap;
-  font-family: var(--nebula-font-label); font-size: 11.5px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: var(--nebula-tracking-wide);
   text-transform: uppercase; color: var(--nebula-text-secondary);
 }
@@ -1302,7 +1302,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 
 .nb .empty-col {
   border: 1px dashed var(--oc-border-dashed); border-radius: var(--nebula-glass-radius);
-  padding: 22px 16px; font-size: 11.5px; color: var(--nebula-text-tertiary);
+  padding: 22px 16px; font-size: 12px; color: var(--nebula-text-tertiary);
   line-height: 1.55; text-align: center;
 }
 .nb .empty-col i { font-style: italic; }
@@ -1341,7 +1341,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .card .cid {
   flex: none;
-  font-family: var(--nebula-font-mono); font-size: 10px;
+  font-family: var(--nebula-font-mono); font-size: 12px;
   color: var(--nebula-text-tertiary); letter-spacing: 0.06em;
 }
 /* With several projects on the board the prefix is the origin, not a number. */
@@ -1354,17 +1354,17 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    (ux-v2 §3 item 4). */
 .nb .card .card-type {
   flex: none;
-  font-family: var(--nebula-font-mono); font-size: 10px;
+  font-family: var(--nebula-font-mono); font-size: 12px;
   color: var(--nebula-text-tertiary); letter-spacing: 0.03em;
 }
 /* Cost sits top-right, data face, text-3 — the one number the id-row
    carries, so it never has to fight the footer for room. */
 .nb .card .card-cost {
-  flex: none; font-family: var(--nebula-font-mono); font-size: 11px;
+  flex: none; font-family: var(--nebula-font-mono); font-size: 12px;
   color: var(--nebula-text-tertiary); white-space: nowrap;
 }
 .nb .selo {
-  font-family: var(--nebula-font-label); font-size: 8.5px; letter-spacing: 0.08em;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: 0.08em;
   color: var(--nebula-text-tertiary); border: 1px solid var(--nebula-glass-border);
   border-radius: var(--oc-radius-pill); padding: 1px 6px;
   /* A badge degrades with an ellipsis before it ever pushes past the card's
@@ -1373,7 +1373,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .nb .tag {
-  font-family: var(--nebula-font-label); font-size: 9.5px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: var(--nebula-tracking-wide); text-transform: uppercase;
   border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill);
   padding: 1px 6px; color: var(--nebula-text-secondary);
@@ -1403,7 +1403,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   overflow: hidden;
   border-top: 1px solid var(--nebula-plan-divider);
   margin-top: 2px; padding-top: 3px;
-  font-family: var(--nebula-font-mono); font-size: 10.5px; color: var(--nebula-text-tertiary);
+  font-family: var(--nebula-font-mono); font-size: 12px; color: var(--nebula-text-tertiary);
   line-height: 1.2;
 }
 .nb .card-foot > * { flex: none; min-width: 0; white-space: nowrap; }
@@ -1434,18 +1434,18 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .cli-mark svg { width: 100%; height: 100%; display: block; }
 .nb .cli-name {
-  flex: none; font-family: var(--nebula-font-label); font-size: 9.5px;
+  flex: none; font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: 0.03em; color: var(--nebula-mist);
   max-width: 86px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* plan and reality, in the same order the model chain reads them */
 .nb .meta-cli { display: inline-flex; align-items: center; gap: 4px; }
-.nb .meta-cli-arrow { font-size: 9px; color: var(--nebula-text-tertiary); }
+.nb .meta-cli-arrow { font-size: 12px; color: var(--nebula-text-tertiary); }
 
 /* pulse dos executores */
 .nb .exec-pulse {
   display: flex; align-items: center; gap: 6px;
-  font-family: var(--nebula-font-label); font-size: 10.5px; color: var(--oc-info);
+  font-family: var(--nebula-font-label); font-size: 12px; color: var(--oc-info);
 }
 .nb .exec-pulse .dot-exec {
   width: 6px; height: 6px; border-radius: var(--oc-radius-circle);
@@ -1460,12 +1460,12 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 
 .nb .telemetry {
-  font-family: var(--nebula-font-mono); font-size: 10.5px;
+  font-family: var(--nebula-font-mono); font-size: 12px;
   color: var(--nebula-text-tertiary); letter-spacing: 0.02em;
 }
 .nb .telemetry b { color: var(--nebula-text-secondary); font-weight: var(--nebula-weight-medium); }
 .nb .review-chip {
-  font-family: var(--nebula-font-label); font-size: 10px; color: var(--oc-chip-review-fg);
+  font-family: var(--nebula-font-label); font-size: 12px; color: var(--oc-chip-review-fg);
   background: var(--oc-chip-review-bg);
   border: 1px solid var(--oc-chip-review-border); border-radius: var(--oc-radius-pill); padding: 1px 6px;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2557,7 +2557,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   }
   .nb .topbar-l1 { position: static; gap: 8px; padding: 4px 0 2px; margin-bottom: 0; }
   .nb .topbar-l2 { position: relative; padding-bottom: 6px; }
-  .nb .topbar .btn-ghost { padding: 6px 10px; font-size: 11px; }
+  .nb .topbar .btn-ghost { padding: 6px 10px; font-size: 12px; }
   /* the one button level 2 keeps for the filters that left it; the panel
      hangs off the level, which sits inside the sticky wrap */
   .nb .filters-btn { display: inline-flex; }
@@ -2683,7 +2683,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .nb .ml-status:focus { outline: none; }
-  .nb .ml-caret { flex: none; font-size: 9px; color: var(--nebula-text-tertiary); }
+  .nb .ml-caret { flex: none; font-size: 12px; color: var(--nebula-text-tertiary); }
   /* the count leans on the far edge and never shrinks: the label may lose
      characters to an ellipsis, the number may not lose a digit */
   .nb .ml-head .count { flex: none; margin-left: auto; color: var(--nebula-text-tertiary); }
@@ -2746,7 +2746,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   /* the type in one character, coloured as its chip was */
   .nb .ml-type {
     flex: none; width: 11px; text-align: center;
-    font-family: var(--nebula-font-label); font-size: 11px;
+    font-family: var(--nebula-font-label); font-size: 12px;
     font-weight: var(--nebula-weight-medium);
     color: var(--nebula-text-tertiary);
   }
@@ -2755,7 +2755,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .ml-type.rfc { color: var(--nebula-mist-glow); }
   .nb .ml-row .cid {
     flex: none;
-    font-family: var(--nebula-font-mono); font-size: 10px;
+    font-family: var(--nebula-font-mono); font-size: 12px;
     letter-spacing: 0.04em; color: var(--nebula-text-tertiary);
   }
   .nb .ml-row .cid-prefix {
@@ -2772,7 +2772,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
      sits with the number because the right edge is where the run's own facts
      live. A CLI with no mark spends a little more, and no more than that. */
   .nb .ml-row .cli-mark { width: 14px; height: 14px; }
-  .nb .ml-row .cli-name { max-width: 54px; font-size: 9px; }
+  .nb .ml-row .cli-name { max-width: 54px; font-size: 12px; }
   /* the review chip, reduced to the dot that still makes a person tap */
   .nb .ml-flag {
     flex: none; width: 6px; height: 6px; border-radius: var(--oc-radius-circle);
@@ -2781,7 +2781,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   /* the one number, on the edge, never shrinking a digit */
   .nb .ml-num {
     flex: none;
-    font-family: var(--nebula-font-mono); font-size: 11px;
+    font-family: var(--nebula-font-mono); font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: var(--nebula-text-secondary);
   }
@@ -2942,7 +2942,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   /* the last rung, for the 320px screens: the figure takes the data step of
      the ramp and every control trims its padding. Below this there is nothing
      left to give that is not a control somebody needs. */
-  .nb .topbar-wrap .board-total .bt-lead { font-size: 11px; }
+  .nb .topbar-wrap .board-total .bt-lead { font-size: 12px; }
   /* a six-figure total in the data face is 94px wide at this step; the row
      gives the 6px it needs back out of its own gaps */
   .nb .topbar-wrap { gap: 6px; }
