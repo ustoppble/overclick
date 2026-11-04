@@ -57,7 +57,9 @@ export type KeptCard = { id: string; error: string };
  * single discard: the same task_update for each card, so the board refuses in
  * a batch exactly what it refuses one at a time, and what an agent would be
  * refused. The reason is required and lands on every card's trail. There is no
- * undo: a discarded card is reopened through the path that already exists.
+ * undo, and no way back afterwards either: the state machine allows no event
+ * on a discarded card (task_reopen included), hence the reason and the
+ * confirmation with the count before anything is sent.
  *
  * Nothing the client sent is trusted: every id is looked up again under the
  * caller's scope before the tool sees it. Someone else's card, an id that
