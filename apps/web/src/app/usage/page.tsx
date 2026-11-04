@@ -816,7 +816,7 @@ export default async function InsightsPage({
             </div>
             ) : null}
 
-            <div className="ins-grid">
+            <div className={`ins-grid${tab === "overview" ? "" : " ins-grid-one"}`}>
               {blocks.has("project") ? (
               <section className="ins-panel nebula-glass">
                 <div className="ins-cap">

@@ -40,8 +40,10 @@
 }
 
 /* The By-model table: the CLI mark and the effort each model ran with. */
+/* One table per tab: it takes the whole row, so no header is cut. */
+.nb .ins-grid.ins-grid-one { grid-template-columns: minmax(0, 1fr); }
 .nb .ins-col-harness { width: 16%; }
-.nb .ins-harness { white-space: nowrap; }
+.nb .ins-harness { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nb .ins-harness-cli {
   display: inline-flex;
   align-items: center;
@@ -52,3 +54,7 @@
 @media (prefers-reduced-motion: reduce) {
   .nb .usage-tabs a { transition: none; }
 }
+
+/* With the whole row, the narrow columns get room for their full headers. */
+.nb .ins-grid-one .ins-col-time { width: 120px; }
+.nb .ins-grid-one .ins-col-attempts { width: 130px; }

@@ -6,7 +6,7 @@ import { BoardSkeleton } from "./home/board-skeleton";
 import { DetailSkeleton } from "./home/detail-skeleton";
 import InsightsLoading from "./usage/loading";
 import { InsightsSkeleton } from "./usage/insights-skeleton";
-import SettingsLoading from "./settings/loading";
+import SettingsLoading from "./settings/[group]/loading";
 import { SettingsSkeleton } from "./settings/settings-skeleton";
 
 /**
