@@ -362,6 +362,63 @@ describe("MCP as a member: another person's claim and mission stay theirs", () =
     });
   });
 
+  describe("subtasks that travel with a parent card", () => {
+    const ownMission = async (member: AuthContext) => {
+      const own = await invokeTool(world.db, member, "mission_create", { title: "Minha" });
+      if (!own.ok) throw new Error(JSON.stringify(own));
+      return (own.value as { mission: { id: string } }).mission.id;
+    };
+    /** The member's loose card, with two subtasks the admin filed under it. */
+    async function parentWithAdminChildren() {
+      const member = await asMember();
+      const parent = await invokeTool(world.db, member, "task_create", card("pai do member", { project_id: world.projectId }));
+      if (!parent.ok) throw new Error(JSON.stringify(parent));
+      const parentId = shortOf(parent.value);
+      const ids: string[] = [];
+      for (const title of ["filho livre", "filho do admin"]) {
+        const child = await invokeTool(world.db, admin, "task_create", card(title, { project_id: world.projectId, parent: parentId }));
+        if (!child.ok) throw new Error(JSON.stringify(child));
+        ids.push(shortOf(child.value));
+      }
+      return { member, parentId, free: ids[0]!, other: ids[1]! };
+    }
+
+    it("leaves behind a subtask that sits in the admin's mission", async () => {
+      const { member, parentId, free, other } = await parentWithAdminChildren();
+      const row = await statusOf(other);
+      await world.db.update(task).set({ missionId: world.missionId }).where(eq(task.id, row.id));
+      const mine = await ownMission(member);
+      const moved = await invokeTool(world.db, member, "task_update", { task_id: parentId, mission_id: mine });
+      expect(moved.ok, JSON.stringify(moved)).toBe(true);
+      expect((await statusOf(parentId)).missionId).toBe(mine);
+      expect((await statusOf(free)).missionId).toBe(mine);
+      expect((await statusOf(other)).missionId).toBe(world.missionId);
+      expect(JSON.stringify(moved)).toContain('"subtasks_moved":1');
+    });
+
+    it("leaves behind a subtask the admin's token is running", async () => {
+      const { member, parentId, free, other } = await parentWithAdminChildren();
+      await adminHolds(other);
+      const mine = await ownMission(member);
+      const moved = await invokeTool(world.db, member, "task_update", { task_id: parentId, mission_id: mine });
+      expect(moved.ok, JSON.stringify(moved)).toBe(true);
+      expect((await statusOf(free)).missionId).toBe(mine);
+      const kept = await statusOf(other);
+      expect(kept.missionId).toBeNull();
+      expect(kept.status).toBe("em_execucao");
+      expect(JSON.stringify(moved)).toContain('"subtasks_moved":1');
+    });
+
+    it("the admin still takes every subtask along", async () => {
+      const { parentId, free, other } = await parentWithAdminChildren();
+      await adminHolds(other);
+      const moved = await invokeTool(world.db, admin, "task_update", { task_id: parentId, mission_id: world.missionId });
+      expect(moved.ok, JSON.stringify(moved)).toBe(true);
+      expect((await statusOf(free)).missionId).toBe(world.missionId);
+      expect((await statusOf(other)).missionId).toBe(world.missionId);
+    });
+  });
+
   describe("what a member reads of an admin's card", () => {
     it("task_get does not show the admin token's label as the card's agent", async () => {
       // No origem on the card: the board fills it with the creating token's label.

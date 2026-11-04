@@ -4065,13 +4065,42 @@ async function taskUpdate(
       // keeps that true instead of leaving its children behind. Only the
       // children the caller may see follow (OCL-227): an admin's subtask under
       // a member's card stays where the admin put it, and is never counted.
-      const children = await tx
-        .update(task)
-        .set({ missionId })
-        .where(
-          and(eq(task.parentId, nextRow.id), taskScope(principalFromAuth(ctx))),
-        )
-        .returning({ id: task.id });
+      // Each child also has to pass what the parent passed above: leaving a
+      // mission changes it, and a run another person's token holds stays put.
+      const principal = principalFromAuth(ctx);
+      const candidates = await tx
+        .select({
+          id: task.id,
+          status: task.status,
+          claimedByTokenId: task.claimedByTokenId,
+          holder: mcpToken.ownerUserId,
+          missionId: mission.id,
+          missionAuthor: mission.createdByUserId,
+        })
+        .from(task)
+        .leftJoin(mcpToken, eq(task.claimedByTokenId, mcpToken.id))
+        .leftJoin(mission, eq(task.missionId, mission.id))
+        .where(and(eq(task.parentId, nextRow.id), taskScope(principal)));
+      const followers = isAdmin(principal)
+        ? candidates
+        : candidates.filter(
+            (child) =>
+              !(
+                child.status === "em_execucao" &&
+                child.claimedByTokenId !== null &&
+                child.holder !== principal?.userId
+              ) &&
+              (child.missionId === null ||
+                canChangeMission(principal, { createdByUserId: child.missionAuthor })),
+          );
+      const children =
+        followers.length === 0
+          ? []
+          : await tx
+              .update(task)
+              .set({ missionId })
+              .where(inArray(task.id, followers.map((child) => child.id)))
+              .returning({ id: task.id });
       return { updated, children: children.length };
     });
     if (moved.updated) nextRow = moved.updated;
