@@ -1,3 +1,4 @@
+import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
 import { mcpToken, user } from "@agent-board/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
@@ -72,7 +73,7 @@ function lastCodeSentTo(email: string): string {
  */
 describe("setting up the first admin", () => {
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     world = await createTestWorld();
     // A fresh instance: nobody has an account yet.
     await world.db.delete(mcpToken);

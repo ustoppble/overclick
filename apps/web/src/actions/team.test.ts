@@ -1,3 +1,4 @@
+import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
 import { invitation, mcpToken, organization, project, projectMember, user, workspace } from "@agent-board/db";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -142,7 +143,7 @@ const PUBLIC_URL = "https://board.example.test";
 /** OCL-222: the admin brings a member in, and can switch them off. */
 describe("invitation and team", () => {
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     process.env.OVERCLICK_PUBLIC_URL = PUBLIC_URL;
     requestState.headers = {};
     world = await createTestWorld();

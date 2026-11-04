@@ -50,29 +50,6 @@ export function authSecretWeakness(secret: string): string | null {
   return null;
 }
 
-let warnedWeakSecret = false;
-
-/** For tests: lets the once-per-process warning fire again. */
-export function resetAuthSecretWarning(): void {
-  warnedWeakSecret = false;
-}
-
-/**
- * A secret that is long enough but visibly not random is warned about, once
- * per process and without its value, and still used: refusing would stop an
- * instance that has been running on it, and rotating it signs everybody out.
- * The operator decides when. `docs/getting-started.md` says how to make one.
- */
-function warnIfWeakSecret(secret: string): void {
-  if (warnedWeakSecret) return;
-  warnedWeakSecret = true;
-  const why = authSecretWeakness(secret);
-  if (!why) return;
-  console.warn(
-    `[auth] AUTH_SECRET looks weak (${why}). It signs every session; replace it with 32 random bytes (openssl rand -base64 32). Replacing it signs everyone out.`,
-  );
-}
-
 function secretKey(): Uint8Array {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < MIN_SECRET_LENGTH) {
@@ -80,7 +57,16 @@ function secretKey(): Uint8Array {
       `AUTH_SECRET must be set (${MIN_SECRET_LENGTH}+ characters)`,
     );
   }
-  warnIfWeakSecret(secret);
+  // This key signs every session and, through `deriveKey`, hashes every
+  // sign-in code. A secret that visibly is not random is refused rather than
+  // warned about: a warning nobody reads leaves the instance signing with it.
+  // The message says why and how to fix it, and never carries the value.
+  const why = authSecretWeakness(secret);
+  if (why) {
+    throw new Error(
+      `AUTH_SECRET is too weak (${why}). It signs every session; generate one with: openssl rand -base64 32. Replacing it signs everyone out.`,
+    );
+  }
   return new TextEncoder().encode(secret);
 }
 

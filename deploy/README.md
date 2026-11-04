@@ -22,7 +22,7 @@ cp deploy/.env.example deploy/.env       # then fill it in, see below
 
 ```
 POSTGRES_PASSWORD=<a long random string>
-AUTH_SECRET=<32+ random characters>
+AUTH_SECRET=<openssl rand -base64 32>
 OVERCLICK_PORT=3100                      # optional, the loopback port the proxy talks to
 GITHUB_WEBHOOK_SECRET=<random string>    # optional, see "GitHub release webhook"
 RESEND_API_KEY=<your Resend API key>     # needed to sign in, see "Sign-in by email code"
@@ -30,7 +30,11 @@ EMAIL_FROM=<Name <sender@your-domain>>   # needed to sign in, see "Sign-in by em
 OVERCLICK_PUBLIC_URL=<https://board.your-domain>   # optional, see "Public address"
 ```
 
-Generate both with `openssl rand -hex 32`. The app listens on `127.0.0.1:3100`
+Generate `POSTGRES_PASSWORD` with `openssl rand -hex 32` and `AUTH_SECRET` with
+`openssl rand -base64 32` (hex of the same size works too). The app **refuses
+to sign or verify a session** with an `AUTH_SECRET` that is only long but not
+random, such as a repeated character or a sentence, and says so in the log
+without printing the value. Replacing it signs everyone out. The app listens on `127.0.0.1:3100`
 by design: nothing reaches it except through the reverse proxy.
 
 ## Public address

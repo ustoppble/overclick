@@ -1,3 +1,4 @@
+import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
 import { loginCode, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,7 +52,7 @@ describe("logging out revokes the session, not just the cookie", () => {
   let userId = "";
 
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     world = await createTestWorld();
     const [row] = await world.db
       .insert(user)

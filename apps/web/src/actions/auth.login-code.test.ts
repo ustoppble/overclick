@@ -1,3 +1,4 @@
+import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
 import { loginCode, loginCodeRequest, loginFailure, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -121,7 +122,7 @@ describe("signing in with a code sent by email", () => {
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     at(0);
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     delete process.env.OVERCLICK_TRUSTED_PROXY;
     requestState.headers = {};
     world = await createTestWorld();

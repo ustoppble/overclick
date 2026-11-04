@@ -3,12 +3,13 @@ import { SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   authSecretWeakness,
+  deriveKey,
   readSessionToken,
-  resetAuthSecretWarning,
   signSession,
 } from "./session";
+import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
 
-const SECRET = "test-secret-at-least-32-characters-long";
+const SECRET = TEST_AUTH_SECRET;
 
 describe("session token", () => {
   afterEach(() => {
@@ -87,26 +88,43 @@ describe("AUTH_SECRET strength", () => {
     expect(authSecretWeakness("ab".repeat(32))).not.toBeNull();
   });
 
-  it("warns once, never prints the secret, and does not refuse a weak one that is long enough", async () => {
-    const secret = "weak-but-long-enough-secret-value-xyz-123";
-    process.env.AUTH_SECRET = secret;
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    resetAuthSecretWarning();
-
-    await signSession({ userId: "user-1", sessionVersion: 1 });
-    await signSession({ userId: "user-1", sessionVersion: 1 });
-
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
-    expect(JSON.stringify(warn.mock.calls)).toMatch(/AUTH_SECRET/);
+  it("refuses a secret that is long enough but visibly not random, and never prints it", async () => {
+    for (const secret of [
+      "weak-but-long-enough-secret-value-xyz-123",
+      "s".repeat(32),
+      "test-secret-at-least-32-characters-long",
+      "replace-with-a-long-random-string-at-least-32-chars",
+    ]) {
+      process.env.AUTH_SECRET = secret;
+      const failures: unknown[] = [];
+      await signSession({ userId: "user-1", sessionVersion: 1 }).catch((e) => failures.push(e));
+      try {
+        deriveKey("anything");
+      } catch (e) {
+        failures.push(e);
+      }
+      expect(failures).toHaveLength(2);
+      for (const failure of failures) {
+        const message = (failure as Error).message;
+        expect(message).toMatch(/AUTH_SECRET/);
+        expect(message).toMatch(/openssl rand -base64 32/);
+        expect(message).not.toContain(secret);
+      }
+    }
   });
 
-  it("does not warn for a strong secret", async () => {
+  it("does not sign or verify anything with a weak secret", async () => {
+    process.env.AUTH_SECRET = SECRET;
+    const token = await signSession({ userId: "user-1", sessionVersion: 1 });
+    process.env.AUTH_SECRET = "s".repeat(32);
+    await expect(readSessionToken(token)).resolves.toBeNull();
+  });
+
+  it("signs with a strong secret and says nothing", async () => {
     process.env.AUTH_SECRET = random32().toString("base64");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    resetAuthSecretWarning();
 
-    await signSession({ userId: "user-1", sessionVersion: 1 });
+    await expect(signSession({ userId: "user-1", sessionVersion: 1 })).resolves.toEqual(expect.any(String));
 
     expect(warn).not.toHaveBeenCalled();
   });
