@@ -312,24 +312,76 @@ describe("signing in with a code sent by email", () => {
         expect(new Set(answers.map((a) => JSON.stringify(a)))).toEqual(
           new Set([JSON.stringify({ sent: true })]),
         );
-        expect(logged).toHaveBeenCalledTimes(1);
+        // One line for the admission cap, one for the real sends reaching it.
+        expect(logged).toHaveBeenCalledTimes(2);
         const line = JSON.stringify(logged.mock.calls);
         expect(line).toMatch(/cap/i);
         for (const email of emails) expect(line).not.toContain(email);
         logged.mockRestore();
       });
 
-      it("spends the cap only on emails that go out: addresses with no account cost it nothing", async () => {
+      it("admits by the cap the same way whether or not the address has an account: the canary cannot tell", async () => {
+        process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "3";
+        const [canary] = await addAccounts(2);
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const observed: Array<{ canarySent: number; admitted: number | undefined }> = [];
+        for (const target of ["g1@local.test", "nobody-here@local.test"]) {
+          // The cap sits one ask short of its limit; the attacker asks for the
+          // target, then for a canary account of their own, and watches
+          // whether the canary's mail comes.
+          await world.db.delete(loginCodeRequest);
+          emailState.sendEmail.mockClear();
+          await world.db
+            .insert(loginCodeRequest)
+            .values({ id: "code-hour-global:all", count: 2, windowStartedAt: new Date() });
+
+          await requestLoginCodeAction(null, emailForm(target));
+          await requestLoginCodeAction(null, emailForm(canary!));
+
+          const [row] = await world.db
+            .select()
+            .from(loginCodeRequest)
+            .where(eq(loginCodeRequest.id, "code-hour-global:all"));
+          observed.push({ canarySent: sentTo(canary!), admitted: row?.count });
+        }
+        logged.mockRestore();
+
+        expect(observed[0]).toEqual(observed[1]);
+        expect(observed[0]).toEqual({ canarySent: 0, admitted: 3 });
+      });
+
+      it("lets addresses with no account use the admissions up like any other: the price of not leaking", async () => {
         process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "2";
-        const accounts = await addAccounts(2);
-        // Far more strangers' asks than the cap, none of them with an account.
-        for (let i = 0; i < 6; i++) {
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        for (let i = 0; i < 4; i++) {
           await requestLoginCodeAction(null, emailForm(`ghost${i}@local.test`));
         }
-        expect(await world.db.select().from(loginCodeRequest).where(eq(loginCodeRequest.id, "code-hour-global:all"))).toHaveLength(0);
+        logged.mockRestore();
+        // Addresses with no account used the admissions up, so a real one waits
+        // for the hour like everyone else: that is the cost of not leaking.
+        await requestLoginCodeAction(null, emailForm(EMAIL));
+        expect(sentTo(EMAIL)).toBe(0);
+        expect(await world.db.select().from(loginCodeRequest).where(eq(loginCodeRequest.id, "code-hour-global:all")).then((r) => r[0]?.count)).toBe(2);
+      });
 
-        for (const email of accounts) await requestLoginCodeAction(null, emailForm(email));
-        expect(emailState.sendEmail).toHaveBeenCalledTimes(2);
+      it("counts the emails that really go out apart, as telemetry that never gates a request", async () => {
+        process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "3";
+        const [real] = await addAccounts(1);
+        await requestLoginCodeAction(null, emailForm("ghost@local.test"));
+        const sent = () =>
+          world.db.select().from(loginCodeRequest).where(eq(loginCodeRequest.id, "code-hour-sent:all")).then((r) => r[0]?.count);
+        expect(await sent()).toBeUndefined();
+
+        // The real-send count is far past the cap; an admitted ask still gets its email.
+        await world.db
+          .insert(loginCodeRequest)
+          .values({ id: "code-hour-sent:all", count: 50, windowStartedAt: new Date() });
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        await requestLoginCodeAction(null, emailForm(real!));
+        logged.mockRestore();
+        expect(sentTo(real!)).toBe(1);
+        expect(await sent()).toBe(51);
       });
 
       it("answers an address with no account and one with an account the same way while the cap is open", async () => {
@@ -707,14 +759,14 @@ describe("signing in with a code sent by email", () => {
       process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "5";
       await world.db
         .insert(loginCodeRequest)
-        .values({ id: "code-hour-global:all", count: 4, windowStartedAt: new Date(T0.getTime()) });
+        .values({ id: "code-hour-sent:all", count: 4, windowStartedAt: new Date(T0.getTime()) });
       await lockThroughTheAction(EMAIL);
 
       expect(lockNotices(EMAIL)).toHaveLength(1);
       const [global] = await world.db
         .select()
         .from(loginCodeRequest)
-        .where(eq(loginCodeRequest.id, "code-hour-global:all"));
+        .where(eq(loginCodeRequest.id, "code-hour-sent:all"));
       expect(global!.count).toBe(5);
     });
 
@@ -722,7 +774,7 @@ describe("signing in with a code sent by email", () => {
       process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "5";
       await world.db
         .insert(loginCodeRequest)
-        .values({ id: "code-hour-global:all", count: 5, windowStartedAt: new Date(T0.getTime()) });
+        .values({ id: "code-hour-sent:all", count: 5, windowStartedAt: new Date(T0.getTime()) });
       await lockThroughTheAction(EMAIL);
 
       expect(lockNotices(EMAIL)).toHaveLength(0);

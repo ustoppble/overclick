@@ -118,18 +118,27 @@ lock ("Seu login no overclick foi travado por 1 hora"), with no code in it.
 Anyone who knows an address can still keep its owner out of code sign-in an
 hour at a time; the emergency link ignores the lock.
 
-The whole instance also sends at most 60 code emails an hour, whoever asks;
+The whole instance admits at most 60 code requests an hour, whoever asks;
 set `LOGIN_CODE_MAX_SENDS_PER_HOUR` in `deploy/.env` to change it. Past the cap
 nobody gets an email, the answer stays the same neutral one, and the log gets
-one line (`hourly send cap reached`, no address in it) per hour. The cap is
-checked before an address's own minute and hour allowance is charged, so asks
-turned away for it cost their owners nothing. The cap is a
-kill switch, not a defence: someone asking for codes can use it up and keep
-real people from getting theirs until the hour turns.
+one line (`hourly send cap reached`, no address in it) per hour. Every ask that
+gets past an address's and an origin's own limits spends one admission,
+**whether or not the address has an account**: charging it only for real
+accounts would let anyone, with the cap one place from full, ask for a target
+and then for an account of their own and learn from whether their mail came if
+the target exists. Asks turned away by any limit, the cap included, are given
+back what they were charged. The emails the provider really sends are counted
+apart; that count only logs a line when it reaches the cap (so you can watch
+the provider's quota) and never decides who gets a code. The cap is a kill
+switch, not a defence: someone asking for codes with made-up addresses from
+many origins can use the admissions up and keep real people from getting
+theirs until the hour turns.
 
 **Next step, not done:** put a bot check (Cloudflare Turnstile or a captcha) in
-front of "send me a code". It needs a Cloudflare site key and secret, so it is
-the owner's call; until then the limits above are all there is.
+front of "send me a code". It is the definitive answer to the exhaustion above,
+and the hook for it is already marked in the code (the action verifies the
+token before any bucket is charged). It needs a Cloudflare site key and secret,
+so it is the owner's call; until then the limits above are all there is.
 
 ### Emergency sign-in (server owner only)
 

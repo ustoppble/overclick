@@ -7,7 +7,7 @@ import {
   claimLockNoticeRow,
   codeLoginLock,
   codeLoginLocked,
-  spendGlobalSend,
+  countSentEmail,
 } from "./login-rate-limit";
 import { deriveKey } from "./session";
 
@@ -201,9 +201,10 @@ export async function claimLockNotice(
   const lock = await codeLoginLock(db, account.id, now);
   if (!lock) return null;
   if (!(await claimLockNoticeRow(db, account.id, lock.start))) return null;
-  // The warning is an email like any other: it counts against the instance's
-  // hourly cap, and once that is spent this lock goes without one.
-  return (await spendGlobalSend(db)) ? { to: email, lockMs: lock.ms } : null;
+  // The warning is an email like any other: it counts in the hourly count of
+  // emails really sent, and once that passes the cap this lock goes without
+  // one. Only the account's owner can see the difference.
+  return (await countSentEmail(db)) ? { to: email, lockMs: lock.ms } : null;
 }
 
 /** "1 hora", "2 horas": how long a lock lasts, in whole hours. */

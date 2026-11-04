@@ -1,5 +1,5 @@
 import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
-import { invitation, mcpToken, organization, project, projectMember, user, workspace } from "@agent-board/db";
+import { invitation, loginCodeRequest, mcpToken, organization, project, projectMember, user, workspace } from "@agent-board/db";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -202,6 +202,30 @@ describe("invitation and team", () => {
       error: expect.any(String),
     });
     expect(await world.db.select().from(user).where(eq(user.role, "member"))).toHaveLength(0);
+  });
+
+  it("admits an invitation code by the instance cap the same way whether the typed address is the invited one or not", async () => {
+    process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "3";
+    try {
+      const first = await invite("first@example.test");
+      const second = await invite("second@example.test");
+      const outcomes: number[] = [];
+      for (const typed of ["first@example.test", "someone-else@example.test"]) {
+        await world.db.delete(loginCodeRequest);
+        await world.db
+          .insert(loginCodeRequest)
+          .values({ id: "code-hour-global:all", count: 2, windowStartedAt: new Date() });
+        emailState.sendEmail.mockClear();
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        await requestCode(first, typed);
+        await requestCode(second, "second@example.test");
+        logged.mockRestore();
+        outcomes.push(emailState.sendEmail.mock.calls.filter(([m]) => m.to === "second@example.test").length);
+      }
+      expect(outcomes).toEqual([0, 0]);
+    } finally {
+      delete process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR;
+    }
   });
 
   it("does not create the account from the link alone: a wrong code is refused and the link stays usable", async () => {

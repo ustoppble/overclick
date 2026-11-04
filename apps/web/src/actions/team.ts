@@ -28,7 +28,7 @@ import {
   clearCodeLoginBudget,
   loginOrigin,
   refundCodeLoginOrigin,
-  spendGlobalSend,
+  noteSentEmail,
   withinCodeLoginBudget,
   withinCodeRequestBudget,
 } from "../lib/login-rate-limit";
@@ -232,8 +232,9 @@ export async function requestInviteCodeAction(
       if (email !== found.email) return;
       try {
         const issued = await issueSignupCode(db(), inviteScope(found.id), email);
-        if (issued && (await spendGlobalSend(db()))) {
+        if (issued) {
           await sendEmail(signupCodeEmail("invite", email, issued.code));
+          await noteSentEmail(db());
         }
       } catch (err) {
         console.error(

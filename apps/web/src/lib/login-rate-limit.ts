@@ -180,13 +180,20 @@ export const CODE_REQUESTS_PER_HOUR = 5;
 export const CODE_REQUESTS_PER_ORIGIN_HOUR = 20;
 
 /**
- * Emails of sign-in codes the whole instance sends in an hour, whoever asks.
- * The per-address and per-origin caps do not bound the total: without a
- * trusted proxy there is no origin, and with one a botnet has plenty. This is
- * the kill switch that keeps the email provider's quota (and the domain's
- * reputation) from being spent by strangers. Past it nobody gets an email and
- * the answer stays the neutral one. Set `LOGIN_CODE_MAX_SENDS_PER_HOUR` to
- * change it.
+ * Code requests the whole instance admits in an hour, whoever asks — the
+ * ceiling on the emails it can send. The per-address and per-origin caps do
+ * not bound the total: without a trusted proxy there is no origin, and with
+ * one a botnet has plenty. This is the kill switch that keeps the email
+ * provider's quota (and the domain's reputation) from being spent by
+ * strangers. Past it nobody gets an email and the answer stays the neutral
+ * one. Set `LOGIN_CODE_MAX_SENDS_PER_HOUR` to change it.
+ *
+ * It is spent by every ask that gets past the address and origin limits,
+ * *whether or not the address has an account*. Spending it only for accounts
+ * made it an oracle: with the cap one place from full, asking for a target
+ * and then for an account of your own showed, by whether your own mail came,
+ * whether the target existed. What the provider really sent is counted apart
+ * (`countSentEmail`) and only ever alerts.
  */
 export const DEFAULT_LOGIN_CODE_MAX_SENDS_PER_HOUR = 60;
 
@@ -198,7 +205,7 @@ export function loginCodeSendCap(): number {
 }
 
 function codeRequestScope(
-  kind: "minute-email" | "hour-email" | "hour-origin" | "hour-global",
+  kind: "minute-email" | "hour-email" | "hour-origin" | "hour-global" | "hour-sent",
   value: string,
 ): string {
   return `code-${kind}:${value}`;
@@ -208,28 +215,28 @@ function codeRequestScope(
 class RequestRefused extends Error {}
 
 /**
- * Charges one code request to the address's and the origin's buckets and says
- * whether the ask may go on to issue a code. Two rules decide the order and
- * the bookkeeping:
+ * Charges one code request to the address's, the origin's and the
+ * instance-wide buckets and says whether the ask may go on to issue a code.
  *
- * - The instance-wide cap is only read here, first: when it is spent nothing
- *   else is charged, so asks turned away for it cost their owners none of the
- *   minute's or hour's allowance. It is *spent* when an email is really about
- *   to go out (`spendGlobalSend`, from the callback that runs after the
- *   response), never by an ask for an address with no account, so a stranger
- *   typing made-up addresses cannot use up the cap and shut everyone out.
  * - The charges are one transaction. A refusal by any bucket — the minute's,
- *   the hour's, or the origin's own — undoes the ones taken before it, so an
- *   ask that is turned away costs nothing anywhere. Without that, twenty asks
- *   at one address (refused after the first by the minute bucket) used up the
- *   origin's twenty and locked out every other address behind the same proxy.
+ *   the hour's, the origin's or the instance's own — undoes the ones taken
+ *   before it, so an ask that is turned away costs nothing anywhere. Without
+ *   that, twenty asks at one address (refused after the first by the minute
+ *   bucket) used up the origin's twenty and locked out every other address
+ *   behind the same proxy.
+ * - The instance-wide cap is charged last, for every ask that passed the
+ *   others, and nothing here looks at whether the address has an account. The
+ *   admission decision is therefore the same function of what was asked and
+ *   from where for a real address and an invented one: no sequence of asks
+ *   tells a caller anything about who has an account.
  *
- * Which bucket refused cannot tell a caller whether the address has an
- * account — none of them looks at that.
- *
- * Where a challenge would go: a CAPTCHA/Turnstile token, once the owner opens
- * the account and key it needs, is verified by the action *before* this is
- * called (`requestLoginCodeAction`, `requestSetupCodeAction`,
+ * The price is that invented addresses from many origins can use the
+ * instance's hourly admissions up and keep real people from getting a code
+ * until the hour turns (the per-origin and per-address limits slow that, they
+ * do not stop it). The definitive answer is a challenge in front of this: a
+ * CAPTCHA/Turnstile token, once the owner opens the account and key it needs,
+ * is verified by the action *before* this is called
+ * (`requestLoginCodeAction`, `requestSetupCodeAction`,
  * `requestInviteCodeAction`), so a request that fails it costs no bucket and
  * no email. Nothing here changes for it.
  */
@@ -239,10 +246,7 @@ export async function withinCodeRequestBudget(
   origin: string | null,
 ): Promise<boolean> {
   const cap = loginCodeSendCap();
-  const globalScope = codeRequestScope("hour-global", "all");
-  if (await budgetExhausted(db, loginCodeRequest, globalScope, cap, CODE_REQUEST_HOUR_MS)) {
-    return false;
-  }
+  let admitted = 0;
 
   try {
     await db.transaction(async (tx) => {
@@ -281,41 +285,66 @@ export async function withinCodeRequestBudget(
       ) {
         throw new RequestRefused();
       }
+      const [global] = await spendBudgetStatement(
+        charges,
+        loginCodeRequest,
+        codeRequestScope("hour-global", "all"),
+        new Date(),
+        CODE_REQUEST_HOUR_MS,
+        cap,
+      );
+      if (!global) throw new RequestRefused();
+      admitted = global.count;
     });
   } catch (error) {
     if (error instanceof RequestRefused) return false;
     throw error;
   }
-  return true;
-}
-
-/**
- * Charges one email to the instance-wide hourly cap and says whether it fits.
- * Called only when an email is really about to leave — a code issued to an
- * account (or to the address setup or an invitation is for), and the warning a
- * lock sends (`claimLockNotice`) — never for an ask that found nothing to
- * send. The read in `withinCodeRequestBudget` is not atomic with this charge,
- * so a burst may overshoot by a few; the count here is what keeps it from
- * going further, and an email that does not fit is not sent.
- */
-export async function spendGlobalSend(db: McpDatabase): Promise<boolean> {
-  const cap = loginCodeSendCap();
-  const [global] = await spendBudgetStatement(
-    db,
-    loginCodeRequest,
-    codeRequestScope("hour-global", "all"),
-    new Date(),
-    CODE_REQUEST_HOUR_MS,
-  );
-  const count = global?.count ?? 1;
-  if (count > cap) return false;
   // One line per window, with no address in it: enough to alert on.
-  if (count === cap) {
+  if (admitted === cap) {
     console.error(
       `[login-code] hourly send cap reached (${cap}); no sign-in codes go out until the window passes`,
     );
   }
   return true;
+}
+
+/**
+ * Counts one email the provider is really about to be asked to send, in an
+ * hourly bucket of its own, and says whether the count is still within the
+ * cap. For sign-in, setup and invitation codes this is telemetry: they were
+ * admitted by `withinCodeRequestBudget` already, in a way that cannot depend
+ * on the account, and the answer is ignored — the result must never decide
+ * whether an account's mail goes out, or it would be the oracle again. The
+ * warning a lock sends (`claimLockNotice`) does use it as its limit: whether
+ * that warning went out is visible only to the account's owner.
+ */
+export async function countSentEmail(db: McpDatabase): Promise<boolean> {
+  const cap = loginCodeSendCap();
+  const [sent] = await spendBudgetStatement(
+    db,
+    loginCodeRequest,
+    codeRequestScope("hour-sent", "all"),
+    new Date(),
+    CODE_REQUEST_HOUR_MS,
+  );
+  const count = sent?.count ?? 1;
+  // No address in the line: enough to alert on the provider's real quota.
+  if (count === cap) {
+    console.error(
+      `[login-code] ${cap} emails sent this hour, the hourly send cap; check the provider's quota`,
+    );
+  }
+  return count <= cap;
+}
+
+/** `countSentEmail` for a code email already sent: telemetry that cannot fail the caller. */
+export async function noteSentEmail(db: McpDatabase): Promise<void> {
+  try {
+    await countSentEmail(db);
+  } catch {
+    // A counter that could not be written must not look like a failed send.
+  }
 }
 
 /**

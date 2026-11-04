@@ -1,6 +1,6 @@
 import { loginCodeRequest } from "@agent-board/db";
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
 import {
   CODE_REQUESTS_PER_HOUR,
@@ -58,9 +58,33 @@ describe("a refused code request gives back what it was charged", () => {
     expect(await count("code-hour-email:a@local.test")).toBe(1);
   });
 
-  it("does not touch the instance-wide cap: that is spent when an email is really going out", async () => {
+  it("spends the instance-wide cap for every ask it lets through, whatever the address is", async () => {
     await withinCodeRequestBudget(world.db, "a@local.test", ORIGIN);
-    expect(await count("code-hour-global:all")).toBeUndefined();
+    await withinCodeRequestBudget(world.db, "b@local.test", ORIGIN);
+    expect(await count("code-hour-global:all")).toBe(2);
+  });
+
+  it("turns every ask away once the cap is spent and gives back the charges it had taken", async () => {
+    process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "2";
+    try {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await withinCodeRequestBudget(world.db, "a@local.test", ORIGIN)).toBe(true);
+      expect(await withinCodeRequestBudget(world.db, "b@local.test", ORIGIN)).toBe(true);
+      expect(await withinCodeRequestBudget(world.db, "c@local.test", ORIGIN)).toBe(false);
+      logged.mockRestore();
+    } finally {
+      delete process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR;
+    }
+    expect(await count("code-hour-global:all")).toBe(2);
+    expect(await count("code-minute-email:c@local.test")).toBeUndefined();
+    expect(await count("code-hour-email:c@local.test")).toBeUndefined();
+    expect(await count(`code-hour-origin:${ORIGIN}`)).toBe(2);
+  });
+
+  it("does not spend the cap on an ask the address's own bucket turned away", async () => {
+    await withinCodeRequestBudget(world.db, "a@local.test", ORIGIN);
+    await withinCodeRequestBudget(world.db, "a@local.test", ORIGIN);
+    expect(await count("code-hour-global:all")).toBe(1);
   });
 
   it("turns an origin away once its own allowance is gone, whoever asks", async () => {
