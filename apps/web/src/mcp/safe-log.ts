@@ -29,9 +29,40 @@ export function describeError(operation: string, error: unknown, ref: string): s
   return `operation=${operation} type=${name} code=${codeOf(error) ?? "none"} ref=${ref}`;
 }
 
-/** The one place a thrown error is logged; production keeps to the safe line. */
+/**
+ * Raw diagnostics are a debugging aid that has to be asked for: a dedicated
+ * variable, off by default, never honoured in production. Even then the text is
+ * redacted — the parameters are cut, e-mails and token-like runs are masked —
+ * so a dev log kept or shared by accident does not carry a person's data.
+ */
+const RAW_OPT_IN = "OVERCLICK_DEBUG_RAW_ERRORS";
+
+function rawDiagnosticsAsked(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  const value = process.env[RAW_OPT_IN]?.toLowerCase();
+  return value === "1" || value === "true";
+}
+
+export function redactDiagnostic(text: string): string {
+  return text
+    .replace(/params?:[\s\S]*$/im, "params: ***")
+    .replace(/[^\s@]+@[^\s@]+\.[^\s@,;]+/g, "***")
+    .replace(/[A-Za-z0-9_+/=-]{24,}/g, "***");
+}
+
+function rawDiagnostic(error: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current; depth++) {
+    parts.push(redactDiagnostic(current instanceof Error ? (current.stack ?? current.message) : String(current)));
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return parts.join("\ncaused by: ");
+}
+
+/** The one place a thrown error is logged; the safe line is always what it prints. */
 export function logToolFailure(operation: string, error: unknown, ref: string): void {
   const line = `[mcp] tool failed: ${describeError(operation, error, ref)}`;
-  if (process.env.NODE_ENV === "production") console.error(line);
-  else console.error(line, error);
+  console.error(line);
+  if (rawDiagnosticsAsked()) console.error(`[mcp] ${RAW_OPT_IN} (redacted) ref=${ref}\n${rawDiagnostic(error)}`);
 }
