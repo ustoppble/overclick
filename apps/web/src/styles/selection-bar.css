@@ -50,7 +50,7 @@
   flex: none;
   margin-right: var(--oc-space-2);
   color: var(--oc-text-1);
-  font: 600 14px/20px var(--oc-font-ui);
+  font: 600 13px/20px var(--oc-font-ui);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -68,7 +68,7 @@
   border-radius: var(--oc-radius-control);
   background: transparent;
   color: var(--oc-text-2);
-  font: 500 14px/16px var(--oc-font-ui);
+  font: 500 13px/16px var(--oc-font-ui);
   white-space: nowrap;
   cursor: pointer;
   transition: background-color var(--oc-duration-micro) var(--oc-ease-atmosphere),
@@ -146,7 +146,7 @@
   padding: var(--oc-space-4);
 }
 .nb .sel-create { gap: var(--oc-space-2); padding: var(--oc-space-3); }
-.nb .sel-pop-head { color: var(--oc-text-1); font: 600 14px/20px var(--oc-font-ui); }
+.nb .sel-pop-head { color: var(--oc-text-1); font: 600 13px/20px var(--oc-font-ui); }
 .nb .sel-note { margin: 0; color: var(--oc-text-2); font: 400 13px/20px var(--oc-font-ui); }
 .nb .sel-reason,
 .nb .sel-input {
