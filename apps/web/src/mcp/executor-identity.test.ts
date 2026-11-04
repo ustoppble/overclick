@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  DEFAULT_CODEX_MODEL,
-  isExecutorPairConfigured,
-  normalizeObservedExecutor,
-  resolveClaimExecutor,
-  unregisteredClaimModelRefusal,
-} from "./executor-identity";
+import * as identity from "./executor-identity";
+import { DEFAULT_CODEX_MODEL, resolveClaimExecutor } from "./executor-identity";
 
 describe("executor identity aliases", () => {
   it("uses the confirmed Codex fallbacks", () => {
@@ -49,77 +44,26 @@ describe("executor identity aliases", () => {
     );
   });
 
-  const executors = [
-    {
-      id: "codex",
-      label: "Codex",
-      enabled: true,
-      models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.3-codex-spark"],
-    },
-    { id: "grok", label: "Grok", enabled: true, models: ["grok-4.6", "grok-4.5"] },
-  ];
-
-  it("refuses a model that is not on any configured executor, for a cli the board knows", () => {
-    const message = unregisteredClaimModelRefusal("grok", "grok-4", executors);
-    expect(message).toBeTruthy();
-    expect(message).toContain("grok-4");
-    expect(message).toContain("grok-4.6");
-    expect(message).toContain("grok-4.5");
-    expect(message).toContain("executors_update");
+  it("accepts a model nobody registered, normalized and recorded as declared", () => {
+    // The board records what ran; the Overclock app decides it. A model the
+    // workspace never registered is not refused any more: the claim goes
+    // through and the normalization keeps Consumo from splitting it in two.
+    expect(resolveClaimExecutor({ cli: "grok", model: "grok-4.6", effort: "high" })).toEqual({
+      cli: "grok",
+      model: "grok-4-6",
+      model_source: "declared",
+      effort: "high",
+    });
+    expect(resolveClaimExecutor({ cli: "some-new-cli", model: "whatever-1" })).toMatchObject({
+      cli: "some-new-cli",
+      model: "whatever-1",
+      model_source: "declared",
+    });
   });
 
-  it("lets registered models and their aliases through", () => {
-    expect(unregisteredClaimModelRefusal("codex", "gpt-5.6-sol", executors)).toBeNull();
-    expect(unregisteredClaimModelRefusal("codex", "gpt-5-codex", executors)).toBeNull();
-    expect(unregisteredClaimModelRefusal("grok", "grok-4.6", executors)).toBeNull();
-    expect(unregisteredClaimModelRefusal("codex", undefined, executors)).toBeNull();
-  });
-
-  it("does not accept Daybreak merely because Sol is registered", () => {
-    expect(unregisteredClaimModelRefusal("codex", "gpt-daybreak-blue-latest", executors)).toBeTruthy();
-    expect(isExecutorPairConfigured(executors, "codex", "gpt-daybreak-blue-latest")).toBe(false);
-  });
-
-  it("leaves generic placeholder labels alone: resolveClaimExecutor handles those", () => {
-    expect(unregisteredClaimModelRefusal("codex", "gpt-5", executors)).toBeNull();
-    expect(unregisteredClaimModelRefusal("codex", "", executors)).toBeNull();
-  });
-
-  it("refuses a cli the workspace has not configured yet, and says which are", () => {
-    // The first cut let an unknown cli through so the board could discover it
-    // from the claim itself. That kept the guarantee at "for the CLIs you
-    // already use": a made-up model under a made-up cli is exactly as invented
-    // as one under a known cli, only harder to notice. A connection is learned
-    // when a human registers it, not when an agent asserts it.
-    const refusal = unregisteredClaimModelRefusal(
-      "some-new-cli",
-      "whatever-1",
-      executors,
-    );
-    expect(refusal).toContain("some-new-cli");
-    expect(refusal).toContain("executors_update");
-  });
-
-  it("lets anything through on a board with nothing registered yet", () => {
-    // No catalog to pick from is a fresh board, not a bad claim: refusing
-    // every claim would leave no way in at all.
-    expect(unregisteredClaimModelRefusal("codex", "gpt-9-ultra", [])).toBeNull();
-  });
-
-  it("does not turn generic connection labels into add suggestions", () => {
-    expect(normalizeObservedExecutor({ cli: "codex", model: "gpt-5" })).toBeNull();
-    expect(
-      normalizeObservedExecutor({ cli: "overclock", model: "gpt-5.6-sol" }),
-    ).toBeNull();
-    expect(
-      normalizeObservedExecutor({ cli: "Codex CLI", model: "gpt-5.6-sol" }),
-    ).toEqual({ cli: "codex", model: "gpt-5-6-sol" });
-    expect(
-      isExecutorPairConfigured(
-        [{ id: "codex", enabled: true, models: ["gpt-5.6-sol"] }],
-        "Codex CLI",
-        "gpt-5-6-sol",
-      ),
-    ).toBe(true);
+  it("no longer carries a claim refusal or a catalog check", () => {
+    expect(identity).not.toHaveProperty("unregisteredClaimModelRefusal");
+    expect(identity).not.toHaveProperty("isExecutorPairConfigured");
+    expect(identity).not.toHaveProperty("normalizeObservedExecutor");
   });
 });

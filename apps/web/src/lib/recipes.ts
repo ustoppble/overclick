@@ -1,14 +1,17 @@
-import { eq } from "drizzle-orm";
+import { eq, isNotNull, and } from "drizzle-orm";
 import {
   bindRecipeSettings,
+  executionAttempt,
   factoryUsageRecipes,
   findUsageRecipe,
+  project,
+  task,
   usageRecipe,
   type Database,
   type RecipeYield,
   type UsageRecipeRow,
 } from "@agent-board/db";
-import { resolveCatalogCli } from "./executors";
+import { EXECUTOR_CATALOG, resolveCatalogCli } from "./executors";
 
 /** Postgres or PGlite drizzle client — the query surface recipes need. */
 export type RecipesDb = Pick<Database, "select">;
@@ -43,6 +46,54 @@ export async function loadUsageRecipes(
     });
   }
   return [...rows.values()];
+}
+
+/**
+ * The CLIs this board actually ran, read off the attempts (E2): what the
+ * Recipes tab checks for a recipe of its own. It used to read the enabled
+ * executors, a list the board no longer keeps, so a CLI that ran and was never
+ * "enabled" went unchecked. The name an agent sends ("claude") resolves to
+ * the catalog id ("claude-code") the recipes are keyed by; the orchestrator
+ * that only launches the others is not a CLI a recipe measures.
+ */
+export async function loadRanClis(
+  db: RecipesDb,
+  workspaceId: string,
+): Promise<{ id: string; label: string }[]> {
+  const rows = await db
+    .select({ executor: executionAttempt.executor })
+    .from(executionAttempt)
+    .innerJoin(task, eq(executionAttempt.taskId, task.id))
+    .innerJoin(project, eq(task.projectId, project.id))
+    .where(and(eq(project.workspaceId, workspaceId), isNotNull(executionAttempt.executor)))
+    .groupBy(executionAttempt.executor);
+
+  const clis = new Map<string, string>();
+  for (const row of rows) {
+    const raw = attemptCli(row.executor)?.trim().toLowerCase();
+    if (!raw || raw === "overclock") continue;
+    const id = resolveCatalogCli(raw) ?? raw;
+    if (clis.has(id)) continue;
+    clis.set(id, EXECUTOR_CATALOG.find((def) => def.id === id)?.label ?? id);
+  }
+  return [...clis]
+    .map(([id, label]) => ({ id, label }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** The CLI inside an attempt's executor blob; a bare string is the CLI itself. */
+function attemptCli(raw: string | null): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (value && typeof value === "object") {
+      const cli = (value as { cli?: unknown }).cli;
+      return typeof cli === "string" ? cli : undefined;
+    }
+  } catch {
+    return raw;
+  }
+  return undefined;
 }
 
 /**

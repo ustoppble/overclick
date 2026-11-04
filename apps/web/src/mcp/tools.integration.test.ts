@@ -47,12 +47,9 @@ const origem = {
 };
 
 // Many cards in this file are inserted with a raw codex/grok harness and
-// then claimed with a matching executor: since OCL-170 (unregisteredClaimModelRefusal)
-// only lets a claim through for a cli the workspace already has a catalog
-// for, those clis need real registered models here too. The narrower
-// codex-onboarding suite (executors.integration.test.ts) starts from the
-// plain TEST_EXECUTORS instead — it is testing the empty-to-configured
-// transition itself.
+// then claimed with a matching executor. The claim no longer checks a list
+// (E2), so these executors are only the fixture an older test was written
+// against; they decide nothing.
 function createTestWorld(): Promise<TestWorld> {
   return createBaseTestWorld({
     executors: [
@@ -260,45 +257,33 @@ describe("MCP tool edge cases against a test db", () => {
     });
   });
 
-  it("refuses a claim naming a model outside the workspace's catalog (OCL-170)", async () => {
+  it("claims a model outside the old catalog and keeps OCL-170's guarantee by normalizing it (E2)", async () => {
     world = await createTestWorld();
     const [card] = await world.db
       .insert(task)
       .values({
         projectId: world.projectId,
         shortId: "OC-170",
-        title: "Bogus Codex model",
+        title: "Codex model nobody listed",
         harness: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
       })
       .returning();
     if (!card) throw new Error("failed to create card");
 
+    // The Overclock app decides what runs; the board takes the claim and
+    // records the model by its normalized key, so "gpt-5.7" and "gpt-5-7"
+    // never become two lines in Consumo.
     const claimed = await invokeTool(world.db, ctx(), "task_claim", {
       task_id: card.id,
       executor: { cli: "codex", model: "gpt-5.7" },
     });
-    expect(claimed.ok).toBe(false);
-    if (claimed.ok) return;
-    expect(claimed.error.code).toBe("INVALID_ARGUMENT");
-    expect(claimed.error.message).toContain("gpt-5.7");
-    expect(claimed.error.message).toContain("gpt-5.6-sol");
-    expect(claimed.error.message).toContain("executors_update");
-
-    const [fresh] = await world.db.select().from(task).where(eq(task.id, card.id));
-    expect(fresh?.status).toBe("aberto");
-    expect(fresh?.claimedByTokenId).toBeNull();
-
-    const registered = await invokeTool(world.db, { ...ctx(), canManage: true }, "executors_update", {
-      cli: "codex",
-      add_models: ["gpt-5.7"],
-    });
-    expect(registered.ok).toBe(true);
-
-    const retried = await invokeTool(world.db, ctx(), "task_claim", {
-      task_id: card.id,
-      executor: { cli: "codex", model: "gpt-5.7" },
-    });
-    expect(retried.ok).toBe(true);
+    expect(claimed.ok).toBe(true);
+    const [attempt] = await world.db
+      .select()
+      .from(executionAttempt)
+      .where(eq(executionAttempt.taskId, card.id));
+    expect(attempt?.model).toBe("gpt-5-7");
+    expect(attempt?.modelSource).toBe("declared");
   });
 
   it("claims normally when Codex declares gpt-5.6-sol", async () => {
@@ -1762,7 +1747,7 @@ describe("MCP tool edge cases against a test db", () => {
     expect(saved?.howToVerify).toBe("http://localhost:3300/home");
   });
 
-  it("learns cli/model pairs outside the config from claims and delivers", async () => {
+  it("records a cli/model pair outside the old list and learns nothing into seen_executors (E2)", async () => {
     world = await createTestWorld();
     const seen = async () => {
       const [ws] = await world.db
@@ -1771,68 +1756,31 @@ describe("MCP tool edge cases against a test db", () => {
         .where(eq(workspace.id, world.workspaceId));
       return ws?.seenExecutors ?? [];
     };
-    const mkCard = async (title: string) => {
-      const created = await invokeTool(world.db, ctx(), "task_create", {
-        project_id: world.projectId,
-        title,
-        type: "feature",
-        o_que: "x",
-        por_que: "y",
-        como_confirmo: [{ step: "a", expected: "b" }],
-        origem,
-      });
-      expect(created.ok).toBe(true);
-      if (!created.ok) throw new Error("create failed");
-      return TaskCreateOutputSchema.parse(created.value).task;
-    };
-
-    // Config pair (claude aliases to claude-code, sonnet-5 configured): not learned.
-    const known = await mkCard("Known pair");
-    await invokeTool(world.db, ctx(), "task_claim", {
-      task_id: known.id,
-      executor: { cli: "claude", model: "sonnet-5" },
+    const created = await invokeTool(world.db, ctx(), "task_create", {
+      project_id: world.projectId,
+      title: "Unknown pair",
+      type: "feature",
+      o_que: "x",
+      por_que: "y",
+      como_confirmo: [{ step: "a", expected: "b" }],
+      origem,
     });
-    expect(await seen()).toEqual([]);
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const card = TaskCreateOutputSchema.parse(created.value).task;
 
-    // A confirmed alias resolves to the configured model and is not learned.
-    const a = await mkCard("Unknown pair A");
-    await invokeTool(world.db, ctx(), "task_claim", {
-      task_id: a.id,
-      executor: { cli: "claude", model: "claude-fable-5" },
-    });
-    expect(await seen()).toEqual([]);
-
-    // A cli the workspace has not configured yet is REFUSED — and still
-    // learned. The refusal keeps the invented pair out of the attempt, where
-    // it would become a model line in Insights; recording it keeps the pair
-    // in seen_executors, which is what Settings offers as "add this
-    // executor?". Without both halves, closing the catalog would tell the
-    // agent to ask a human to register the connection and leave the human
-    // with nothing to click.
-    const b = await mkCard("Unknown pair B");
-    const refused = await invokeTool(world.db, ctx(), "task_claim", {
-      task_id: b.id,
+    // The Overclock app decided what runs; the board records it as declared.
+    const claimed = await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: card.id,
       executor: { cli: "some-other-cli", model: "claude-future-model" },
     });
-    expect(refused.ok).toBe(false);
-    let rows = await seen();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      cli: "some-other-cli",
-      model: "future-model",
-      count: 1,
-    });
-
-    // The card was never claimed, so it is still open for whoever registers
-    // that executor and comes back.
-    const again = await invokeTool(world.db, ctx(), "task_claim", {
-      task_id: b.id,
-      executor: { cli: "some-other-cli", model: "claude-future-model" },
-    });
-    expect(again.ok).toBe(false);
-    rows = await seen();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.count).toBe(2);
+    expect(claimed.ok).toBe(true);
+    const [attempt] = await world.db
+      .select()
+      .from(executionAttempt)
+      .where(eq(executionAttempt.taskId, card.id));
+    expect(attempt?.model).toBe("future-model");
+    expect(await seen()).toEqual([]);
   });
 
   it("rejects handoff from aberto via the state machine", async () => {

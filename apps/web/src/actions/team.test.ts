@@ -62,7 +62,6 @@ vi.mock("next/navigation", () => ({
 }));
 
 const team = await import("./team");
-const { saveExecutorsAction } = await import("./executors");
 const { savePricesAction, savePricingEnabledAction } = await import("./prices");
 const { saveRecipesAction } = await import("./recipes");
 const { saveLanguageAction } = await import("./language");
@@ -317,7 +316,6 @@ describe("invitation and team", () => {
         await team.createInvitationAction({ email: "x@example.test", organizationId: world.organizationId }),
         await team.revokeInvitationAction("00000000-0000-0000-0000-000000000000"),
         await team.setMemberActiveAction(world.adminUserId, false),
-        await saveExecutorsAction({ enabled: {}, models: {}, efforts: {} } as never),
         await savePricesAction([]),
         await savePricingEnabledAction(true),
         await saveRecipesAction([]),

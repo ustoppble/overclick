@@ -4,7 +4,6 @@ import type { AutoUpdateRecord, UpdateMode } from "@agent-board/db";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { saveClaimTimeoutAction } from "../../actions/claims";
-import { addSeenExecutorAction, saveExecutorsAction } from "../../actions/executors";
 import { saveLanguageAction } from "../../actions/language";
 import { savePricesAction, savePricingEnabledAction } from "../../actions/prices";
 import { saveRecipesAction } from "../../actions/recipes";
@@ -22,14 +21,6 @@ import {
 } from "../../components/plugin-install";
 import { UpdatePanel } from "../../components/update-panel";
 import { Wordmark } from "../../components/wordmark";
-import {
-  ExecutorsGrid,
-  type ExecutorSelection,
-} from "../../components/executors-grid";
-import {
-  EXECUTOR_CATALOG,
-  resolveCatalogCli,
-} from "../../lib/executors";
 import { LANGUAGES, dict, type Dict } from "../../lib/i18n";
 import type { Runtime } from "../../lib/runtime";
 import type { UpdaterState } from "../../lib/updates";
@@ -51,7 +42,6 @@ import type {
   UsageRecipeRow,
 } from "@agent-board/db";
 
-type SeenSuggestion = { cli: string; model: string; count: number; lastSeenAt: string };
 /** One line of the price table, as the form edits it (numbers stay strings). */
 type PriceRow = {
   model: string;
@@ -95,8 +85,6 @@ export function SettingsClient({
   projectName,
   organizations,
   projects,
-  executors,
-  seenSuggestions,
   prices,
   pricingEnabled,
   claimTimeoutMinutes,
@@ -129,8 +117,6 @@ export function SettingsClient({
   projectName: string;
   organizations: OrganizationRow[];
   projects: ProjectContextRow[];
-  executors: ExecutorSelection;
-  seenSuggestions: SeenSuggestion[];
   prices: ModelPriceRow[];
   pricingEnabled: boolean;
   claimTimeoutMinutes: number;
@@ -175,7 +161,6 @@ export function SettingsClient({
   // A member manages their own tokens and pairing, nothing else (OCL-222).
   const tabs = isAdmin
     ? [
-        { id: "exec", label: t.settings.tabExecutors },
         { id: "organizations", label: t.settings.tabOrganizations },
         { id: "projects", label: t.settings.tabProjects },
         { id: "prices", label: t.settings.tabPrices },
@@ -216,45 +201,6 @@ export function SettingsClient({
       const r = await saveClaimTimeoutAction(Number(claimTimeout));
       if (!r.ok) setErr(r.error);
       else { setMsg(t.settings.claimTimeoutSaved); router.refresh(); }
-    });
-
-  // ---- executors
-  const [sel, setSel] = useState<ExecutorSelection>(executors);
-  const [added, setAdded] = useState<string[]>([]);
-  const saveExec = () =>
-    start(async () => {
-      setErr(null); setMsg(null);
-      const r = await saveExecutorsAction(sel);
-      if (!r.ok) setErr(r.error);
-      else { setMsg(t.settings.execSaved); router.refresh(); }
-    });
-  const addSeen = (s: SeenSuggestion) =>
-    start(async () => {
-      setErr(null); setMsg(null);
-      const r = await addSeenExecutorAction(s.cli, s.model);
-      if (!r.ok) setErr(r.error);
-      else {
-        const targetId = resolveCatalogCli(s.cli) ?? s.cli.toLowerCase();
-        // Mirror the server change locally so the grid picks the pair up
-        // without a reload.
-        setSel((prev) => ({
-          ...prev,
-          models: {
-            ...prev.models,
-            [targetId]: [...new Set([...(prev.models[targetId] ?? []), s.model])],
-          },
-          enabled: {
-            ...prev.enabled,
-            [targetId]: [...new Set([...(prev.enabled[targetId] ?? []), s.model])],
-          },
-          labels: EXECUTOR_CATALOG.some((d) => d.id === targetId)
-            ? prev.labels
-            : { ...prev.labels, [targetId]: s.cli },
-        }));
-        setAdded((prev) => [...prev, `${s.cli}·${s.model}`]);
-        setMsg(t.settings.addedMsg(s.cli, s.model));
-        router.refresh();
-      }
     });
 
   // ---- cost layer, opt-in and off by default
@@ -499,47 +445,6 @@ export function SettingsClient({
           <ProjectContextEditor projects={projects} lang={lang} />
         </div>
 
-        {/* ---- EXECUTORS ---- */}
-        <div
-          className={`tabpane${tab === "exec" ? " active" : ""}`}
-          id="setpane-exec"
-          role="tabpanel"
-          aria-labelledby="settab-exec"
-        >
-          {seenSuggestions.filter((s) => !added.includes(`${s.cli}·${s.model}`)).length > 0 ? (
-            <div className="seen-sugg">
-              <div className="sec-cap">{t.settings.seenCap}</div>
-              <div className="seen-row">
-                {seenSuggestions
-                  .filter((s) => !added.includes(`${s.cli}·${s.model}`))
-                  .map((s) => (
-                    <span key={`${s.cli}·${s.model}`} className="seen-chip">
-                      <b>{s.cli}</b> · {s.model}
-                      <small>{t.settings.connections(s.count)}</small>
-                      <button
-                        className="seen-add oc-tappable"
-                        disabled={pending}
-                        onClick={() => addSeen(s)}
-                      >
-                        {t.settings.add}
-                      </button>
-                    </span>
-                  ))}
-              </div>
-              <div className="seen-note">{t.settings.seenNote}</div>
-            </div>
-          ) : null}
-          <ExecutorsGrid value={sel} onChange={setSel} />
-          <div className="hint">
-            <b>{t.settings.execHintStrong}</b> {t.settings.execHint}
-          </div>
-          <div className="save-row">
-            <button className="btn-new" disabled={pending} onClick={saveExec}>
-              {pending ? t.settings.saving : t.settings.saveExecutors}
-            </button>
-          </div>
-        </div>
-
         {/* ---- MODEL PRICES ---- */}
         <div
           className={`tabpane${tab === "prices" ? " active" : ""}`}
@@ -711,6 +616,9 @@ export function SettingsClient({
           aria-labelledby="settab-recipes"
         >
           <p className="page-sub">{t.settings.recipesSub}</p>
+          {/* The Executors tab left with E2: the board records what ran and
+              never chooses it, so the tab that names the CLIs says who does. */}
+          <div className="hint" style={{ marginBottom: 12 }}>{t.record.decidedInOverclock}</div>
           {/* A missing recipe used to be invisible: the tab listed the recipes
               that exist and said nothing about the CLIs falling through to the
               generic one, which is where precision is lost silently. */}
@@ -736,6 +644,7 @@ export function SettingsClient({
                   </li>
                 ))}
               </ul>
+              <p className="sec-cap">{t.record.ranFromAttempts}</p>
               {uncovered.length > 0 && (
                 <p className="sec-cap">{t.settings.recipeCoverageNote}</p>
               )}

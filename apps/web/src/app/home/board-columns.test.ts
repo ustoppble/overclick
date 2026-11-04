@@ -24,6 +24,7 @@ function card(id: string, status: BoardCard["status"]): BoardCard {
     ranCli: null,
     executors: [],
     harnessChain: null,
+    effort: null,
     modelSource: null,
     awaitingMyReview: false,
     devolve: "queue",

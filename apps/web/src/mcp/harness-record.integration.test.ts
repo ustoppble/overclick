@@ -218,6 +218,53 @@ describe("the board records the harness that ran and never plans one (OCL-202)",
     });
   });
 
+  it("keeps the record (cli, model, effort, model_source) through claim and deliver on a model nobody registered (E2)", async () => {
+    world = await createTestWorld();
+    const created = await createCard("Ran on a model outside the old list");
+    const claimed = await invokeTool(world.db, ctx(), "task_claim", {
+      task_id: created.task.short_id,
+      executor: { cli: "codex", model: "gpt-5.6-sol", effort: "xhigh", session_id: "s-e2" },
+    });
+    expect(claimed.ok).toBe(true);
+    if (!claimed.ok) return;
+    const record = async () => {
+      const [attempt] = await world.db
+        .select()
+        .from(executionAttempt)
+        .where(eq(executionAttempt.taskId, created.task.id));
+      return {
+        cli: JSON.parse(attempt!.executor!).cli,
+        effort: JSON.parse(attempt!.executor!).effort,
+        model: attempt!.model,
+        model_source: attempt!.modelSource,
+      };
+    };
+    const atClaim = await record();
+    expect(atClaim).toEqual({
+      cli: "codex",
+      effort: "xhigh",
+      model: "gpt-5-6-sol",
+      model_source: "declared",
+    });
+
+    const delivered = await invokeTool(world.db, ctx(), "task_deliver", {
+      task_id: created.task.short_id,
+      summary: "delivered",
+      usage: { segments: [{ model: "gpt-5.6-sol", input: 10, output: 5 }], turns: 1 },
+    });
+    expect(delivered.ok).toBe(true);
+    expect(await record()).toEqual(atClaim);
+
+    const got = await invokeTool(world.db, ctx(), "task_get", { task_id: created.task.short_id });
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    expect(TaskGetOutputSchema.parse(got.value).task.executor).toEqual({
+      cli: "codex",
+      model: "gpt-5-6-sol",
+      effort: "xhigh",
+    });
+  });
+
   it("keeps a claim that sends no effort valid, and says the effort went undeclared", async () => {
     world = await createTestWorld();
     const created = await createCard("Old claim without effort");

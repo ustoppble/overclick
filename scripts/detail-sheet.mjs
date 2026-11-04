@@ -24,6 +24,11 @@
  * must still be the centred panel it has always been, with the board visible
  * around it.
  *
+ * And the record of what ran (E2): the card opened is one that ran, and its
+ * "Attempts" section must list one row per attempt, each naming what ran,
+ * none of them wider than the sheet. At 1440 the running card's own box is
+ * printed too, so a change to it shows in the PR.
+ *
  * Usage:
  *   node scripts/detail-sheet.mjs
  *   node scripts/detail-sheet.mjs --shots ./out
@@ -33,6 +38,7 @@
  *   BOARD_COOKIE  value of the ab_session cookie, for a board behind login
  *   CHROME_BIN    path to a Chrome or Chromium binary
  *   WIDTHS        comma separated phone widths (default 390,320)
+ *   SHEET_CARD    short id of the card to open (default: the first that ran)
  *
  * Exit code is 0 when every width holds the rule and 1 when any breaks it.
  */
@@ -157,14 +163,99 @@ const SHOW_LIST = `(() => {
   return true;
 })()`;
 
-/** Opens the first card the layout in use actually shows. */
+/**
+ * Opens a card the layout in use actually shows, one that ran when there is
+ * one (its line carries the CLI mark), so the attempts are there to measure.
+ */
 const OPEN_CARD = `(() => {
-  const rows = document.querySelectorAll(".board-mobile .ml-row, .board .card");
-  for (const row of rows) {
-    if (row.getClientRects().length) { row.click(); return true; }
-  }
-  return false;
+  const wanted = ${JSON.stringify(process.env.SHEET_CARD || "")};
+  const rows = [...document.querySelectorAll(".board-mobile .ml-row, .board .card")]
+    .filter((row) => row.getClientRects().length);
+  const ranRow = (row) => Boolean(row.querySelector(".cli-mark, .cli-name, .meta-harness"));
+  const named = wanted
+    ? rows.find((row) => (row.querySelector(".cid")?.textContent || "").trim() === wanted)
+    : null;
+  const row = named || rows.find(ranRow) || rows[0];
+  if (!row) return { opened: false, ran: false };
+  row.click();
+  return { opened: true, ran: ranRow(row) };
 })()`;
+
+/**
+ * The phone shows one column at a time and opens on the first with cards,
+ * which may hold none that ran. Switch it to the done column then, so the
+ * card the guard opens has attempts to measure.
+ */
+const SHOW_RAN_COLUMN = `(() => {
+  const wanted = ${JSON.stringify(process.env.SHEET_CARD || "")};
+  const rows = [...document.querySelectorAll(".board-mobile .ml-row")];
+  const has = rows.some((row) =>
+    wanted
+      ? (row.querySelector(".cid")?.textContent || "").trim() === wanted
+      : row.querySelector(".cli-mark, .cli-name"));
+  const select = document.querySelector(".board-mobile .ml-status");
+  if (has || !select) return false;
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
+  setter.call(select, "feito");
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+})()`;
+
+/** The attempts section of the open card: one row per attempt, inside the sheet. */
+const ATTEMPTS = `(() => {
+  const detail = document.querySelector(".detail");
+  if (!detail) return { error: "no detail open" };
+  const section = detail.querySelector(".d-attempts");
+  if (!section) return { present: false };
+  const panel = detail.getBoundingClientRect();
+  const rows = [...section.querySelectorAll(".d-attempt")];
+  return {
+    present: true,
+    count: Number(section.dataset.count),
+    rows: rows.length,
+    empty: rows.filter((row) => !(row.querySelector(".d-attempt-run")?.textContent || "").trim()).length,
+    wide: rows.filter((row) => {
+      const box = row.getBoundingClientRect();
+      return box.right > panel.right + 1 || row.scrollWidth > row.clientWidth + 1;
+    }).length,
+  };
+})()`;
+
+/** The running card's own box, which the executors grid used to share a rule with. */
+const RUNNING_CARD = `(() => {
+  const card = document.querySelector(".board .card.exec");
+  if (!card) return null;
+  const style = getComputedStyle(card);
+  return {
+    padding: style.padding,
+    radius: style.borderRadius,
+    border: style.borderTopColor,
+    background: style.backgroundColor,
+  };
+})()`;
+
+function checkAttempts(label, opened, attempts) {
+  if (!opened.ran) {
+    console.log(`  note ${label}: no card on this board has run; the attempts went unchecked`);
+    return true;
+  }
+  if (attempts.error || !attempts.present) {
+    console.log(`  FAIL ${label}: the card ran and its sheet has no attempts section`);
+    return false;
+  }
+  if (attempts.rows !== attempts.count || attempts.rows === 0) {
+    console.log(`  FAIL ${label}: the attempts section lists ${attempts.rows} rows for ${attempts.count} attempts`);
+    return false;
+  }
+  if (attempts.empty > 0 || attempts.wide > 0) {
+    console.log(
+      `  FAIL ${label}: ${attempts.empty} attempt rows name nothing, ${attempts.wide} run past the sheet`,
+    );
+    return false;
+  }
+  console.log(`  ok   ${label}: ${attempts.rows} attempts listed, each naming what ran, all inside the sheet`);
+  return true;
+}
 
 /** What the overlay is made of, read from the page and not from the source. */
 const SURFACE = `(() => {
@@ -304,6 +395,7 @@ async function main() {
       );
       await cdp.send("Page.navigate", { url }, sessionId);
       await sleep(1500);
+      if (await evaluate(cdp, sessionId, SHOW_RAN_COLUMN)) await sleep(300);
 
       // The board is scrolled first, because the position it comes back to is
       // only a claim if it was not the top to begin with.
@@ -315,7 +407,7 @@ async function main() {
       await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 }, sessionId);
       entrance = [];
       const opened = await evaluate(cdp, sessionId, OPEN_CARD);
-      if (!opened) throw new Error(`${width}px: the board showed no card to open`);
+      if (!opened.opened) throw new Error(`${width}px: the board showed no card to open`);
       await sleep(400);
 
       const ids = entrance.map((a) => a.id);
@@ -373,6 +465,9 @@ async function main() {
         await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 }, sessionId);
       }
       await sleep(300);
+      if (!checkAttempts(`${width}px`, opened, await evaluate(cdp, sessionId, ATTEMPTS))) {
+        failed = true;
+      }
       const reach = await evaluate(cdp, sessionId, CLOSE_REACH);
       if (reach.error || !reach.onScreen) {
         failed = true;
@@ -418,10 +513,25 @@ async function main() {
     await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 }, sessionId);
     await cdp.send("Page.navigate", { url }, sessionId);
     await sleep(1500);
-    if (!(await evaluate(cdp, sessionId, OPEN_CARD))) {
+    const running = await evaluate(cdp, sessionId, RUNNING_CARD);
+    if (running) {
+      console.log(
+        `  info 1440px: running card box padding ${running.padding}, radius ${running.radius}, border ${running.border}, background ${running.background}`,
+      );
+      if (args.shots) {
+        fs.writeFileSync(path.join(args.shots, "board-desktop-1440.png"), await shoot(cdp, sessionId));
+      }
+    } else {
+      console.log("  note 1440px: no card is running on this board; its box went unprinted");
+    }
+    const openedDesktop = await evaluate(cdp, sessionId, OPEN_CARD);
+    if (!openedDesktop.opened) {
       throw new Error("1440px: the board showed no card to open");
     }
     await sleep(600);
+    if (!checkAttempts("1440px", openedDesktop, await evaluate(cdp, sessionId, ATTEMPTS))) {
+      failed = true;
+    }
     const desktop = await evaluate(cdp, sessionId, SURFACE);
     const centred =
       desktop.panel.left > 0 &&

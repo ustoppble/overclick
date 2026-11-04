@@ -440,6 +440,12 @@ export function encodeExecutor(input: {
   agent?: string;
   session_id?: string;
   effort?: string;
+  /**
+   * The model as the claim spelled it ("gpt-5.6-sol"), kept beside the
+   * normalized key the attempt row stores ("gpt-5-6-sol"): the card shows
+   * the name that was registered, Consumo groups by the key (E2).
+   */
+  declared_model?: string;
 }): string {
   return JSON.stringify(input);
 }

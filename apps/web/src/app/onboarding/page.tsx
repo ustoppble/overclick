@@ -4,8 +4,8 @@ import { redirect } from "next/navigation";
 import { mcpToken, organization, project } from "@agent-board/db";
 import { getSession } from "../../lib/cookies";
 import { db } from "../../lib/db";
-import { selectionFromConfig } from "../../lib/executors";
 import { sessionPrincipal } from "../../lib/web-scope";
+import { CONNECT_STEP, onboardingStepFromParam } from "./steps";
 import { Wizard } from "./wizard";
 
 export const dynamic = "force-dynamic";
@@ -54,10 +54,9 @@ export default async function OnboardingPage({
         <Wizard
           host={host}
           origin={origin}
-          initialStep={3}
+          initialStep={CONNECT_STEP}
           installOnly
           project={null}
-          executors={selectionFromConfig([])}
           lang={ws.language}
         />
       </div>
@@ -81,8 +80,8 @@ export default async function OnboardingPage({
         columns: { name: true },
       })
     : null;
-  const rawStep = Number(Array.isArray(sp.step) ? sp.step[0] : sp.step);
-  const initialStep = rawStep >= 1 && rawStep <= 3 ? Math.floor(rawStep) : 1;
+  // Two steps since E2; an old ?step=2 or ?step=3 opens connecting.
+  const initialStep = onboardingStepFromParam(sp.step);
 
   return (
     <div className="nb nebula-surface nb-center">
@@ -101,7 +100,6 @@ export default async function OnboardingPage({
               }
             : null
         }
-        executors={selectionFromConfig(ws.executors)}
         lang={ws.language}
       />
     </div>

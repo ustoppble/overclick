@@ -25,7 +25,6 @@ import {
   transcriptRef,
   user,
   workspace,
-  type ExecutorConfig,
   type ProjectContextSource,
   type UsageSegment,
   type UsageReport,
@@ -84,7 +83,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { applyExecutorUpdate } from "../lib/executors";
+import { resolveCatalogCli } from "../lib/executors";
 import {
   computeInsights,
   costSourceNote,
@@ -125,11 +124,8 @@ import {
 import { renderBriefingMarkdown } from "./briefing";
 import { refreshProjectContext } from "../lib/project-context-refresh";
 import {
-  isExecutorPairConfigured,
   normalizeClaimCli,
-  normalizeObservedExecutor,
   resolveClaimExecutor,
-  unregisteredClaimModelRefusal,
   type AttemptModelSource,
 } from "./executor-identity";
 import { resolveProjectByRepo } from "./project-resolution";
@@ -235,6 +231,9 @@ const HARNESS_INPUT_IGNORED =
 
 const HARNESS_INCLUDE_IGNORED =
   "include harness was ignored: cards no longer carry a planned harness (OCL-202). task_get returns the executor that ran the card.";
+
+const EXECUTORS_UPDATE_IGNORED =
+  "executors_update was ignored: the board no longer keeps a list of executors. The Overclock app decides the CLI, the model and the effort; task_claim records what ran. This tool will leave the contract in a later release.";
 
 function harnessIncludeWarnings(include?: ListInclude[]): { warnings?: string[] } {
   return include?.includes("harness") ? { warnings: [HARNESS_INCLUDE_IGNORED] } : {};
@@ -3400,38 +3399,9 @@ async function taskClaim(
     transcript?: TranscriptRefWire;
   },
 ) {
-  const declaredModel = input.executor?.model?.trim();
-  if (declaredModel) {
-    const [claimWs] = await db
-      .select({ executors: workspace.executors })
-      .from(workspace)
-      .where(eq(workspace.id, ctx.workspaceId))
-      .limit(1);
-    if (!claimWs) {
-      return err(
-        "NOT_FOUND",
-        "The workspace for this token no longer exists. Generate a new token in the board Settings.",
-      );
-    }
-    const refusal = unregisteredClaimModelRefusal(
-      input.executor?.cli,
-      declaredModel,
-      claimWs.executors,
-    );
-    if (refusal) {
-      // Refused, but not forgotten: the pair still lands in seen_executors,
-      // which is what Settings offers as "add this executor?". Otherwise
-      // closing the catalog would also close the only path by which a real
-      // new connection becomes known — the agent would be told to ask a human
-      // to register it, and the human would have nothing to click.
-      await recordSeenExecutor(db, ctx.workspaceId, {
-        cli: input.executor?.cli,
-        model: declaredModel ?? undefined,
-      });
-      return err("INVALID_ARGUMENT", refusal);
-    }
-  }
-
+  // No list to check the claim against (E2): the Overclock app decided what
+  // runs, and the board records it. resolveClaimExecutor's normalization is
+  // what keeps an unfamiliar spelling from becoming a twin row in Consumo.
   const claimed = await db.transaction(async (tx) => {
     const found = await findTask(tx, ctx, input.task_id, true);
     if (!found) {
@@ -3565,6 +3535,9 @@ async function taskClaim(
           effort: executor.effort,
           agent: executor.agent,
           session_id: executor.session_id,
+          ...(executor.model_source === "declared" && input.executor?.model?.trim()
+            ? { declared_model: input.executor.model.trim() }
+            : {}),
         }),
         model: executor.model ?? null,
         modelSource: executor.model_source ?? null,
@@ -3615,11 +3588,6 @@ async function taskClaim(
   });
 
   if (!claimed.ok) return claimed;
-
-  await recordSeenExecutor(db, ctx.workspaceId, {
-    cli: claimed.value.executor.cli,
-    model: claimed.value.executor.model,
-  });
 
   const payload = await assembleTaskPayload(
     db,
@@ -3818,48 +3786,6 @@ async function taskHeartbeat(
       now,
     );
   });
-}
-
-/**
- * Learns executors from real connections: a claim or deliver whose cli/model
- * pair is outside the active workspace config records the occurrence, and
- * Settings offers it as a one-click suggestion.
- */
-async function recordSeenExecutor(
-  db: McpDatabase,
-  workspaceId: string,
-  executor: { cli?: string; model?: string },
-): Promise<void> {
-  const normalized = normalizeObservedExecutor(executor);
-  if (!normalized) return;
-  const { cli, model } = normalized;
-
-  const [ws] = await db
-    .select()
-    .from(workspace)
-    .where(eq(workspace.id, workspaceId))
-    .limit(1);
-  if (!ws) return;
-  if (isExecutorPairConfigured(ws.executors, cli, model)) return;
-
-  const now = new Date().toISOString();
-  const seen = [...ws.seenExecutors];
-  const match = seen.find((s) => {
-    const existing = normalizeObservedExecutor(s);
-    return existing?.cli === cli && existing.model === model;
-  });
-  if (match) {
-    match.cli = cli;
-    match.model = model;
-    match.lastSeenAt = now;
-    match.count += 1;
-  } else {
-    seen.push({ cli, model, firstSeenAt: now, lastSeenAt: now, count: 1 });
-  }
-  await db
-    .update(workspace)
-    .set({ seenExecutors: seen })
-    .where(eq(workspace.id, workspaceId));
 }
 
 async function taskReopen(
@@ -4863,13 +4789,6 @@ async function taskDeliver(
       incompleteReason,
       usage: storedUsage,
       routedTo: reviewerFromRow(updated),
-      attemptExecutor: openAttempt
-        ? {
-            ...claimExecutor,
-            ...(measured ? { model: measured.model } : {}),
-            ...(newModelSource ? { model_source: newModelSource } : {}),
-          }
-        : null,
       transcript,
       usageGuard,
       deliveryVerification,
@@ -4878,10 +4797,6 @@ async function taskDeliver(
   });
 
   if (!persisted.ok) return persisted;
-
-  if (persisted.value.attemptExecutor) {
-    await recordSeenExecutor(db, ctx.workspaceId, persisted.value.attemptExecutor);
-  }
 
   if (input.return !== "full") {
     const updated = persisted.value.updated;
@@ -5222,21 +5137,18 @@ async function insightsQuery(
 }
 
 /**
- * Adds or removes CLIs and models in the workspace executor config, writing
- * the same shape the Settings grid saves so both screens read one source.
- * Behind the manage flag: executors decide what a card is allowed to run on.
+ * Accepted and ignored for one release (E2, in the OCL-202 pattern): the
+ * Overclock app decides the CLI, the model and the effort, so the board keeps
+ * no list to add to. The input is still validated and still needs the manage
+ * flag, the answer has the shape the contract publishes, and the config the
+ * workspace column holds is read back untouched. The tool leaves the contract
+ * in a later release, with notice.
  */
 async function executorsUpdate(
   db: McpDatabase,
   ctx: AuthContext,
   input: {
     cli: string;
-    label?: string;
-    enabled?: boolean;
-    add_models?: string[];
-    remove_models?: string[];
-    efforts?: Record<string, string[]>;
-    remove?: boolean;
     return?: "ack" | "full";
   },
 ) {
@@ -5244,7 +5156,7 @@ async function executorsUpdate(
   if (denied) return denied;
 
   const [ws] = await db
-    .select()
+    .select({ executors: workspace.executors, updatedAt: workspace.updatedAt })
     .from(workspace)
     .where(eq(workspace.id, ctx.workspaceId))
     .limit(1);
@@ -5255,50 +5167,20 @@ async function executorsUpdate(
     );
   }
 
-  const applied = applyExecutorUpdate(ws.executors, input);
-  if (applied.removed && applied.config.length === ws.executors.length) {
-    return err(
-      "NOT_FOUND",
-      `Executor '${input.cli}' is not in this workspace config. The board Settings list the configured executors.`,
-    );
-  }
-
-  await db
-    .update(workspace)
-    .set({ executors: applied.config as ExecutorConfig[] })
-    .where(eq(workspace.id, ctx.workspaceId));
-
-  const [savedWorkspace] = await db
-    .select({ updatedAt: workspace.updatedAt })
-    .from(workspace)
-    .where(eq(workspace.id, ctx.workspaceId))
-    .limit(1);
+  const targetId = resolveCatalogCli(input.cli) ?? input.cli.trim().toLowerCase();
+  const warnings = [EXECUTORS_UPDATE_IGNORED];
   if (input.return === "full") {
     return {
-      executors: applied.config.map(executorToWire),
-      updated: applied.targetId,
-      removed: applied.removed,
+      executors: ws.executors.map(executorToWire),
+      updated: targetId,
+      removed: false,
+      warnings,
     };
   }
-
-  const changed: ChangedFields = {};
-  if (!applied.removed) {
-    const target = applied.config.find((item) => item.id === applied.targetId);
-    if (input.label !== undefined && target) changed.label = target.label;
-    if (input.enabled !== undefined && target) changed.enabled = target.enabled;
-    if (input.add_models?.length || input.remove_models?.length) {
-      changed.models = target?.models ?? [];
-    }
-    if (input.efforts !== undefined && target) {
-      changed.efforts = target.efforts;
-    }
-  }
-  return executorsWriteAck(
-    applied.targetId,
-    savedWorkspace?.updatedAt ?? new Date(),
-    applied.removed,
-    changed,
-  );
+  return {
+    ...executorsWriteAck(targetId, ws.updatedAt, false, {}),
+    warnings,
+  };
 }
 
 /** Organizations and projects are the admin's to create, edit and delete. */

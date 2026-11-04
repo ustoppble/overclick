@@ -59,4 +59,13 @@ describe("the type ramp holds (ux-v2 §2, checklist item 3's sibling)", () => {
       stale.map((v) => `${v.file} ${v.selector} (${v.value}) — fixed, remove from the allowlist`).join("\n"),
     ).toEqual([]);
   });
+
+  it("keeps no escape for the executors grid, which left with E2", () => {
+    // The grid, its "seen" chips and the old policy chain are gone; a rule
+    // that brings any of them back below the ramp needs a new decision, not
+    // a leftover entry.
+    const grid = /\.exec(-add|-grid)?\s|\.exec \.|\.mchip|\.seen-|\.policy \.chain/;
+    expect(KNOWN_TYPE_RAMP_EXCEPTIONS.filter((v) => grid.test(`${v.selector} `))).toEqual([]);
+    expect(allViolations.filter((v) => grid.test(`${v.selector} `))).toEqual([]);
+  });
 });

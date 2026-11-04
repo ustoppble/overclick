@@ -2,6 +2,7 @@ import {
   claimInactiveMinutes,
   harnessChain,
   isClaimStale,
+  normalizeModelKey,
   normalizeUsageSegments,
   readTranscriptRef,
   recomputeUsageCommand,
@@ -12,6 +13,7 @@ import {
   type UsageRecipeRow,
 } from "@agent-board/db";
 import type {
+  AttemptView,
   BoardCard,
   BoardCardDetail,
   DurationView,
@@ -175,6 +177,27 @@ function toTranscriptView(
   };
 }
 
+/**
+ * The model as the claim spelled it ("gpt-5.6-sol"), which the attempt keeps
+ * beside the normalized key it stores ("gpt-5-6-sol"). Only while that key is
+ * still the attempt's model: once the usage measured another one, the
+ * spelling names a model that did not run. Older attempts never kept it and
+ * read as their key.
+ */
+function spelledModel(raw: string | null, model: string | null): string | null {
+  if (!model) return null;
+  if (!raw) return model;
+  try {
+    const declared = (JSON.parse(raw) as { declared_model?: unknown }).declared_model;
+    if (typeof declared === "string" && normalizeModelKey(declared) === model) {
+      return declared;
+    }
+  } catch {
+    // A bare CLI name, from before the executor was a JSON blob.
+  }
+  return model;
+}
+
 /** What the latest claim ran on (OCL-202), model and effort. */
 function claimedHarness(latestAttempt: LineAttempt | null | undefined) {
   // The board records the harness that executed and never shows a plan. The
@@ -188,11 +211,76 @@ function claimedHarness(latestAttempt: LineAttempt | null | undefined) {
       )
     : null;
   const claimedModel = claimed?.model ?? null;
+  const spelled = latestAttempt
+    ? spelledModel(latestAttempt.executor, latestAttempt.model)
+    : null;
   return {
     cli: claimed?.cli ?? null,
     claimedModel,
-    harness: [claimedModel, claimed?.effort].filter(Boolean).join(" · ") || null,
+    spelled,
+    effort: claimed?.effort ?? null,
+    harness: [spelled, claimed?.effort].filter(Boolean).join(" · ") || null,
   };
+}
+
+/**
+ * The card line's one value for what ran, with the claimed model spelled as
+ * it was registered. The rest of the chain stays on the normalized key, the
+ * name Consumo groups by.
+ */
+function recordedChain(
+  claimed: { claimedModel: string | null; spelled: string | null },
+  ranModels: Array<string | null>,
+): string | null {
+  const chain = harnessChain(claimed.claimedModel, ranModels);
+  if (!chain || !claimed.claimedModel || !claimed.spelled) return chain;
+  const [first, ...rest] = chain.split(" → ");
+  return first === normalizeModelKey(claimed.claimedModel)
+    ? [claimed.spelled, ...rest].join(" → ")
+    : chain;
+}
+
+/**
+ * Every attempt on the card, oldest first: what each run recorded (CLI,
+ * model, effort), how long it took, what it cost when money is on, how it
+ * ended, when it started and the commit its delivery carried (E2).
+ */
+function toAttemptViews(
+  t: DetailRow,
+  tr: Dict,
+  pricingEnabled: boolean,
+): AttemptView[] {
+  const commits = new Map<string, string>();
+  for (const item of t.handoffs) {
+    if (item.attemptId && item.commitHash) commits.set(item.attemptId, item.commitHash);
+  }
+  return [...t.attempts]
+    .sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime())
+    .map((attempt, index) => {
+      const executor = decodeExecutor(attempt.executor, attempt.model, attempt.modelSource);
+      const clock = resolveDuration(attempt);
+      const commit = commits.get(attempt.id) ?? null;
+      return {
+        n: index + 1,
+        cli: executor.cli ?? executor.agent ?? null,
+        model: spelledModel(attempt.executor, attempt.model),
+        effort: executor.effort ?? null,
+        modelSource: attempt.modelSource ?? null,
+        duration: clock ? fmtResolvedDuration(clock, tr) : null,
+        cost:
+          pricingEnabled && attempt.costUsd != null
+            ? fmtCost(Number(attempt.costUsd), attempt.costSource ?? null, tr)
+            : null,
+        result:
+          attempt.result === "success" ||
+          attempt.result === "failure" ||
+          attempt.result === "abandoned"
+            ? attempt.result
+            : null,
+        at: formatShortDate(attempt.startedAt, tr.lang),
+        commit: commit ? commit.slice(0, 7) : null,
+      };
+    });
 }
 
 /**
@@ -435,7 +523,8 @@ export function toBoardCard(
     executors,
     // The card line says what ran in one value: the claimed model, then any
     // other model the usage recorded.
-    harnessChain: harnessChain(claimed.claimedModel, ranModels),
+    harnessChain: recordedChain(claimed, ranModels),
+    effort: claimed.effort,
     modelSource: latestAttempt?.modelSource ?? null,
     // The column already says "done · review". A chip only earns its place by
     // saying something the column cannot: that this one is waiting on you.
@@ -536,6 +625,7 @@ export function toBoardCardDetail(
       at: tick.at,
     })),
     harness: claimed.harness,
+    attempts: toAttemptViews(t, tr, pricingEnabled),
     executor: t.claimedByExecutor ?? latestAttempt?.executor ?? null,
     harnessRan: ranChain && ranChain !== claimedChain ? ranChain : null,
     origem: `${origem} · ${formatShortDate(t.createdAt, tr.lang)}`,

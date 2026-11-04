@@ -27,6 +27,7 @@ function card(overrides: Partial<BoardCard>): BoardCard {
     ranCli: "codex",
     executors: ["codex"],
     harnessChain: null,
+    effort: null,
     modelSource: null,
     awaitingMyReview: false,
     devolve: "queue",
