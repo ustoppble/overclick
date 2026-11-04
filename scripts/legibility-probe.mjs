@@ -217,10 +217,13 @@ const PROBE = `(() => {
     const eff = over([fg[0], fg[1], fg[2], fg[3] * opacityOf(el)], bg);
     const [hi, lo] = [lum(eff), lum(bg)].sort((x, y) => y - x);
     const ratio = (hi + 0.05) / (lo + 0.05);
+    // WCAG 1.4.3 exempts text in an inactive control (a disabled button is
+    // drawn at .4 on purpose); its size is still held to the floor.
+    const inactive = Boolean(el.closest(":disabled, [aria-disabled='true']"));
     out.texts++;
     out.minSize = Math.min(out.minSize, size);
-    out.minRatio = Math.min(out.minRatio, ratio);
-    if (size < MIN_PX || ratio < MIN_RATIO) {
+    if (!inactive) out.minRatio = Math.min(out.minRatio, ratio);
+    if (size < MIN_PX || (!inactive && ratio < MIN_RATIO)) {
       const cls = [...el.classList].join(".");
       out.fails.push(size + "px " + ratio.toFixed(2) + ":1 \\"" + t.textContent.trim().slice(0, 40) + "\\" <" + el.tagName.toLowerCase() + (cls ? "." + cls : "") + ">");
     }
