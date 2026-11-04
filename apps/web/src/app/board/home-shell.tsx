@@ -154,7 +154,8 @@ export function HomeShell({
   const searchRunner = useRef<ReturnType<typeof createBoardSearchRunner<BoardCard>>>(null);
   if (!searchRunner.current) {
     searchRunner.current = createBoardSearchRunner<BoardCard>({
-      search: searchBoardCardsAction,
+      // The page's query carries the person filter, which narrows the hits too.
+      search: (query) => searchBoardCardsAction(query, window.location.search),
     });
   }
   const searchActive = debouncedSearchQuery.trim().length > 0;

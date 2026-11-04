@@ -60,6 +60,12 @@ export const user = pgTable("user", {
   boardPeriod: text("board_period"),
   /** Which date the period reads: "updated" (last activity) or "created". Null = the default, "updated". */
   boardPeriodBy: text("board_period_by"),
+  /**
+   * Whose cards the board shows: `me`, a user uuid, or null for everyone.
+   * Remembered with the scope and the period; read back only against the
+   * people the reader can see on a card, so a stale id means everyone.
+   */
+  boardPerson: text("board_person"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

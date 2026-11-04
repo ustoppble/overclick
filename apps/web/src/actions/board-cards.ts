@@ -21,6 +21,7 @@ import {
 import { getSession } from "../lib/cookies";
 import { db } from "../lib/db";
 import { dict } from "../lib/i18n";
+import { readBoardPerson } from "../lib/person-filter";
 import { loadUsageRecipes } from "../lib/recipes";
 import { projectScope, type Principal } from "../lib/scope";
 import { sessionPrincipal } from "../lib/web-scope";
@@ -109,6 +110,8 @@ export async function loadBoardCardDetailAction(
  */
 export async function searchBoardCardsAction(
   query: string,
+  /** The page's query: its ?person= narrows the hits, as it narrows the board. */
+  search?: string,
 ): Promise<{
   query: string;
   cards: BoardCard[];
@@ -124,11 +127,18 @@ export async function searchBoardCardsAction(
   if (!slot.ok) return { query, cards: [], limited: slot.reason };
   try {
     const ids = await searchBoardTaskIds(db(), reader.ws.id, reader.principal, wanted);
+    const person = await readBoardPerson(
+      db(),
+      reader.ws.id,
+      reader.principal,
+      typeof search === "string" ? scopeOverrideFromSearch(search) : undefined,
+    );
     const rows = await loadBoardTasksByIds(
       db(),
       reader.projects.map((item) => item.id),
       reader.principal,
       ids,
+      person.userId,
     );
     return { query, cards: asCards(reader, rows) };
   } finally {

@@ -110,6 +110,7 @@ import {
   taskScope,
   type MaybePrincipal,
 } from "../lib/scope";
+import { personCondition } from "../lib/person-filter";
 import { loadModelPrices, type PricesDb } from "../lib/prices";
 import {
   bindUsageRecipe,
@@ -2664,6 +2665,7 @@ async function taskList(
     offset?: number;
     created_after?: string;
     awaiting_review_by?: "me" | string;
+    person?: "me" | string;
     limit?: number;
     include?: ListInclude[];
   },
@@ -2709,6 +2711,13 @@ async function taskList(
   if (input.created_after) filters.push(gt(task.createdAt, new Date(input.created_after)));
   if (input.claimed_by) {
     filters.push(eq(task.claimedByTokenId, ctx.tokenId), eq(task.status, "em_execucao"));
+  }
+  if (input.person) {
+    // The board's person filter, ANDed with the scope above: it narrows what
+    // the caller already sees and never reaches past it. A token with no
+    // owner has no "me", so it lists nothing.
+    const personId = input.person === "me" ? ctx.userId : input.person;
+    filters.push(personId ? personCondition(personId) : sql`false`);
   }
   if (input.session_id) {
     filters.push(eq(task.status, "em_execucao"), exists(

@@ -19,6 +19,13 @@ import type { ActionResult } from "../lib/action-result";
 import { getSession } from "../lib/cookies";
 import { db } from "../lib/db";
 import { loadModelPrices } from "../lib/prices";
+import {
+  loadVisiblePeople,
+  PERSON_ALL,
+  PERSON_ME,
+  resolvePersonChoice,
+} from "../lib/person-filter";
+import { looksLikeUuid } from "../mcp/map";
 import { organizationScope, projectScope } from "../lib/scope";
 import { sessionPrincipal } from "../lib/web-scope";
 
@@ -140,6 +147,34 @@ export async function setBoardScopeAction(input: {
       boardProjectId: encodeProjectSelection(scope.projectIds),
     })
     .where(eq(user.id, who.userId));
+  return { ok: true };
+}
+
+/**
+ * The person picked in the global bar (person-filter.ts), remembered beside
+ * the scope and the period. `all` clears it; `me` is stored as the word, so it
+ * stays the reader whoever they are; any other id must be a person the reader
+ * can see on a card, and anything else is "not found", one answer for all.
+ */
+export async function setBoardPersonAction(choice: string): Promise<ActionResult> {
+  const who = await reader();
+  if (!who) return { ok: false, error: "Not signed in." };
+  const notFound = { ok: false as const, error: "Person not found." };
+  if (typeof choice !== "string") return notFound;
+  let stored: string | null;
+  if (choice === PERSON_ALL) stored = null;
+  else if (choice === PERSON_ME || choice === who.userId) stored = PERSON_ME;
+  else {
+    const ws = await db().query.workspace.findFirst({ columns: { id: true } });
+    if (!ws) return notFound;
+    const people = looksLikeUuid(choice)
+      ? await loadVisiblePeople(db(), ws.id, who.principal)
+      : [];
+    const resolved = resolvePersonChoice(choice, who.principal, people);
+    if (resolved.userId !== choice) return notFound;
+    stored = choice;
+  }
+  await db().update(user).set({ boardPerson: stored }).where(eq(user.id, who.userId));
   return { ok: true };
 }
 

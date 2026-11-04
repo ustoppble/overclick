@@ -660,6 +660,12 @@ export const TaskListInputSchema = z.object({
     .describe("Only cards created strictly after this ISO timestamp."),
   awaiting_review_by: z.union([z.literal("me"), z.string().min(1)]).optional(),
   /**
+   * The board's person filter: the cards a person wrote, holds the claim on
+   * or delivered. `me` is the token's owner; otherwise a user id.
+   */
+  person: z.union([z.literal("me"), z.string().uuid()]).optional()
+    .describe("Cards linked to one person: written by them, claimed now by their agent, or delivered by it. me = the token's owner, or a user id."),
+  /**
    * Cards per page, oldest first unless order is newest. Default 50, at most 200. The whole answer
    * goes into the caller's context, so an unbounded board would spend it on
    * cards nobody asked about.

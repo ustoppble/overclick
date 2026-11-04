@@ -745,6 +745,12 @@ const en = {
     scope: "Scope",
     scopeOrganizations: "Organizations",
     scopeProjects: "Projects",
+    /** The person filter beside the scope: whose cards the board shows. */
+    person: "Person",
+    personAll: "All people",
+    personMe: "Me",
+    personHint: "Cards a person wrote, has claimed or delivered",
+    personPeople: "People on your cards",
     searchShortcut: "⌘K",
     show: "Show:",
     periodPhrase: (by: "updated" | "created", period: "7d" | "14d" | "30d" | "all") =>
@@ -1636,6 +1642,11 @@ const ptBR: Dict = {
     scope: "Escopo",
     scopeOrganizations: "Organizações",
     scopeProjects: "Projetos",
+    person: "Pessoa",
+    personAll: "Todas as pessoas",
+    personMe: "Eu",
+    personHint: "Cards que a pessoa criou, pegou ou entregou",
+    personPeople: "Pessoas nos seus cards",
     searchShortcut: "⌘K",
     show: "Mostrar:",
     periodPhrase: (by: "updated" | "created", period: "7d" | "14d" | "30d" | "all") =>

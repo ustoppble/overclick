@@ -23,6 +23,7 @@ import {
   loadBoardTasksByIds,
 } from "../../lib/board-tasks";
 import { loadReviewQueue, readReviewScope } from "../../lib/review-queue";
+import { readBoardPerson } from "../../lib/person-filter";
 import { joinReviewQueue } from "../../lib/review-queue-order";
 import { loadBoardSignature } from "../../lib/board-signature";
 import { loadBoardTotals } from "../../lib/board-totals-query";
@@ -322,7 +323,7 @@ async function BoardContent({
     releaseRows.flatMap((row) => (row.value ? [{ value: row.value }] : [])),
   );
 
-  // Only the scope and the period are remembered (navigation plan E4, F2).
+  // Only the scope, the person and the period are remembered (navigation plan E4, F2).
   // The mission, type, priority and release columns are still on the user,
   // from before, and are not read.
   const [me] = await db()
@@ -331,6 +332,7 @@ async function BoardContent({
       boardProjectId: user.boardProjectId,
       boardPeriod: user.boardPeriod,
       boardPeriodBy: user.boardPeriodBy,
+      boardPerson: user.boardPerson,
     })
     .from(user)
     .where(eq(user.id, session.userId))
@@ -403,10 +405,17 @@ async function BoardContent({
   // Read before the cards, so a write landing in between makes the poll
   // refresh once more instead of hiding behind a fingerprint newer than the page.
   const boardSignature = await loadBoardSignature(db(), ws.id, projectIds, principal);
+  // The person filter of the global bar (person-filter.ts): the address's
+  // ?person= first, the remembered one otherwise, read back against the
+  // people this reader can see. It narrows inside the scope, on the server.
+  const person = await readBoardPerson(db(), ws.id, principal, scopeOverrideFromSearch(params), {
+    remembered: me?.boardPerson ?? null,
+  });
   const rows = await loadBoardTasks(db(), projectIds, principal, {
     now: windowNow,
     period: initialFilter.period,
     periodBy: initialFilter.periodBy,
+    personUserId: person.userId,
   });
   // A link to one card (?card=OCL-12) opens it even when the window left it
   // out. Out of scope reads as no card, the same as an id that matches none.
