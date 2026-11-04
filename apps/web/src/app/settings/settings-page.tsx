@@ -49,6 +49,7 @@ export async function SettingsPage({
       id: true,
       name: true,
       idPrefix: true,
+      organizationId: true,
       context: true,
       currentVersion: true,
       contextSource: true,
@@ -172,7 +173,13 @@ export async function SettingsPage({
         isAdmin
         team={{
           currentUserId: userId,
-          organizations: organizations.map((row) => ({ id: row.id, name: row.name })),
+          organizations: organizations.map((row) => ({
+            id: row.id,
+            name: row.name,
+            projects: projects
+              .filter((p) => p.organizationId === row.id)
+              .map((p) => ({ id: p.id, name: p.name })),
+          })),
           members,
           invitations,
         }}

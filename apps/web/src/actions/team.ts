@@ -2,20 +2,25 @@
 
 import { isValidEmail } from "@agent-board/db";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import type { ActionResult } from "../lib/action-result";
 import { getSession, setSession } from "../lib/cookies";
 import { db } from "../lib/db";
 import { emailConfigured, sendEmail } from "../lib/email";
+import { asLang, formatMediumDate } from "../lib/format";
 import { dict } from "../lib/i18n";
 import {
   acceptInvitation,
   createInvitation,
   dismissInstallNotices,
   inspectInvitation,
+  resendInvitation,
   revokeInvitation,
   setMemberActive,
+  setMemberProjects,
+  type CreateInvitationResult as CreatedInvitation,
 } from "../lib/invitations";
 import { sweepLoginRows } from "../lib/login-housekeeping";
 import { LOGIN_CODE_PATTERN } from "../lib/login-code";
@@ -39,7 +44,7 @@ import { ADMIN_ONLY, sessionPrincipal } from "../lib/web-scope";
  * the admin's; a member calling it gets the refusal and nothing changes.
  */
 type AdminSession =
-  | { ok: true; userId: string; workspaceId: string }
+  | { ok: true; userId: string; workspaceId: string; language: string | null }
   | { ok: false; error: string };
 
 async function adminSession(): Promise<AdminSession> {
@@ -49,17 +54,54 @@ async function adminSession(): Promise<AdminSession> {
   if (principal?.role !== "admin") return { ok: false, error: ADMIN_ONLY };
   const ws = await db().query.workspace.findFirst();
   if (!ws) return { ok: false, error: "Workspace not found." };
-  return { ok: true, userId: session.userId, workspaceId: ws.id };
+  return { ok: true, userId: session.userId, workspaceId: ws.id, language: ws.language };
 }
 
 export type CreateInvitationResult =
-  | { ok: true; path: string; expiresAt: string }
+  | { ok: true; path: string; expiresAt: string; emailed: boolean }
   | { ok: false; error: string };
 
-/** The link is returned once, here; the database keeps only its hash. */
+/**
+ * Where this board is reached from, as the admin's own request says: the
+ * same origin Settings prints the link with, so the emailed link and the one
+ * shown to copy are the same link.
+ */
+async function requestOrigin(): Promise<string> {
+  const h = await headers();
+  const host = h.get("host") ?? "<your-host>";
+  const proto = h.get("x-forwarded-proto")?.split(",")[0].trim()
+    ?? (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
+/**
+ * Sends the link to the invited address, with the sign-in code's sender.
+ * Whether it went out is told back, never thrown: the admin always has the
+ * link to copy, the plan B when the board has no email configured.
+ */
+async function emailInvitation(
+  created: Extract<CreatedInvitation, { ok: true }>,
+  language: string | null,
+): Promise<boolean> {
+  if (!emailConfigured()) return false;
+  const t = dict(language).settings;
+  const url = `${await requestOrigin()}${created.path}`;
+  return sendEmail({
+    to: created.email,
+    subject: t.teamInviteEmailSubject(created.organizationName),
+    text: t.teamInviteEmailText(
+      url,
+      created.organizationName,
+      formatMediumDate(created.expiresAt.toISOString(), asLang(language)),
+    ),
+  });
+}
+
+/** The link is returned once, here, and emailed; the database keeps only its hash. */
 export async function createInvitationAction(input: {
   email: string;
   organizationId: string;
+  projectIds?: string[];
 }): Promise<CreateInvitationResult> {
   const admin = await adminSession();
   if (!admin.ok) return admin;
@@ -68,11 +110,46 @@ export async function createInvitationAction(input: {
     workspaceId: admin.workspaceId,
     email: input.email,
     organizationId: input.organizationId,
+    projectIds: Array.isArray(input.projectIds) ? input.projectIds : [],
     createdByUserId: admin.userId,
   });
   if (!created.ok) return created;
+  const emailed = await emailInvitation(created, admin.language);
   revalidatePath("/settings");
-  return { ok: true, path: created.path, expiresAt: created.expiresAt.toISOString() };
+  return { ok: true, path: created.path, expiresAt: created.expiresAt.toISOString(), emailed };
+}
+
+/** A new link for a pending invitation, emailed again; the old one stops working. */
+export async function resendInvitationAction(invitationId: string): Promise<CreateInvitationResult> {
+  const admin = await adminSession();
+  if (!admin.ok) return admin;
+  const created = await resendInvitation(db(), {
+    workspaceId: admin.workspaceId,
+    invitationId,
+    createdByUserId: admin.userId,
+  });
+  if (!created.ok) return created;
+  const emailed = await emailInvitation(created, admin.language);
+  revalidatePath("/settings");
+  return { ok: true, path: created.path, expiresAt: created.expiresAt.toISOString(), emailed };
+}
+
+/** Which projects of their organization a member works on. */
+export async function setMemberProjectsAction(
+  userId: string,
+  projectIds: string[],
+): Promise<ActionResult> {
+  const admin = await adminSession();
+  if (!admin.ok) return admin;
+  const result = await setMemberProjects(db(), {
+    workspaceId: admin.workspaceId,
+    targetUserId: userId,
+    projectIds: Array.isArray(projectIds) ? projectIds : [],
+    actingUserId: admin.userId,
+  });
+  if (!result.ok) return result;
+  revalidatePath("/settings");
+  return { ok: true };
 }
 
 export async function revokeInvitationAction(invitationId: string): Promise<ActionResult> {

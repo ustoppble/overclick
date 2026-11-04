@@ -4,9 +4,11 @@ import {
   isValidEmail,
   mcpToken,
   organization,
+  project,
+  projectMember,
   user,
 } from "@agent-board/db";
-import { and, asc, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import type { McpDatabase } from "../mcp/types";
 import { clearLoginCodes } from "./login-code";
 
@@ -14,11 +16,12 @@ import { clearLoginCodes } from "./login-code";
  * Invitations and the team (OCL-222): how a second person gets onto a board
  * whose signup closed after the first admin.
  *
- * The admin names an email and one organization; the link carries a random
- * secret whose hash is all the database keeps. Accepting it creates that
- * person as a member of that organization, once: the statement that stamps
- * the invitation used is the same one that checks it was not, so two tabs
- * racing on the same link create one account.
+ * The admin names an email, one organization and the projects of it the
+ * person will work on; the link carries a random secret whose hash is all the
+ * database keeps. Accepting it creates that person as a member of that
+ * organization, linked to those projects, once: the statement that stamps the
+ * invitation used is the same one that checks it was not, so two tabs racing
+ * on the same link create one account.
  */
 
 /** How long a link stays good. */
@@ -49,8 +52,46 @@ function normalizeEmail(raw: string): string {
 }
 
 export type CreateInvitationResult =
-  | { ok: true; id: string; secret: string; path: string; expiresAt: Date }
+  | {
+      ok: true;
+      id: string;
+      secret: string;
+      path: string;
+      expiresAt: Date;
+      email: string;
+      organizationName: string;
+    }
   | { ok: false; error: string };
+
+/**
+ * The given ids, deduplicated, if every one is a project of `organizationId`
+ * in this workspace; null when any is not, so the caller refuses the whole
+ * request instead of keeping part of it.
+ */
+async function projectsOfOrganization(
+  db: Db,
+  input: { workspaceId: string; organizationId: string; projectIds: string[] },
+): Promise<string[] | null> {
+  const ids = [...new Set(input.projectIds)];
+  if (ids.length === 0) return [];
+  if (!ids.every(isUuid)) return null;
+  const rows = await db
+    .select({ id: project.id })
+    .from(project)
+    .where(
+      and(
+        inArray(project.id, ids),
+        eq(project.organizationId, input.organizationId),
+        eq(project.workspaceId, input.workspaceId),
+      ),
+    );
+  return rows.length === ids.length ? ids : null;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_RE.test(value);
+}
 
 export async function createInvitation(
   db: Db,
@@ -58,6 +99,8 @@ export async function createInvitation(
     workspaceId: string;
     email: string;
     organizationId: string;
+    /** Projects of that organization the member will be linked to. */
+    projectIds?: string[];
     createdByUserId: string;
     now?: Date;
   },
@@ -67,17 +110,26 @@ export async function createInvitation(
     return { ok: false, error: "Use a valid email for the invitation." };
   }
 
-  const [org] = await db
-    .select({ id: organization.id })
-    .from(organization)
-    .where(
-      and(
-        eq(organization.id, input.organizationId),
-        eq(organization.workspaceId, input.workspaceId),
-      ),
-    )
-    .limit(1);
+  const [org] = isUuid(input.organizationId)
+    ? await db
+        .select({ id: organization.id, name: organization.name })
+        .from(organization)
+        .where(
+          and(
+            eq(organization.id, input.organizationId),
+            eq(organization.workspaceId, input.workspaceId),
+          ),
+        )
+        .limit(1)
+    : [];
   if (!org) return { ok: false, error: "Organization not found." };
+
+  const projectIds = await projectsOfOrganization(db, {
+    workspaceId: input.workspaceId,
+    organizationId: org.id,
+    projectIds: input.projectIds ?? [],
+  });
+  if (!projectIds) return { ok: false, error: "Project not found in that organization." };
 
   const [taken] = await db
     .select({ id: user.id })
@@ -97,6 +149,7 @@ export async function createInvitation(
       workspaceId: input.workspaceId,
       email,
       organizationId: org.id,
+      projectIds,
       tokenHash: hashInvitationSecret(secret),
       expiresAt,
       createdByUserId: input.createdByUserId,
@@ -110,8 +163,68 @@ export async function createInvitation(
     secret,
     path: `${INVITE_PATH}${secret}`,
     expiresAt,
+    email,
+    organizationName: org.name,
   };
 }
+
+/**
+ * A new link for a pending invitation, same person, organization and
+ * projects; the old link is withdrawn in the same transaction, so at most one
+ * of them ever works. Refused for a link already used, withdrawn or expired.
+ */
+export async function resendInvitation(
+  db: Db,
+  input: { workspaceId: string; invitationId: string; createdByUserId: string; now?: Date },
+): Promise<CreateInvitationResult> {
+  if (!isUuid(input.invitationId)) return { ok: false, error: "Invitation not found, or already used." };
+  const now = input.now ?? new Date();
+  return db.transaction(async (tx) => {
+    const [old] = await tx
+      .update(invitation)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          eq(invitation.id, input.invitationId),
+          eq(invitation.workspaceId, input.workspaceId),
+          isNull(invitation.usedAt),
+          isNull(invitation.revokedAt),
+          gt(invitation.expiresAt, now),
+        ),
+      )
+      .returning({
+        email: invitation.email,
+        organizationId: invitation.organizationId,
+        projectIds: invitation.projectIds,
+      });
+    if (!old) return { ok: false as const, error: "Invitation not found, or already used." };
+    // A project deleted or moved since the first link is simply dropped.
+    const kept = await tx
+      .select({ id: project.id })
+      .from(project)
+      .where(
+        old.projectIds.length === 0
+          ? sql`false`
+          : and(inArray(project.id, old.projectIds), eq(project.organizationId, old.organizationId)),
+      );
+    const created = await createInvitation(tx, {
+      workspaceId: input.workspaceId,
+      email: old.email,
+      organizationId: old.organizationId,
+      projectIds: kept.map((row) => row.id),
+      createdByUserId: input.createdByUserId,
+      now,
+    });
+    // Roll the withdrawal back with the failure: the old link keeps working.
+    if (!created.ok) throw new ResendFailed(created.error);
+    return created;
+  }).catch((error: unknown) => {
+    if (error instanceof ResendFailed) return { ok: false as const, error: error.message };
+    throw error;
+  });
+}
+
+class ResendFailed extends Error {}
 
 /** Why a link that matched a row cannot be used, or null when it can. */
 function refusalOf(
@@ -224,6 +337,8 @@ export async function acceptInvitation(
           id: invitation.id,
           email: invitation.email,
           organizationId: invitation.organizationId,
+          projectIds: invitation.projectIds,
+          createdByUserId: invitation.createdByUserId,
         });
       if (!spent) return null;
 
@@ -248,6 +363,28 @@ export async function acceptInvitation(
         .update(invitation)
         .set({ usedByUserId: member.id })
         .where(eq(invitation.id, spent.id));
+      // The projects named on the invitation, as they are now: one deleted
+      // or moved to another organization since is left out.
+      if (spent.projectIds.length > 0) {
+        const projects = await tx
+          .select({ id: project.id })
+          .from(project)
+          .where(
+            and(
+              inArray(project.id, spent.projectIds),
+              eq(project.organizationId, spent.organizationId),
+            ),
+          );
+        if (projects.length > 0) {
+          await tx.insert(projectMember).values(
+            projects.map((row) => ({
+              projectId: row.id,
+              userId: member.id,
+              createdByUserId: spent.createdByUserId,
+            })),
+          );
+        }
+      }
       return member;
     });
     if (created) {
@@ -332,11 +469,65 @@ export async function setMemberActive(
   return { ok: true };
 }
 
+/**
+ * Replaces the projects a member works on with `projectIds`, all of which must
+ * be projects of the member's organization. The scope reads the links on every
+ * request, so the change counts on the member's next one; no sign-in needed.
+ */
+export async function setMemberProjects(
+  db: Db,
+  input: { workspaceId: string; targetUserId: string; projectIds: string[]; actingUserId: string },
+): Promise<SetActiveResult> {
+  if (!isUuid(input.targetUserId)) return { ok: false, error: "Member not found." };
+  const [target] = await db
+    .select({ id: user.id, organizationId: user.organizationId })
+    .from(user)
+    .where(and(eq(user.id, input.targetUserId), eq(user.role, "member")))
+    .limit(1);
+  if (!target) return { ok: false, error: "Member not found." };
+  const projectIds = target.organizationId
+    ? await projectsOfOrganization(db, {
+        workspaceId: input.workspaceId,
+        organizationId: target.organizationId,
+        projectIds: input.projectIds,
+      })
+    : input.projectIds.length === 0
+      ? []
+      : null;
+  if (!projectIds) return { ok: false, error: "Project not found in the member's organization." };
+
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(projectMember)
+      .where(
+        projectIds.length === 0
+          ? eq(projectMember.userId, target.id)
+          : and(eq(projectMember.userId, target.id), notInArray(projectMember.projectId, projectIds)),
+      );
+    if (projectIds.length > 0) {
+      await tx
+        .insert(projectMember)
+        .values(
+          projectIds.map((projectId) => ({
+            projectId,
+            userId: target.id,
+            createdByUserId: input.actingUserId,
+          })),
+        )
+        .onConflictDoNothing({ target: [projectMember.projectId, projectMember.userId] });
+    }
+  });
+  return { ok: true };
+}
+
 export type TeamMember = {
   id: string;
   email: string;
   role: "admin" | "member";
+  organizationId: string | null;
   organizationName: string | null;
+  /** The projects linked to a member; empty for an admin, who has no fence. */
+  projectIds: string[];
   active: boolean;
   tokens: number;
   createdAt: string;
@@ -351,6 +542,8 @@ export type PendingInvitation = {
   id: string;
   email: string;
   organizationName: string;
+  /** The projects the member will be linked to on accepting, as they are now. */
+  projects: { id: string; name: string }[];
   expiresAt: string;
   createdAt: string;
 };
@@ -362,6 +555,7 @@ export async function loadTeam(db: Db, workspaceId: string): Promise<TeamMember[
       id: user.id,
       email: user.email,
       role: user.role,
+      organizationId: user.organizationId,
       organizationName: organization.name,
       active: user.active,
       createdAt: user.createdAt,
@@ -380,11 +574,20 @@ export async function loadTeam(db: Db, workspaceId: string): Promise<TeamMember[
     .from(user)
     .leftJoin(organization, eq(user.organizationId, organization.id))
     .orderBy(asc(user.role), asc(user.createdAt));
+  const links = await db
+    .select({ userId: projectMember.userId, projectId: projectMember.projectId })
+    .from(projectMember)
+    .innerJoin(project, eq(projectMember.projectId, project.id))
+    .where(eq(project.workspaceId, workspaceId));
+  const linked = new Map<string, string[]>();
+  for (const link of links) linked.set(link.userId, [...(linked.get(link.userId) ?? []), link.projectId]);
   return rows.map((row) => ({
     id: row.id,
     email: row.email,
     role: row.role,
+    organizationId: row.organizationId ?? null,
     organizationName: row.organizationName ?? null,
+    projectIds: linked.get(row.id) ?? [],
     active: row.active,
     tokens: Number(row.tokens),
     createdAt: row.createdAt.toISOString(),
@@ -445,6 +648,7 @@ export async function loadPendingInvitations(
       id: invitation.id,
       email: invitation.email,
       organizationName: organization.name,
+      projectIds: invitation.projectIds,
       expiresAt: invitation.expiresAt,
       createdAt: invitation.createdAt,
     })
@@ -459,10 +663,24 @@ export async function loadPendingInvitations(
       ),
     )
     .orderBy(desc(invitation.createdAt));
+  const projectIds = [...new Set(rows.flatMap((row) => row.projectIds))];
+  const names = new Map(
+    (projectIds.length === 0
+      ? []
+      : await db
+          .select({ id: project.id, name: project.name })
+          .from(project)
+          .where(and(inArray(project.id, projectIds), eq(project.workspaceId, workspaceId)))
+    ).map((row) => [row.id, row.name]),
+  );
   return rows.map((row) => ({
     id: row.id,
     email: row.email,
     organizationName: row.organizationName,
+    projects: row.projectIds.flatMap((id) => {
+      const name = names.get(id);
+      return name === undefined ? [] : [{ id, name }];
+    }),
     expiresAt: row.expiresAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
   }));

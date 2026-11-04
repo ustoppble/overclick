@@ -1,11 +1,18 @@
-import { invitation, mcpToken, project, user, workspace } from "@agent-board/db";
-import { eq } from "drizzle-orm";
+import { invitation, mcpToken, organization, project, projectMember, user, workspace } from "@agent-board/db";
+import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { hashInvitationSecret, loadInstallNotices, loadTeam } from "../lib/invitations";
+import {
+  hashInvitationSecret,
+  inspectInvitation,
+  loadInstallNotices,
+  loadPendingInvitations,
+  loadTeam,
+} from "../lib/invitations";
 import { exchangePairingCode } from "../lib/pairing";
 import { principalFromUserId } from "../lib/scope";
 import { authenticateBearer } from "../mcp/auth";
-import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
+import { closeTestWorld, createTestWorld, insertSideProject, type TestWorld } from "../mcp/test-db";
+import { invokeToolForTests as invokeTool } from "../mcp/test-tools";
 import { generateTokenSecret, hashToken } from "../mcp/token";
 
 let world: TestWorld;
@@ -121,6 +128,9 @@ async function invite(email: string) {
   });
   if (!created.ok) throw new Error(created.error);
   sessionUserId = "";
+  // The invitation itself went by email; what the tests watch from here on is
+  // what the code step sends.
+  emailState.sendEmail.mockClear();
   const secret = created.path.split("/").pop()!;
   invitedEmail.set(secret, email.toLowerCase());
   return secret;
@@ -315,6 +325,8 @@ describe("invitation and team", () => {
       const refusals = [
         await team.createInvitationAction({ email: "x@example.test", organizationId: world.organizationId }),
         await team.revokeInvitationAction("00000000-0000-0000-0000-000000000000"),
+        await team.resendInvitationAction("00000000-0000-0000-0000-000000000000"),
+        await team.setMemberProjectsAction(memberId, [world.projectId]),
         await team.setMemberActiveAction(world.adminUserId, false),
         await savePricesAction([]),
         await savePricingEnabledAction(true),
@@ -415,5 +427,213 @@ describe("invitation and team", () => {
     // A member cannot dismiss the admin's notice.
     sessionUserId = m!.id;
     expect(await team.dismissInstallNoticesAction()).toMatchObject({ ok: false });
+  });
+
+  describe("projects: who works on what", () => {
+    let sideProjectId = "";
+    const linksOf = async (userId: string) =>
+      (await world.db.select({ p: projectMember.projectId }).from(projectMember).where(eq(projectMember.userId, userId)))
+        .map((row) => row.p)
+        .sort();
+    const memberIdOf = async (email: string) =>
+      (await world.db.select({ id: user.id }).from(user).where(eq(user.email, email)))[0]!.id;
+    const secretOf = (path: string) => path.split("/").pop()!;
+
+    beforeEach(async () => {
+      sideProjectId = await insertSideProject(world.db, world);
+      sessionUserId = world.adminUserId;
+    });
+
+    it("an invitation names its projects, sends the link by email and the accepted member is linked to them", async () => {
+      const created = await team.createInvitationAction({
+        email: "dev@example.test",
+        organizationId: world.organizationId,
+        projectIds: [sideProjectId],
+      });
+      if (!created.ok) throw new Error(created.error);
+      expect(created.emailed).toBe(true);
+      const sent = emailState.sendEmail.mock.calls.map(([m]) => m).filter((m) => m.to === "dev@example.test");
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.text).toContain(created.path);
+      const [row] = await world.db.select().from(invitation);
+      expect(row?.projectIds).toEqual([sideProjectId]);
+      const pending = await loadPendingInvitations(world.db, world.workspaceId);
+      expect(pending[0]?.projects.map((p) => p.id)).toEqual([sideProjectId]);
+
+      sessionUserId = "";
+      invitedEmail.set(secretOf(created.path), "dev@example.test");
+      expect(await accept(secretOf(created.path))).toEqual({ redirectedTo: "/onboarding" });
+      expect(await linksOf(await memberIdOf("dev@example.test"))).toEqual([sideProjectId]);
+    });
+
+    it("an invitation with no project makes a member who sees no project", async () => {
+      const created = await team.createInvitationAction({
+        email: "none@example.test",
+        organizationId: world.organizationId,
+        projectIds: [],
+      });
+      if (!created.ok) throw new Error(created.error);
+      sessionUserId = "";
+      invitedEmail.set(secretOf(created.path), "none@example.test");
+      await accept(secretOf(created.path));
+      expect(await linksOf(await memberIdOf("none@example.test"))).toEqual([]);
+    });
+
+    it("refuses a project of another organization, and creates no invitation", async () => {
+      const [org2] = await world.db
+        .insert(organization)
+        .values({ workspaceId: world.workspaceId, name: "Outra" })
+        .returning({ id: organization.id });
+      const foreign = await insertSideProject(world.db, { workspaceId: world.workspaceId, organizationId: org2!.id }, "FO");
+      const created = await team.createInvitationAction({
+        email: "dev@example.test",
+        organizationId: world.organizationId,
+        projectIds: [world.projectId, foreign],
+      });
+      expect(created).toMatchObject({ ok: false });
+      expect(await world.db.select().from(invitation)).toHaveLength(0);
+    });
+
+    it("without email configured the invitation is still made, and the link is there to copy", async () => {
+      emailState.configured = false;
+      const created = await team.createInvitationAction({
+        email: "dev@example.test",
+        organizationId: world.organizationId,
+        projectIds: [world.projectId],
+      });
+      if (!created.ok) throw new Error(created.error);
+      expect(created.emailed).toBe(false);
+      expect(created.path).toMatch(/^\/invite\//);
+      expect(emailState.sendEmail).not.toHaveBeenCalled();
+    });
+
+    it("resending makes a new link, sends it, and the old link stops working", async () => {
+      const first = await team.createInvitationAction({
+        email: "dev@example.test",
+        organizationId: world.organizationId,
+        projectIds: [sideProjectId],
+      });
+      if (!first.ok) throw new Error(first.error);
+      const [row] = await world.db.select().from(invitation);
+      emailState.sendEmail.mockClear();
+
+      const again = await team.resendInvitationAction(row!.id);
+      if (!again.ok) throw new Error(again.error);
+      expect(again.path).not.toBe(first.path);
+      expect(again.emailed).toBe(true);
+      expect(emailState.sendEmail.mock.calls[0]![0].text).toContain(again.path);
+
+      expect(await inspectInvitation(world.db, secretOf(first.path))).toEqual({ ok: false, reason: "revoked" });
+      const pending = await loadPendingInvitations(world.db, world.workspaceId);
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.projects.map((p) => p.id)).toEqual([sideProjectId]);
+
+      sessionUserId = "";
+      invitedEmail.set(secretOf(first.path), "dev@example.test");
+      expect(await accept(secretOf(first.path))).toMatchObject({ error: expect.any(String) });
+      invitedEmail.set(secretOf(again.path), "dev@example.test");
+      expect(await accept(secretOf(again.path))).toEqual({ redirectedTo: "/onboarding" });
+      expect(await linksOf(await memberIdOf("dev@example.test"))).toEqual([sideProjectId]);
+    });
+
+    it("resending a link already used or withdrawn is refused", async () => {
+      const first = await team.createInvitationAction({
+        email: "dev@example.test",
+        organizationId: world.organizationId,
+        projectIds: [],
+      });
+      if (!first.ok) throw new Error(first.error);
+      const [row] = await world.db.select().from(invitation);
+      expect(await team.revokeInvitationAction(row!.id)).toEqual({ ok: true });
+      expect(await team.resendInvitationAction(row!.id)).toMatchObject({ ok: false });
+    });
+
+    it("the admin sets a member's projects; the member's next request sees exactly those", async () => {
+      await accept(await invite("func@example.test"));
+      const memberId = await memberIdOf("func@example.test");
+      sessionUserId = world.adminUserId;
+      expect(await linksOf(memberId)).toEqual([]);
+      const card = await invokeTool(
+        world.db,
+        { tokenId: world.tokenId, workspaceId: world.workspaceId, tokenLabel: "admin", userId: world.adminUserId, role: "admin", canManage: true },
+        "task_create",
+        {
+          title: "do admin",
+          type: "feature",
+          o_que: "o",
+          por_que: "p",
+          como_confirmo: [{ step: "a", expected: "b" }],
+          origem: { session_id: "s", cli: "test" },
+          project_id: sideProjectId,
+        },
+      );
+      if (!card.ok) throw new Error(JSON.stringify(card));
+      const cardId = (card.value as { task: { id: string } }).task.id;
+      const memberCtx = async () => {
+        const secret = generateTokenSecret();
+        await world.db.insert(mcpToken).values({
+          workspaceId: world.workspaceId,
+          ownerUserId: memberId,
+          label: `t-${secret.slice(0, 6)}`,
+          hash: hashToken(secret),
+        });
+        const auth = await authenticateBearer(world.db, `Bearer ${secret}`);
+        if (!auth.ok) throw new Error("auth");
+        return auth.ctx;
+      };
+      expect((await invokeTool(world.db, await memberCtx(), "task_get", { task_id: cardId })).ok).toBe(false);
+
+      expect(await team.setMemberProjectsAction(memberId, [world.projectId, sideProjectId])).toEqual({ ok: true });
+      expect(await linksOf(memberId)).toEqual([world.projectId, sideProjectId].sort());
+      expect((await invokeTool(world.db, await memberCtx(), "task_get", { task_id: cardId })).ok).toBe(true);
+      const team1 = (await loadTeam(world.db, world.workspaceId)).find((p) => p.id === memberId);
+      expect(team1?.projectIds.sort()).toEqual([world.projectId, sideProjectId].sort());
+
+      expect(await team.setMemberProjectsAction(memberId, [world.projectId])).toEqual({ ok: true });
+      expect(await linksOf(memberId)).toEqual([world.projectId]);
+      expect((await invokeTool(world.db, await memberCtx(), "task_get", { task_id: cardId })).ok).toBe(false);
+
+      expect(await team.setMemberProjectsAction(memberId, [])).toEqual({ ok: true });
+      expect(await linksOf(memberId)).toEqual([]);
+    });
+
+    it("refuses a project outside the member's organization, an admin as target, and changes nothing", async () => {
+      await accept(await invite("func@example.test"));
+      const memberId = await memberIdOf("func@example.test");
+      sessionUserId = world.adminUserId;
+      await team.setMemberProjectsAction(memberId, [world.projectId]);
+      const [org2] = await world.db
+        .insert(organization)
+        .values({ workspaceId: world.workspaceId, name: "Outra" })
+        .returning({ id: organization.id });
+      const foreign = await insertSideProject(world.db, { workspaceId: world.workspaceId, organizationId: org2!.id }, "FO");
+      expect(await team.setMemberProjectsAction(memberId, [foreign])).toMatchObject({ ok: false });
+      expect(await team.setMemberProjectsAction(world.adminUserId, [world.projectId])).toMatchObject({ ok: false });
+      expect(await linksOf(memberId)).toEqual([world.projectId]);
+      expect(await linksOf(world.adminUserId)).toEqual([]);
+    });
+
+    it("only the admin manages links: a member is refused and nothing changes", async () => {
+      await accept(await invite("func@example.test"));
+      const memberId = await memberIdOf("func@example.test");
+      sessionUserId = memberId;
+      expect(await team.setMemberProjectsAction(memberId, [world.projectId, sideProjectId])).toMatchObject({ ok: false });
+      expect(
+        await team.createInvitationAction({ email: "x@example.test", organizationId: world.organizationId, projectIds: [world.projectId] }),
+      ).toMatchObject({ ok: false });
+      expect(await linksOf(memberId)).toEqual([]);
+      expect(
+        await world.db.select().from(projectMember).where(and(eq(projectMember.userId, memberId), eq(projectMember.projectId, sideProjectId))),
+      ).toHaveLength(0);
+    });
+
+    it("a project created later is linked to nobody", async () => {
+      await accept(await invite("func@example.test"));
+      const memberId = await memberIdOf("func@example.test");
+      sessionUserId = world.adminUserId;
+      await team.setMemberProjectsAction(memberId, [world.projectId]);
+      await insertSideProject(world.db, world, "NV");
+      expect(await linksOf(memberId)).toEqual([world.projectId]);
+    });
   });
 });

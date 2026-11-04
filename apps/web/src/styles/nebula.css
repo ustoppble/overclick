@@ -2301,6 +2301,11 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .tok-cap:has(input:disabled) { cursor: default; opacity: .5; }
 .nb .tok-cap input { accent-color: rgb(var(--oc-accent-rgb)); margin: 0; cursor: inherit; }
+/* The projects a member works on, ticked on their row and on the invitation:
+   the same pills as the manage box, wrapping under the line they belong to. */
+.nb .team-projects { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; flex-basis: 100%; }
+.nb .team-projects-cap { font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .03em; color: var(--nebula-text-tertiary); margin-right: 2px; }
+.nb .team-projects-note { font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .03em; color: var(--nebula-text-tertiary); margin-top: 6px; }
 /* the legacy global `.sub` ends with a 28px paragraph margin, which inside a
    card is 28px of nothing under every token: a row three times the height of
    the two lines it holds */
