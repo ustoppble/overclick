@@ -73,7 +73,7 @@ export async function tickValidationStepAction(
   }
 
   await db().update(task).set({ validationTicks: ticks }).where(eq(task.id, taskId));
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }
 
@@ -115,7 +115,7 @@ export async function validateTaskAction(
     .update(task)
     .set({ status: "validado", revisado: true })
     .where(eq(task.id, taskId));
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }
 
@@ -147,7 +147,7 @@ export async function unvalidateTaskAction(taskId: string): Promise<ActionResult
     .update(task)
     .set({ status: "feito" })
     .where(eq(task.id, taskId));
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }
 
@@ -185,7 +185,7 @@ export async function answerOpenTaskAction(
     authorUserId: session.userId,
     body,
   });
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }
 
@@ -217,6 +217,6 @@ export async function reopenTaskAction(
     .update(task)
     .set({ status: "aberto", validationTicks: [] })
     .where(eq(task.id, taskId));
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }

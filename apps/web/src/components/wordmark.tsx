@@ -39,7 +39,7 @@ export function Wordmark({
   return (
     <a
       className="logo"
-      href="/home"
+      href="/board"
       aria-label={label}
       aria-current={current ? "page" : undefined}
     >

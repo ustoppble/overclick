@@ -89,7 +89,7 @@ export function ReviewQueueView({
     [router],
   );
 
-  // The address stays the list's (/home?status=feito): rewriting it per card
+  // The address stays the list's (/board?status=feito): rewriting it per card
   // made the refresh after Validate reload the whole document, which took
   // Undo with it. A link with ?card= still opens that card on arrival.
   const show = useCallback((id: string | null) => setOpenId(id), []);
@@ -151,7 +151,7 @@ export function ReviewQueueView({
         <section className="rq-empty">
           <h2>{admin ? t.review.empty : t.review.emptyMember}</h2>
           <p>{admin ? t.review.emptyBody : t.review.emptyMemberBody}</p>
-          <a href="/home">{t.review.backToBoard}</a>
+          <a href="/board">{t.review.backToBoard}</a>
         </section>
       ) : (
         <>

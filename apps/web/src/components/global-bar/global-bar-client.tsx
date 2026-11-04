@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { logoutAction } from "../../actions/auth";
 import { globalBarCountsAction } from "../../actions/global-bar";
-import { ThemePicker } from "../../app/home/theme-picker";
+import { ThemePicker } from "../../app/board/theme-picker";
 import { dict } from "../../lib/i18n";
 import type { GlobalCounts } from "../../lib/global-counts";
 import { Icon } from "../icon";
@@ -13,17 +13,19 @@ import { Wordmark } from "../wordmark";
 import { subscribeGlobalCounts } from "./counts-channel";
 
 /** The place a page is, for `aria-current`. Settings and Organizations are not places. */
-export type GlobalPlace = "board" | "usage" | "settings" | "organizations";
+export type GlobalPlace = "board" | "missions" | "usage" | "settings" | "organizations";
 
 /** Away from the board nothing else asks, so the bar asks itself this often. */
 export const GLOBAL_COUNTS_INTERVAL_MS = 60_000;
 
 const PLACES = [
-  { key: "board", href: "/home", icon: "board" },
+  { key: "board", href: "/board", icon: "board" },
+  // Navigation plan E3: Missions became a place with its own page.
+  { key: "missions", href: "/missions", icon: "mission" },
   { key: "usage", href: "/usage", icon: "insights" },
 ] as const;
 
-const REVIEW_HREF = "/home?status=feito";
+const REVIEW_HREF = "/board?status=feito";
 
 /**
  * The avatar's menu (navigation plan E1): who is signed in and as what, then
@@ -121,7 +123,7 @@ export function GlobalBarClient({
   reviewing?: boolean;
 }) {
   const t = dict(lang);
-  // The layout cannot read the query; the bar can. /home?status=feito is the
+  // The layout cannot read the query; the bar can. /board?status=feito is the
   // review list, under the Board place.
   const params = useSearchParams();
   const reviewing = reviewingProp || (current === "board" && params?.get("status") === "feito");
@@ -168,7 +170,7 @@ export function GlobalBarClient({
     };
   }, [open]);
 
-  const placeLabel = { board: t.nav.board, usage: t.nav.usage };
+  const placeLabel = { board: t.nav.board, missions: t.nav.missions, usage: t.nav.usage };
   const here = (key: GlobalPlace) =>
     current === key && !(key === "board" && reviewing) ? ("page" as const) : undefined;
   const reviewLabel = admin ? t.nav.reviewCount(counts.review) : t.nav.reviewCountMember(counts.review);
@@ -189,7 +191,7 @@ export function GlobalBarClient({
           <div className="gb-right">
             <a
               className="gb-chip gb-chip-run"
-              href="/home#board-col-em_execucao"
+              href="/board#board-col-em_execucao"
               aria-label={t.nav.running(counts.running)}
               title={t.nav.running(counts.running)}
             >
@@ -232,9 +234,13 @@ export function GlobalBarClient({
         </div>
       </header>
       <nav className="gb-tabbar" aria-label={t.nav.places}>
-        <a className="gb-tab" href="/home" aria-current={here("board")}>
+        <a className="gb-tab" href="/board" aria-current={here("board")}>
           <Icon name="board" label={null} size={20} />
           <span>{t.nav.board}</span>
+        </a>
+        <a className="gb-tab" href="/missions" aria-current={here("missions")}>
+          <Icon name="mission" label={null} size={20} />
+          <span>{t.nav.missions}</span>
         </a>
         <a
           className="gb-tab gb-tab-review"

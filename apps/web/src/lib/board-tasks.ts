@@ -212,6 +212,24 @@ export async function loadBoardTasksByIds(
 }
 
 /**
+ * A mission's cards in every project the reader sees (navigation plan E3):
+ * the mission's page ignores the board's project scope and its period.
+ */
+export async function loadMissionBoardTasks(
+  database: Database,
+  projectIds: string[],
+  principal: MaybePrincipal,
+  missionId: string,
+) {
+  if (projectIds.length === 0) return [];
+  return queryBoardTasks(
+    database,
+    principal,
+    and(inArray(task.projectId, projectIds), eq(task.missionId, missionId)),
+  );
+}
+
+/**
  * One card by the short id a link carries, also when it moved project and the
  * link still has the old one. Null for anything the reader may not see.
  */

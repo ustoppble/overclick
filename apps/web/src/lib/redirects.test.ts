@@ -54,6 +54,8 @@ describe("the old board links (navigation plan E3)", () => {
 
   it("never chains: no destination is itself a redirected source", () => {
     const destinations = [
+      insightsDestination({ projects: "X" }),
+      ORGANIZATIONS_DESTINATION,
       homeDestination({}),
       homeDestination({ card: "OCL-12" }),
       homeDestination({ status: "feito", card: "OCL-12" }),
@@ -63,7 +65,7 @@ describe("the old board links (navigation plan E3)", () => {
       const path = to.split("?")[0]!;
       expect(REDIRECT_SOURCES).not.toContain(path);
       // A card's address is read by the board, never redirected again.
-      expect(path === "/board" || rewriteOf(path) !== null).toBe(true);
+      if (path.startsWith("/cards/")) expect(rewriteOf(path)).not.toBeNull();
     }
   });
 });

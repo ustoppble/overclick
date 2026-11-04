@@ -65,7 +65,7 @@ export async function createOrganizationAction(input: {
 
     revalidatePath("/settings");
     revalidatePath("/organizations");
-    revalidatePath("/home");
+    revalidatePath("/board");
     return { ok: true, organization: created };
   } catch {
     // The name is unique per workspace, which is the only way this insert
@@ -120,7 +120,7 @@ export async function saveOrganizationAction(input: {
 
   revalidatePath("/settings");
   revalidatePath("/organizations");
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }
 
@@ -209,6 +209,6 @@ export async function deleteOrganizationAction(input: {
 
   revalidatePath("/settings");
   revalidatePath("/organizations");
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }

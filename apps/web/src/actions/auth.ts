@@ -247,7 +247,7 @@ export async function loginWithCodeAction(
     userId: found.id,
     sessionVersion: found.sessionVersion,
   });
-  redirect("/home");
+  redirect("/board");
 }
 
 /**
@@ -264,7 +264,7 @@ export async function emergencyLoginAction(
   const admin = await redeemEmergencyLogin(db(), token);
   if (!admin) return { error: (await authCopy()).errEmergency };
   await setSession(admin);
-  redirect("/home");
+  redirect("/board");
 }
 
 export async function logoutAction(): Promise<void> {

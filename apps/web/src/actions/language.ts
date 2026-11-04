@@ -20,7 +20,7 @@ export async function saveLanguageAction(lang: string): Promise<ActionResult> {
   if (!ws) return { ok: false, error: "Workspace not found." };
 
   await db().update(workspace).set({ language: lang }).where(eq(workspace.id, ws.id));
-  revalidatePath("/home");
+  revalidatePath("/board");
   revalidatePath("/settings");
   revalidatePath("/onboarding");
   return { ok: true };

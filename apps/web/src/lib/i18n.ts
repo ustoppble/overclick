@@ -231,7 +231,14 @@ const en = {
       validado: number;
     }) =>
       `${counts.aberto} queued · ${counts.em_execucao} in progress · ${counts.feito} to review · ${counts.validado} validated`,
-    missionProgressPercent: (pct: number) => `${pct}% complete`,
+    missionProgressPercent: (pct: number) => `${pct}% delivered`,
+    /** The large bar's legend, one word per mark (E3). */
+    missionProgressLegend: {
+      validado: "validated",
+      feito: "to review",
+      em_execucao: "in progress",
+      aberto: "queued",
+    },
     /**
      * The button on the hard right of the bar: navigation and the account
      * live behind it (OCL-20).
@@ -327,6 +334,7 @@ const en = {
     close: "Close card",
     cardLocation: "Card location",
     filterByMission: "Filter the board by this mission",
+    openMission: (title: string) => `Open the mission ${title}`,
     /** An empty contract is a fact about the card, not a dash. */
     noSteps: "This card was written without confirmation steps.",
     /** The panel's share of the card is read when it opens, and that read can fail. */
@@ -677,6 +685,7 @@ const en = {
   nav: {
     places: "Places",
     board: "Board",
+    missions: "Missions",
     usage: "Usage",
     runningLabel: "in progress",
     running: (n: number) => `${n} in progress`,
@@ -779,6 +788,62 @@ const en = {
     openOnboarding: "Open the connect-an-agent steps",
     allConnections: "Every connection of the board is in Settings.",
     allConnectionsLink: "Settings › Agents",
+  },
+  /** The mission pages and the pages that find nothing (navigation plan E3). */
+  missions: {
+    title: "Missions",
+    lead: "A mission groups cards from one or more projects of the organization.",
+    leadMember: "Here are the ones you created.",
+    tabsLabel: "Situation",
+    tabActive: "In progress",
+    tabDone: "Completed",
+    projects: (names: string) => `Projects: ${names}`,
+    noCardsYet: "no cards yet",
+    updated: (elapsed: string) => `updated ${elapsed} ago`,
+    toReview: (n: number) => `${n} to review`,
+    awaiting: (n: number) => `${n} awaiting validation`,
+    nothingToReview: "nothing to review",
+    empty: "No missions here.",
+    emptyBody:
+      "Ask your agent to group the work of a goal into a mission, or create one with + New mission.",
+    newMission: "New mission",
+    newMissionTitle: "Mission title",
+    cost: "mission cost",
+    tokens: "tokens",
+    runtime: "of execution",
+    attempts: "attempts",
+    seeUsage: "See in Usage",
+    ran: "Ran",
+    ranTitle: "The record of this mission's attempts; the Overclock app chooses who runs each card.",
+    projectsNote: (names: string[]) =>
+      names.length === 1
+        ? `Cards from ${names[0]}.`
+        : `Cards from ${names.length} projects: ${names.join(", ")}. The board's project scope does not narrow the mission.`,
+    noCards: "No cards in this mission yet.",
+    noCardsBody: (title: string) =>
+      `Ask your agent: "register this as a card in the ${title} mission". Or pick cards on the board and move them here.`,
+    emptyProgress: "No cards yet: the progress shows when the first card comes in.",
+    onlyYours: "Showing only your cards in this mission.",
+    openPage: "Open the mission",
+    notFound: "Mission not found.",
+    notFoundBody: "It was deleted, or it is not one you can see.",
+    seeMissions: "See the missions",
+  },
+  notFound: {
+    title: "Page not found.",
+    body: "This address does not lead anywhere in overclick.",
+    cardTitle: "Card not found.",
+    cardBody:
+      "There is no card with this id that you can see. If it moved project, its old link leads to the new id; if it belongs to another organization, ask whoever created it for the link.",
+    toBoard: "Go to the board",
+  },
+  errorPage: {
+    title: "The board is unreachable.",
+    body: "The server returned an error. Wait a moment and try again, or check the instance logs if the problem persists.",
+    missingDbTitle: "The database is missing.",
+    missingDbBody: "Set DATABASE_URL pointing to this instance's Postgres. Nothing is sent anywhere.",
+    retry: "Try again",
+    digest: "Error digest:",
   },
   auth: {
     brand: "self-hosted · open source · mit",
@@ -1013,7 +1078,13 @@ const ptBR: Dict = {
       validado: number;
     }) =>
       `${counts.aberto} na fila · ${counts.em_execucao} em execução · ${counts.feito} para revisar · ${counts.validado} validado`,
-    missionProgressPercent: (pct: number) => `${pct}% concluído`,
+    missionProgressPercent: (pct: number) => `${pct}% entregue`,
+    missionProgressLegend: {
+      validado: "validado",
+      feito: "para revisar",
+      em_execucao: "em execução",
+      aberto: "na fila",
+    },
     accountMenu: "Conta e navegação",
     theme: "Tema",
     themeName: { nebula: "Nebula", xai: "xAI", overclock: "Overclock" },
@@ -1097,6 +1168,7 @@ const ptBR: Dict = {
     close: "Fechar card",
     cardLocation: "Localização do card",
     filterByMission: "Filtrar o board por esta missão",
+    openMission: (title: string) => `Abrir a missão ${title}`,
     noSteps: "Este card foi escrito sem passos de confirmação.",
     loadError: "Não foi possível carregar este card.",
     retry: "Tentar de novo",
@@ -1427,6 +1499,7 @@ const ptBR: Dict = {
   nav: {
     places: "Lugares",
     board: "Board",
+    missions: "Missões",
     usage: "Consumo",
     runningLabel: "em execução",
     running: (n: number) => `${n} em execução`,
@@ -1524,6 +1597,61 @@ const ptBR: Dict = {
     openOnboarding: "Abrir os passos de conectar um agente",
     allConnections: "Todas as conexões do board ficam em Configurações.",
     allConnectionsLink: "Configurações › Agentes",
+  },
+  missions: {
+    title: "Missões",
+    lead: "Uma missão agrupa cards de um ou mais projetos da organização.",
+    leadMember: "Aqui estão as que você criou.",
+    tabsLabel: "Situação",
+    tabActive: "Em andamento",
+    tabDone: "Concluídas",
+    projects: (names: string) => `Projetos: ${names}`,
+    noCardsYet: "sem cards ainda",
+    updated: (elapsed: string) => `atualizada há ${elapsed}`,
+    toReview: (n: number) => `${n} para revisar`,
+    awaiting: (n: number) => `${n} aguardando validação`,
+    nothingToReview: "nada para revisar",
+    empty: "Nenhuma missão aqui.",
+    emptyBody:
+      "Peça ao seu agente para agrupar o trabalho de um objetivo numa missão, ou crie uma em + Nova missão.",
+    newMission: "Nova missão",
+    newMissionTitle: "Título da missão",
+    cost: "custo da missão",
+    tokens: "tokens",
+    runtime: "de execução",
+    attempts: "tentativas",
+    seeUsage: "Ver no Consumo",
+    ran: "Rodou",
+    ranTitle: "Registro das tentativas desta missão; quem escolhe quem executa cada card é o app Overclock.",
+    projectsNote: (names: string[]) =>
+      names.length === 1
+        ? `Cards de ${names[0]}.`
+        : `Cards de ${names.length} projetos: ${names.join(", ")}. O escopo de projeto da barra não recorta a missão.`,
+    noCards: "Nenhum card nesta missão ainda.",
+    noCardsBody: (title: string) =>
+      `Peça ao seu agente: “registre isso como card na missão ${title}”. Ou selecione cards no board e mova para cá.`,
+    emptyProgress: "Sem cards ainda: o progresso aparece quando o primeiro card entrar.",
+    onlyYours: "Mostrando só os seus cards nesta missão.",
+    openPage: "Abrir a missão",
+    notFound: "Missão não encontrada.",
+    notFoundBody: "Ela foi apagada ou não é uma missão que você vê.",
+    seeMissions: "Ver as missões",
+  },
+  notFound: {
+    title: "Página não encontrada.",
+    body: "Este endereço não leva a lugar nenhum no overclick.",
+    cardTitle: "Card não encontrado.",
+    cardBody:
+      "Não existe um card com esse id que você possa ver. Se ele mudou de projeto, o link antigo leva ao id novo; se é de outra organização, peça o link a quem o criou.",
+    toBoard: "Ir ao board",
+  },
+  errorPage: {
+    title: "O board não respondeu.",
+    body: "O servidor respondeu com erro. Espere um pouco e tente de novo, ou veja os logs da instância se o problema continuar.",
+    missingDbTitle: "Falta o banco de dados.",
+    missingDbBody: "Defina DATABASE_URL apontando para o Postgres desta instância. Nada é enviado a lugar nenhum.",
+    retry: "Tentar de novo",
+    digest: "Código do erro:",
   },
   auth: {
     brand: "self-hosted · open source · mit",

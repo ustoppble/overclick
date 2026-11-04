@@ -19,7 +19,7 @@ import type {
   DurationView,
   TelemetrySegment,
   TranscriptView,
-} from "../app/home/board";
+} from "../app/board/board";
 import { decodeExecutor, parseComoConfirmo } from "../mcp/map";
 import type { BoardTaskDetailRow, BoardTaskRow } from "./board-tasks";
 import {
@@ -196,6 +196,20 @@ function spelledModel(raw: string | null, model: string | null): string | null {
     // A bare CLI name, from before the executor was a JSON blob.
   }
   return model;
+}
+
+/** One attempt's record as the board reads it: CLI, model as spelled, effort. */
+export function runRecord(attempt: {
+  executor: string | null;
+  model: string | null;
+  modelSource?: "declared" | "harness" | "measured" | null;
+}): { cli: string | null; model: string | null; effort: string | null } {
+  const executor = decodeExecutor(attempt.executor, attempt.model, attempt.modelSource ?? null);
+  return {
+    cli: executor.cli ?? executor.agent ?? null,
+    model: spelledModel(attempt.executor, attempt.model),
+    effort: executor.effort ?? null,
+  };
 }
 
 /** What the latest claim ran on (OCL-202), model and effort. */

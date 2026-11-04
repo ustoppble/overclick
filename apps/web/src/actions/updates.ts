@@ -46,7 +46,7 @@ export async function saveUpdateModeAction(
     .update(workspace)
     .set({ updateMode: mode })
     .where(eq(workspace.id, ws.id));
-  revalidatePath("/home");
+  revalidatePath("/board");
   revalidatePath("/settings");
   return { ok: true };
 }

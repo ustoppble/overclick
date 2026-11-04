@@ -22,6 +22,7 @@ import {
   validateTaskAction,
 } from "../../actions/review";
 import { COLUMN_STATUSES, type ColumnStatus } from "../../lib/board-columns";
+import { cardIdFromPath, cardPath } from "../../lib/card-path";
 import { pickRowNumber, typeInitial } from "../../lib/board-row";
 import { formatShortDateTime } from "../../lib/format";
 import { dict, type Dict } from "../../lib/i18n";
@@ -917,49 +918,40 @@ function MissionField({
   );
 }
 
-function CardLocation({
-  card,
-  onMissionSelect,
-  onClose,
-  t,
-}: {
-  card: BoardCard;
-  onMissionSelect?: (missionId: string) => void;
-  onClose: () => void;
-  t: Dict;
-}) {
+function CardLocation({ card, t }: { card: BoardCard; t: Dict }) {
   const hasMission = Boolean(card.missionId && card.mission?.trim());
 
+  // Navigation plan E3 (F5): project, mission and release are three fields,
+  // not a path. The mission is a place of its own now: its name leads to its
+  // page instead of filtering the board under the open card.
   return (
     <nav className="d-location" aria-label={t.detail.cardLocation}>
       <span className="d-location-project" title={card.projectName}>
         {card.projectName}
       </span>
       <span className="d-location-separator" aria-hidden="true">
-        ›
+        ·
       </span>
       {hasMission ? (
-        onMissionSelect ? (
-          <button
-            className="d-location-mission"
-            type="button"
-            onClick={() => {
-              onMissionSelect(card.missionId!);
-              onClose();
-            }}
-            aria-label={t.detail.filterByMission}
-            title={card.mission!}
-          >
-            {card.mission}
-          </button>
-        ) : (
-          <span className="d-location-mission" title={card.mission!}>
-            {card.mission}
-          </span>
-        )
+        <a
+          className="d-location-mission"
+          href={`/missions/${card.missionId}`}
+          aria-label={t.detail.openMission(card.mission!)}
+          title={card.mission!}
+        >
+          {card.mission}
+        </a>
       ) : (
         <span className="d-location-empty">{t.detail.missionNone}</span>
       )}
+      {card.resolvedIn ? (
+        <>
+          <span className="d-location-separator" aria-hidden="true">
+            ·
+          </span>
+          <span className="d-location-release">{card.resolvedIn}</span>
+        </>
+      ) : null}
     </nav>
   );
 }
@@ -1262,7 +1254,6 @@ const SHEET_QUERY = "(max-width: 768px), (orientation: landscape) and (max-heigh
 function Detail({
   card,
   missions,
-  onMissionSelect,
   onClose,
   viewerRole,
   queue,
@@ -1270,7 +1261,6 @@ function Detail({
 }: {
   card: OpenBoardCard;
   missions: BoardMissionOption[];
-  onMissionSelect?: (missionId: string) => void;
   onClose: () => void;
   viewerRole: ViewerRole;
   queue?: ReviewQueuePosition;
@@ -1397,12 +1387,7 @@ function Detail({
             </div>
           ) : null}
           <span>{card.shortId}</span>
-          <CardLocation
-            card={card}
-            onMissionSelect={onMissionSelect}
-            onClose={onClose}
-            t={t}
-          />
+          <CardLocation card={card} t={t} />
           <span className={`tag ${card.tipo}`}>{card.tipo}</span>
           <span className={`d-status ${STATUS_CHIP[card.status]}`}>
             {/* The same mark the card's column carries on the board, so the
@@ -1711,8 +1696,9 @@ export function Board({
   selectable = false,
   selectedIds = [],
   onToggleSelect,
-  onMissionSelect,
   initialOpen = null,
+  cardAddresses = false,
+  openedByAddress = false,
   detailVersion,
   viewerRole = "admin",
 }: {
@@ -1724,9 +1710,16 @@ export function Board({
   selectable?: boolean;
   selectedIds?: string[];
   onToggleSelect?: (id: string) => void;
-  onMissionSelect?: (missionId: string) => void;
   /** The card a link asked to open on arrival. */
   initialOpen?: BoardCard | null;
+  /**
+   * An open card has its own address (/cards/OCL-12, E3): opening one pushes
+   * it, Back closes the sheet. Only where that address serves this very
+   * board, so a refresh with the card open rebuilds the same page.
+   */
+  cardAddresses?: boolean;
+  /** The page was reached by the open card's address, not from the board. */
+  openedByAddress?: boolean;
   /** The board's signature: when it moves, the open card's detail is read again. */
   detailVersion?: string;
   /** Who is looking: the amber and the Validate button are the admin's. */
@@ -1741,17 +1734,65 @@ export function Board({
   const detail = useCardDetail(open?.id ?? null, detailVersion, t);
   const picked = new Set(selectedIds);
 
-  const onKey = useCallback((e: KeyboardEvent) => {
-    if (e.key === "Escape") setOpen(null);
-  }, []);
+  // Arrived by the open card's address: there is no board behind it in the
+  // history yet. Otherwise the board is right behind the card, and closing
+  // goes Back to it (with its query), so the browser's Back and the sheet's
+  // close are one and the same step.
+  const arrivedOnCard = useRef(openedByAddress);
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
+
+  const openCard = useCallback(
+    (card: BoardCard) => {
+      setOpen(card);
+      if (!cardAddresses) return;
+      const path = cardPath(card.shortId);
+      if (cardIdFromPath(window.location.pathname) !== null) {
+        window.history.replaceState(null, "", path);
+      } else {
+        window.history.pushState(null, "", path);
+      }
+    },
+    [cardAddresses],
+  );
+
+  const closeCard = useCallback(() => {
+    setOpen(null);
+    if (!cardAddresses || cardIdFromPath(window.location.pathname) === null) return;
+    if (arrivedOnCard.current) {
+      arrivedOnCard.current = false;
+      window.history.replaceState(null, "", "/board");
+    } else {
+      window.history.back();
+    }
+  }, [cardAddresses]);
+
+  // Back and Forward move between the board and a card's address.
+  useEffect(() => {
+    if (!cardAddresses) return;
+    const onPop = () => {
+      const id = cardIdFromPath(window.location.pathname);
+      if (!id) {
+        setOpen(null);
+        return;
+      }
+      const wanted = id.toUpperCase();
+      setOpen(cardsRef.current.find((card) => card.shortId.toUpperCase() === wanted) ?? null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [cardAddresses]);
+
+  const onKey = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeCard();
+    },
+    [closeCard],
+  );
   useEffect(() => {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onKey]);
-
-  const openCard = useCallback((card: BoardCard) => {
-    setOpen(card);
-  }, []);
 
   // The same card in both layouts: the phone list is a different arrangement
   // of this board, never a second version of it.
@@ -1826,8 +1867,7 @@ export function Board({
           line={openLine}
           detail={detail}
           missions={missions}
-          onMissionSelect={onMissionSelect}
-          onClose={() => setOpen(null)}
+          onClose={closeCard}
           viewerRole={viewerRole}
           t={t}
         />
@@ -1861,7 +1901,6 @@ function CardSheetBody({
   line,
   detail,
   missions,
-  onMissionSelect,
   onClose,
   viewerRole,
   queue,
@@ -1870,7 +1909,6 @@ function CardSheetBody({
   line: BoardCard;
   detail: ReturnType<typeof useCardDetail>;
   missions: BoardMissionOption[];
-  onMissionSelect?: (missionId: string) => void;
   onClose: () => void;
   viewerRole: ViewerRole;
   queue?: ReviewQueuePosition;
@@ -1887,7 +1925,6 @@ function CardSheetBody({
       key={line.id}
       card={{ ...line, ...detail.state.detail }}
       missions={missions}
-      onMissionSelect={onMissionSelect}
       onClose={onClose}
       viewerRole={viewerRole}
       queue={queue}

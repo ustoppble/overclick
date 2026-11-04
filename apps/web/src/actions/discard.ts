@@ -40,6 +40,6 @@ export async function discardTaskAction(
     return { ok: false, error };
   }
 
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }

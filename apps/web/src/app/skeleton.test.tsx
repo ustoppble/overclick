@@ -1,9 +1,9 @@
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import HomeLoading from "./home/loading";
-import { BoardSkeleton } from "./home/board-skeleton";
-import { DetailSkeleton } from "./home/detail-skeleton";
+import { BoardLoading } from "./board/board-loading";
+import { BoardSkeleton } from "./board/board-skeleton";
+import { DetailSkeleton } from "./board/detail-skeleton";
 import InsightsLoading from "./usage/loading";
 import { InsightsSkeleton } from "./usage/insights-skeleton";
 import SettingsLoading from "./settings/[group]/loading";
@@ -35,7 +35,7 @@ describe("skeleton components render a greyscale placeholder", () => {
     { name: "DetailSkeleton", Component: DetailSkeleton },
     { name: "InsightsSkeleton", Component: InsightsSkeleton },
     { name: "SettingsSkeleton", Component: SettingsSkeleton },
-    { name: "HomeLoading", Component: HomeLoading },
+    { name: "BoardLoading", Component: BoardLoading },
     { name: "InsightsLoading", Component: InsightsLoading },
     { name: "SettingsLoading", Component: SettingsLoading },
   ];

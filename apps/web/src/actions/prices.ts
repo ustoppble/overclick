@@ -115,7 +115,7 @@ export async function savePricesAction(
 
   revalidatePath("/settings");
   revalidatePath("/usage");
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }
 
@@ -142,6 +142,6 @@ export async function savePricingEnabledAction(
 
   revalidatePath("/settings");
   revalidatePath("/usage");
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }
