@@ -49,6 +49,8 @@ describe("mission actions as a member: the admin's mission is theirs to read onl
   let adminMission: string;
   let memberMission: string;
   let looseCard: string;
+  let adminCardInMission: string;
+  let admin: AuthContext;
 
   beforeEach(async () => {
     world = await createTestWorld();
@@ -58,7 +60,7 @@ describe("mission actions as a member: the admin's mission is theirs to read onl
       .returning({ id: user.id });
     memberId = m!.id;
     await linkProjects(world.db, memberId, [world.projectId]);
-    const admin: AuthContext = {
+    admin = {
       tokenId: world.tokenId,
       workspaceId: world.workspaceId,
       tokenLabel: "admin",
@@ -78,7 +80,8 @@ describe("mission actions as a member: the admin's mission is theirs to read onl
     // The admin's card in the linked project is what makes the mission visible.
     const made = await invokeTool(world.db, admin, "task_create", card("do admin"));
     if (!made.ok) throw new Error("fixture failed");
-    await world.db.update(task).set({ missionId: adminMission }).where(eq(task.id, (made.value as { task: { id: string } }).task.id));
+    adminCardInMission = (made.value as { task: { id: string } }).task.id;
+    await world.db.update(task).set({ missionId: adminMission }).where(eq(task.id, adminCardInMission));
     const loose = await invokeTool(world.db, admin, "task_create", card("solto"));
     if (!loose.ok) throw new Error("fixture failed");
     looseCard = (loose.value as { task: { id: string } }).task.id;
@@ -144,5 +147,52 @@ describe("mission actions as a member: the admin's mission is theirs to read onl
     sessionUserId = world.adminUserId;
     expect((await assignCardsToMissionAction([looseCard], memberMission)).ok).toBe(true);
     expect((await assignCardsToMissionAction([looseCard], adminMission)).ok).toBe(true);
+  });
+  const missionOf = async (id: string) =>
+    (await world.db.select().from(task).where(eq(task.id, id)))[0]?.missionId;
+
+  it("does not take the admin's card out of the admin's mission, to none or to its own", async () => {
+    for (const target of [null, memberMission]) {
+      const refused = await assignCardsToMissionAction([adminCardInMission], target);
+      expect(refused.ok, String(target)).toBe(false);
+      expect(await missionOf(adminCardInMission)).toBe(adminMission);
+    }
+  });
+
+  it("does not undo the admin's card out of the admin's mission", async () => {
+    const undone = await restoreCardMissionsAction([{ taskId: adminCardInMission, missionId: null }]);
+    expect(undone.ok).toBe(false);
+    expect(await missionOf(adminCardInMission)).toBe(adminMission);
+  });
+
+  it("does not move nor undo a card the admin's token is running", async () => {
+    const claimed = await invokeTool(world.db, admin, "task_claim", {
+      task_id: looseCard,
+      executor: { cli: "claude", model: "opus-5", effort: "high", session_id: "admin-s" },
+    });
+    if (!claimed.ok) throw new Error(JSON.stringify(claimed));
+    const moved = await assignCardsToMissionAction([looseCard], memberMission);
+    expect(moved.ok).toBe(false);
+    expect(await missionOf(looseCard)).toBeNull();
+    const undone = await restoreCardMissionsAction([{ taskId: looseCard, missionId: memberMission }]);
+    expect(undone.ok).toBe(false);
+    expect(await missionOf(looseCard)).toBeNull();
+  });
+
+  it("moves its own selection and undoes it", async () => {
+    const moved = await assignCardsToMissionAction([looseCard], memberMission);
+    if (!moved.ok) throw new Error(moved.error);
+    expect(await missionOf(looseCard)).toBe(memberMission);
+    const undone = await restoreCardMissionsAction(moved.previous);
+    expect(undone.ok).toBe(true);
+    expect(await missionOf(looseCard)).toBeNull();
+  });
+
+  it("the admin still moves the admin's and a member's cards out of any mission", async () => {
+    sessionUserId = world.adminUserId;
+    const moved = await assignCardsToMissionAction([adminCardInMission], memberMission);
+    if (!moved.ok) throw new Error(moved.error);
+    expect((await restoreCardMissionsAction(moved.previous)).ok).toBe(true);
+    expect(await missionOf(adminCardInMission)).toBe(adminMission);
   });
 });

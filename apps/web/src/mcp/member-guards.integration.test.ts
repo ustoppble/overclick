@@ -1,5 +1,5 @@
-import { executionAttempt, mcpToken, mission, projectMember, task, user, workspace } from "@agent-board/db";
-import { eq } from "drizzle-orm";
+import { executionAttempt, mcpToken, mission, projectMember, task, taskComment, user, workspace } from "@agent-board/db";
+import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { authenticateBearer } from "./auth";
 import { closeTestWorld, createTestWorld, type TestWorld } from "./test-db";
@@ -231,6 +231,137 @@ describe("MCP as a member: another person's claim and mission stay theirs", () =
     });
   });
 
+  describe("the run another person's token holds", () => {
+    const attemptOf = async (shortId: string) => {
+      const row = await statusOf(shortId);
+      return (await world.db.select().from(executionAttempt).where(eq(executionAttempt.taskId, row.id)))[0]!;
+    };
+
+    it("refuses usage, spawn_failure and resolved_in on the admin's claim, and writes none of them", async () => {
+      await adminHolds(adminCard);
+      const before = await attemptOf(adminCard);
+      const member = await asMember();
+      const writes: Record<string, unknown>[] = [
+        { usage: { tokens_in: 999999, tokens_out: 1, estimated: true, reason: "x" } },
+        { spawn_failure: "boot falhou" },
+        { resolved_in: "v9.9.9" },
+      ];
+      for (const write of writes) {
+        const done = await invokeTool(world.db, member, "task_update", { task_id: adminCard, ...write });
+        expect(!done.ok && done.error.code, JSON.stringify(write)).toBe("PERMISSION_DENIED");
+      }
+      const after = await attemptOf(adminCard);
+      expect(after.tokensIn).toBe(before.tokensIn);
+      expect((await statusOf(adminCard)).resolvedIn).toBeNull();
+      const traces = await world.db.select().from(taskComment)
+        .where(and(eq(taskComment.taskId, after.taskId), eq(taskComment.kind, "spawn_failure")));
+      expect(traces).toHaveLength(0);
+    });
+
+    it("refuses usage and revisado on a card the admin's token delivered", async () => {
+      await adminHolds(adminCard);
+      const delivered = await invokeTool(world.db, admin, "task_deliver", { task_id: adminCard, summary: "feito", usage });
+      expect(delivered.ok, JSON.stringify(delivered)).toBe(true);
+      const member = await asMember();
+      const marked = await invokeTool(world.db, member, "task_update", { task_id: adminCard, revisado: true });
+      expect(!marked.ok && marked.error.code).toBe("PERMISSION_DENIED");
+      expect((await statusOf(adminCard)).revisado).toBe(false);
+      const fixed = await invokeTool(world.db, member, "task_update", { task_id: adminCard, usage: { tokens_in: 999999, tokens_out: 1, estimated: true, reason: "x" } });
+      expect(!fixed.ok && fixed.error.code).toBe("PERMISSION_DENIED");
+      expect((await attemptOf(adminCard)).tokensIn).toBe(1);
+    });
+
+    it("refuses branch_register on the admin's claim", async () => {
+      await adminHolds(adminCard);
+      const member = await asMember();
+      const branch = await invokeTool(world.db, member, "branch_register", { task_id: adminCard, branch: "evil" });
+      expect(!branch.ok && branch.error.code).toBe("PERMISSION_DENIED");
+      expect((await statusOf(adminCard)).branch).not.toBe("evil");
+    });
+
+    it("still comments on the admin's card: commenting is collaboration", async () => {
+      await adminHolds(adminCard);
+      const member = await asMember();
+      const said = await invokeTool(world.db, member, "task_update", { task_id: adminCard, comment: "vi um detalhe" });
+      expect(said.ok, JSON.stringify(said)).toBe(true);
+    });
+
+    it("on its own claim the member writes usage, spawn_failure, resolved_in and the branch", async () => {
+      const member = await asMember();
+      await invokeTool(world.db, member, "task_claim", { task_id: adminCard, executor: executor("m1") });
+      for (const write of [
+        { usage: { tokens_in: 5, tokens_out: 1, estimated: true, reason: "x" } },
+        { spawn_failure: "boot falhou" },
+        { resolved_in: "v1.0.0" },
+      ]) {
+        const done = await invokeTool(world.db, member, "task_update", { task_id: adminCard, ...write });
+        expect(done.ok, JSON.stringify(done)).toBe(true);
+      }
+      const branch = await invokeTool(world.db, member, "branch_register", { task_id: adminCard, branch: "ocl-meu" });
+      expect(branch.ok, JSON.stringify(branch)).toBe(true);
+    });
+
+    it("the admin still corrects usage and the branch on a member's claim", async () => {
+      const member = await asMember();
+      await invokeTool(world.db, member, "task_claim", { task_id: adminCard, executor: executor("m1") });
+      const fixed = await invokeTool(world.db, admin, "task_update", { task_id: adminCard, usage: { tokens_in: 7, tokens_out: 1, estimated: true, reason: "x" } });
+      expect(fixed.ok, JSON.stringify(fixed)).toBe(true);
+      const branch = await invokeTool(world.db, admin, "branch_register", { task_id: adminCard, branch: "ocl-admin" });
+      expect(branch.ok, JSON.stringify(branch)).toBe(true);
+    });
+  });
+
+  describe("moving a card out of a mission", () => {
+    const ownMission = async (member: AuthContext) => {
+      const own = await invokeTool(world.db, member, "mission_create", { title: "Minha" });
+      if (!own.ok) throw new Error(JSON.stringify(own));
+      return (own.value as { mission: { id: string } }).mission.id;
+    };
+
+    it("does not take the admin's card out of the admin's mission, to none or to its own", async () => {
+      const member = await asMember();
+      const mine = await ownMission(member);
+      for (const target of [null, mine]) {
+        const moved = await invokeTool(world.db, member, "task_update", { task_id: adminMissionCard, mission_id: target });
+        expect(!moved.ok && moved.error.code, String(target)).toBe("PERMISSION_DENIED");
+        expect((await statusOf(adminMissionCard)).missionId).toBe(world.missionId);
+      }
+    });
+
+    it("does not move a card the admin's token is running, even a loose one into its own mission", async () => {
+      const loose = await invokeTool(world.db, admin, "task_create", card("solto do admin", { project_id: world.projectId }));
+      if (!loose.ok) throw new Error(JSON.stringify(loose));
+      const looseId = shortOf(loose.value);
+      await adminHolds(looseId);
+      const member = await asMember();
+      const mine = await ownMission(member);
+      const moved = await invokeTool(world.db, member, "task_update", { task_id: looseId, mission_id: mine });
+      expect(!moved.ok && moved.error.code).toBe("PERMISSION_DENIED");
+      expect((await statusOf(looseId)).missionId).toBeNull();
+    });
+
+    it("moves its own card from its own mission to none", async () => {
+      const member = await asMember();
+      const mine = await ownMission(member);
+      const made = await invokeTool(world.db, member, "task_create", card("meu", { project_id: world.projectId, mission: mine }));
+      if (!made.ok) throw new Error(JSON.stringify(made));
+      const id = shortOf(made.value);
+      const moved = await invokeTool(world.db, member, "task_update", { task_id: id, mission_id: null });
+      expect(moved.ok, JSON.stringify(moved)).toBe(true);
+      expect((await statusOf(id)).missionId).toBeNull();
+    });
+
+    it("the admin still takes a member's card out of the member's mission", async () => {
+      const member = await asMember();
+      const mine = await ownMission(member);
+      const made = await invokeTool(world.db, member, "task_create", card("meu", { project_id: world.projectId, mission: mine }));
+      if (!made.ok) throw new Error(JSON.stringify(made));
+      const id = shortOf(made.value);
+      const moved = await invokeTool(world.db, admin, "task_update", { task_id: id, mission_id: world.missionId });
+      expect(moved.ok, JSON.stringify(moved)).toBe(true);
+    });
+  });
+
   describe("what a member reads of an admin's card", () => {
     it("task_get does not show the admin token's label as the card's agent", async () => {
       // No origem on the card: the board fills it with the creating token's label.
@@ -250,6 +381,23 @@ describe("MCP as a member: another person's claim and mission stay theirs", () =
       const seen = await invokeTool(world.db, member, "task_get", { task_id: id });
       expect(seen.ok, JSON.stringify(seen)).toBe(true);
       expect(JSON.stringify(seen)).not.toContain('"agent":"admin"');
+    });
+
+    it("task_get comments do not show the admin token's label as the author; its own comments read as written", async () => {
+      await invokeTool(world.db, admin, "task_update", { task_id: adminCard, comment: "nota do admin" });
+      const member = await asMember();
+      await invokeTool(world.db, member, "task_update", { task_id: adminCard, comment: "nota do member" });
+      const authors = async (who: AuthContext) => {
+        const got = await invokeTool(world.db, who, "task_get", { task_id: adminCard, include: ["comments"] });
+        if (!got.ok) throw new Error(JSON.stringify(got));
+        const comments = (got.value as { comments?: { author: string; body: string }[] }).comments ?? [];
+        return Object.fromEntries(comments.map((c) => [c.body, c.author]));
+      };
+      expect(await authors(admin)).toMatchObject({ "nota do admin": "admin", "nota do member": "member-agent" });
+      const seen = await authors(member);
+      expect(seen["nota do member"]).toBe("member-agent");
+      expect(seen["nota do admin"]).toBeDefined();
+      expect(seen["nota do admin"]).not.toBe("admin");
     });
   });
 });

@@ -1,6 +1,6 @@
 "use server";
 
-import { mission, organization, project, task, workspace } from "@agent-board/db";
+import { mcpToken, mission, organization, project, task, workspace } from "@agent-board/db";
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "../lib/action-result";
@@ -239,6 +239,41 @@ export type CardMissionBefore = { taskId: string; missionId: string | null };
  * client — so "N cards movidos · Desfazer" can put every one of them back
  * (navigation plan E6).
  */
+const CARD_NOT_YOURS_TO_MOVE =
+  "Only the author of the mission a card is in (or an admin) takes it out, and a card another person's agent is running stays where it is.";
+
+/**
+ * Whether a member may take these cards out of where they are: the mission
+ * each one is in now must be theirs (canChangeMission), and none may be in
+ * execution under a claim another person's token holds. Leaving a mission
+ * changes it as much as joining one. An admin moves anything.
+ */
+async function mayMoveCardsOut(principal: Principal, taskIds: string[]): Promise<boolean> {
+  if (principal.role === "admin" || taskIds.length === 0) return true;
+  const rows = await db()
+    .select({
+      status: task.status,
+      claimedByTokenId: task.claimedByTokenId,
+      holder: mcpToken.ownerUserId,
+      missionAuthor: mission.createdByUserId,
+      missionId: mission.id,
+    })
+    .from(task)
+    .leftJoin(mcpToken, eq(task.claimedByTokenId, mcpToken.id))
+    .leftJoin(mission, eq(task.missionId, mission.id))
+    .where(inArray(task.id, taskIds));
+  return rows.every(
+    (row) =>
+      !(
+        row.status === "em_execucao" &&
+        row.claimedByTokenId !== null &&
+        row.holder !== principal.userId
+      ) &&
+      (row.missionId === null ||
+        canChangeMission(principal, { createdByUserId: row.missionAuthor })),
+  );
+}
+
 export async function assignCardsToMissionAction(
   taskIds: string[],
   missionId: string | null,
@@ -308,6 +343,14 @@ export async function assignCardsToMissionAction(
     .select({ id: task.id, missionId: task.missionId })
     .from(task)
     .where(and(inArray(task.parentId, plan.taskIds), taskScope(principal)));
+  // Cards already in the target stay put, so only the ones that move are
+  // asked whether they may leave where they are.
+  const leaving = [...rows, ...children]
+    .filter((row) => row.missionId !== plan.missionId)
+    .map((row) => row.id);
+  if (!(await mayMoveCardsOut(principal, leaving))) {
+    return { ok: false, error: CARD_NOT_YOURS_TO_MOVE };
+  }
   const previous = new Map<string, string | null>();
   for (const row of [...rows, ...children]) {
     if (!previous.has(row.id)) previous.set(row.id, row.missionId);
@@ -390,6 +433,11 @@ export async function restoreCardMissionsAction(
     missions: new Map(missions.map((row) => [row.id, { workspaceId: row.workspaceId }])),
   });
   if (!plan.ok) return { ok: false, error: plan.error };
+  // The undo is a move like any other: the cards leave the mission they are
+  // in now, under the same rule.
+  if (!(await mayMoveCardsOut(principal, plan.groups.flatMap((group) => group.taskIds)))) {
+    return { ok: false, error: CARD_NOT_YOURS_TO_MOVE };
+  }
 
   await db().transaction(async (tx) => {
     for (const group of plan.groups) {

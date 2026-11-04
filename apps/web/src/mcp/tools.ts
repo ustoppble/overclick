@@ -3855,6 +3855,40 @@ async function taskUpdate(
     }
   }
 
+  // The run on a card belongs to the token that claimed it: its usage, the
+  // release it shipped in, its review mark and its boot failures are the
+  // holder's (or an admin's) to write. A comment stays open to anyone who
+  // sees the card: that is collaboration, not the run.
+  const runIsOthers = !(await mayActOnClaim(db, ctx, found.row.claimedByTokenId));
+  if (
+    runIsOthers &&
+    (input.usage !== undefined ||
+      input.spawn_failure !== undefined ||
+      input.resolved_in !== undefined ||
+      input.revisado === true)
+  ) {
+    return err("PERMISSION_DENIED", RUN_NOT_YOURS);
+  }
+
+  // Leaving a mission changes it as much as joining one: the mission the card
+  // is in now must be the caller's too, and a card another person is running
+  // stays where it is.
+  if (input.mission_id !== undefined) {
+    if (runIsOthers && found.row.status === "em_execucao") {
+      return err("PERMISSION_DENIED", RUN_NOT_YOURS);
+    }
+    if (found.row.missionId && found.row.missionId !== input.mission_id) {
+      const [origin] = await db
+        .select({ createdByUserId: mission.createdByUserId })
+        .from(mission)
+        .where(eq(mission.id, found.row.missionId))
+        .limit(1);
+      if (origin && !canChangeMission(principalFromAuth(ctx), origin)) {
+        return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
+      }
+    }
+  }
+
   if (input.status === "validado") {
     // Validating is the admin's (OCL-227): a member may not sign off on the
     // card they wrote, whatever flags their token carries.
@@ -4964,6 +4998,9 @@ async function branchRegister(
       `Task ${input.task_id} not found in this workspace. Call task_list to see the available cards.`,
     );
   }
+  if (!(await mayActOnClaim(db, ctx, found.row.claimedByTokenId))) {
+    return err("PERMISSION_DENIED", RUN_NOT_YOURS);
+  }
   const [updated] = await db
     .update(task)
     .set({ branch: input.branch })
@@ -5241,6 +5278,9 @@ function withoutOthersTokenLabel<T extends { origem?: { agent?: string } }>(
 const CLAIM_NOT_YOURS =
   "This card is held by another token. Only the token that holds the claim, another token of the same person, or an admin can take it over or deliver it.";
 
+const RUN_NOT_YOURS =
+  "Another person's token holds this card's claim. Only that person or an admin records its usage, branch, release, review mark or spawn failure, or moves it between missions while it runs. Comments stay open to anyone who sees the card.";
+
 /**
  * Whether the caller may take over (force, stale reclaim) or deliver a claim:
  * an admin always; anyone else only when the claim is their own, by the same
@@ -5404,7 +5444,7 @@ async function assembleTaskPayload(
       missionPayload = mapMission(miss, missOrg.name);
     }
   }
-  const comments = wantsComments ? await listTaskComments(db, row.id) : [];
+  const comments = wantsComments ? await listTaskComments(db, ctx, row.id) : [];
   const convention = branchConvention(mapped.short_id, mapped.title);
   let recipe: ReturnType<typeof bindUsageRecipe> = null;
   if (wantsRecipe) {
@@ -5657,6 +5697,7 @@ async function countReports(db: McpDatabase, row: TaskRow): Promise<number> {
  */
 async function listTaskComments(
   db: McpDatabase,
+  ctx: AuthContext,
   taskId: string,
 ): Promise<TaskComment[]> {
   const rows = await db
@@ -5665,6 +5706,7 @@ async function listTaskComments(
       kind: taskComment.kind,
       createdAt: taskComment.createdAt,
       authorAgentRef: taskComment.authorAgentRef,
+      authorUserId: taskComment.authorUserId,
       authorEmail: user.email,
     })
     .from(taskComment)
@@ -5676,8 +5718,29 @@ async function listTaskComments(
       ),
     )
     .orderBy(asc(taskComment.createdAt));
+  // Same rule as origem.agent (withoutOthersTokenLabel): a member does not
+  // learn the label of another person's token from the comments it wrote.
+  // Their own labels still read as written.
+  const principal = principalFromAuth(ctx);
+  const ownLabels =
+    principal && !isAdmin(principal) && ctx.userId
+      ? new Set(
+          (
+            await db
+              .select({ label: mcpToken.label })
+              .from(mcpToken)
+              .where(eq(mcpToken.ownerUserId, ctx.userId))
+          ).map((token) => token.label),
+        )
+      : null;
   return rows.map((row) => ({
-    author: row.authorAgentRef ?? row.authorEmail ?? "desconhecido",
+    author:
+      ownLabels &&
+      row.authorAgentRef &&
+      row.authorUserId !== ctx.userId &&
+      !ownLabels.has(row.authorAgentRef)
+        ? row.authorEmail ?? "agente"
+        : row.authorAgentRef ?? row.authorEmail ?? "desconhecido",
     kind: row.kind === "report" ? "report" : row.kind === "validation" ? "validation" : "comment",
     body: row.body,
     created_at: iso(row.createdAt),
