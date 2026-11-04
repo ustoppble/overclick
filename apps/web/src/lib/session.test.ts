@@ -1,6 +1,12 @@
+import { randomBytes } from "node:crypto";
 import { SignJWT } from "jose";
-import { afterEach, describe, expect, it } from "vitest";
-import { readSessionToken, signSession } from "./session";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  authSecretWeakness,
+  readSessionToken,
+  resetAuthSecretWarning,
+  signSession,
+} from "./session";
 
 const SECRET = "test-secret-at-least-32-characters-long";
 
@@ -46,5 +52,62 @@ describe("session token", () => {
       .sign(new TextEncoder().encode(SECRET));
 
     await expect(readSessionToken(token)).resolves.toBeNull();
+  });
+});
+
+describe("AUTH_SECRET strength", () => {
+  afterEach(() => {
+    delete process.env.AUTH_SECRET;
+    vi.restoreAllMocks();
+  });
+
+  const random32 = () => randomBytes(32);
+
+  it("accepts 32 random bytes as base64, base64url or hex", () => {
+    const bytes = random32();
+    expect(authSecretWeakness(bytes.toString("base64"))).toBeNull();
+    expect(authSecretWeakness(bytes.toString("base64url"))).toBeNull();
+    expect(authSecretWeakness(bytes.toString("hex"))).toBeNull();
+  });
+
+  it("flags a secret that is only long, not random", () => {
+    expect(authSecretWeakness("s".repeat(32))).not.toBeNull();
+    expect(authSecretWeakness("test-secret-at-least-32-characters-long")).not.toBeNull();
+    expect(authSecretWeakness("replace-with-a-long-random-string-at-least-32-chars")).not.toBeNull();
+  });
+
+  it("flags a base64 value that stands for fewer than 32 bytes", () => {
+    expect(authSecretWeakness(randomBytes(24).toString("base64"))).not.toBeNull();
+    expect(authSecretWeakness(randomBytes(16).toString("hex"))).not.toBeNull();
+  });
+
+  it("flags a secret of 32 bytes that repeats a handful of values", () => {
+    expect(authSecretWeakness(Buffer.alloc(32, 7).toString("base64"))).not.toBeNull();
+    expect(authSecretWeakness(Buffer.from("abababababababababababababababab").toString("hex"))).not.toBeNull();
+    expect(authSecretWeakness("ab".repeat(32))).not.toBeNull();
+  });
+
+  it("warns once, never prints the secret, and does not refuse a weak one that is long enough", async () => {
+    const secret = "weak-but-long-enough-secret-value-xyz-123";
+    process.env.AUTH_SECRET = secret;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    resetAuthSecretWarning();
+
+    await signSession({ userId: "user-1", sessionVersion: 1 });
+    await signSession({ userId: "user-1", sessionVersion: 1 });
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
+    expect(JSON.stringify(warn.mock.calls)).toMatch(/AUTH_SECRET/);
+  });
+
+  it("does not warn for a strong secret", async () => {
+    process.env.AUTH_SECRET = random32().toString("base64");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    resetAuthSecretWarning();
+
+    await signSession({ userId: "user-1", sessionVersion: 1 });
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });

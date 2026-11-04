@@ -318,16 +318,24 @@ describe("signing in with a code sent by email", () => {
         logged.mockRestore();
       });
 
-      it("counts an address with no account against the cap too, so the cap says nothing about who has one", async () => {
+      it("spends the cap only on emails that go out: addresses with no account cost it nothing", async () => {
         process.env.LOGIN_CODE_MAX_SENDS_PER_HOUR = "2";
-        const [first] = await addAccounts(1);
-        await requestLoginCodeAction(null, emailForm("ghost1@local.test"));
-        await requestLoginCodeAction(null, emailForm("ghost2@local.test"));
-        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-        await requestLoginCodeAction(null, emailForm(first!));
-        logged.mockRestore();
+        const accounts = await addAccounts(2);
+        // Far more strangers' asks than the cap, none of them with an account.
+        for (let i = 0; i < 6; i++) {
+          await requestLoginCodeAction(null, emailForm(`ghost${i}@local.test`));
+        }
+        expect(await world.db.select().from(loginCodeRequest).where(eq(loginCodeRequest.id, "code-hour-global:all"))).toHaveLength(0);
 
-        expect(emailState.sendEmail).not.toHaveBeenCalled();
+        for (const email of accounts) await requestLoginCodeAction(null, emailForm(email));
+        expect(emailState.sendEmail).toHaveBeenCalledTimes(2);
+      });
+
+      it("answers an address with no account and one with an account the same way while the cap is open", async () => {
+        const [real] = await addAccounts(1);
+        const ghost = await requestLoginCodeAction(null, emailForm("ghost@local.test"));
+        const known = await requestLoginCodeAction(null, emailForm(real!));
+        expect(known).toEqual(ghost);
       });
 
       it("reads the cap before charging the address's own buckets, so asks refused for it cost the owner nothing", async () => {
