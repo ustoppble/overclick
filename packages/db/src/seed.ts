@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import { createDb } from "./client";
 import { requireDatabaseUrl } from "./env";
+import { describeError } from "./safe-error";
 import {
   organization,
   project,
@@ -121,7 +122,8 @@ if (isDirect) {
       console.log(result.skipped ? "seed skipped (workspace exists)" : "seed applied");
     })
     .catch((err) => {
-      console.error(err);
+      // The driver's message carries the failed SQL; only its kind and code are logged.
+      console.error(`seed failed: ${describeError("seed", err)}`);
       process.exit(1);
     });
 }

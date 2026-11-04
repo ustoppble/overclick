@@ -67,6 +67,7 @@ import {
   canonicalTranscriptModel,
   identityFromTranscript,
 } from "./transcript-model";
+import { logToolFailure, newErrorRef } from "./safe-log";
 import { usageFromTranscript } from "./transcript-usage";
 import {
   and,
@@ -469,10 +470,13 @@ export async function invokeTool(
     if (isMcpCoreError(error)) {
       return { ok: false, error };
     }
-    console.error(`[mcp] ${name} threw`, error);
+    // Logged by kind, code and a reference only: the raw error carries the
+    // failed SQL and its parameters (see safe-log).
+    const ref = newErrorRef();
+    logToolFailure(name, error, ref);
     return err(
       "INTERNAL",
-      `Unexpected server error while running ${name}. Check the ids and values you passed and try again; the server logs have the details.`,
+      `Unexpected server error while running ${name} (ref ${ref}). Check the ids and values you passed and try again; quote the ref to whoever runs the server.`,
     );
   }
 
