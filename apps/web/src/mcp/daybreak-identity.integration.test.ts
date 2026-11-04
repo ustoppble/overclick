@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bindRecipeSettings } from "@agent-board/db/domain";
 import { closeTestWorld, createTestWorld, TEST_EXECUTORS, type TestWorld } from "./test-db";
 import { invokeToolForTests as invokeTool } from "./test-tools";
@@ -15,7 +15,13 @@ const daybreak = "gpt-daybreak-blue-latest";
 describe("Daybreak executor identity (OCL-190)", () => {
   let world: TestWorld;
   const dirs: string[] = [];
+  // The fixtures live in the temp folder, which is not a transcript folder
+  // unless the operator's list says so.
+  beforeEach(() => {
+    vi.stubEnv("OVERCLICK_TRANSCRIPT_DIRS", tmpdir());
+  });
   afterEach(async () => {
+    vi.unstubAllEnvs();
     if (world) await closeTestWorld(world);
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
@@ -92,7 +98,7 @@ describe("Daybreak executor identity (OCL-190)", () => {
     ].map(row => JSON.stringify(row)).join("\n"));
     const measured = JSON.parse(execFileSync("sh", ["-c", bindRecipeSettings(claimed.usage_recipe!.command, { transcript })], { encoding: "utf8" }));
     expect(measured.segments).toEqual([{ model: daybreak, input: 50, output: 20, cache_read: 100, cache_write: 0 }]);
-    expect(identityFromTranscript({ cli: "codex", path: transcript })?.model).toBe(daybreak);
+    expect((await identityFromTranscript({ cli: "codex", path: transcript }))?.model).toBe(daybreak);
     const { transcript: measuredPath, ...usage } = measured;
     expect((await invokeTool(world.db, ctx(), "task_deliver", { task_id: card!.id, summary: "Daybreak measured", usage,
       transcript: { cli: "codex", path: measuredPath, session_id: "daybreak-fixture" } })).ok).toBe(true);

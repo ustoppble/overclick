@@ -186,6 +186,7 @@ async function defaultGit(args: string[]): Promise<string> {
     // Nothing of the server's environment (tokens, askpass, ssh agent) reaches
     // a git that talks to an address a person typed; https and no prompt only.
     env: {
+      NODE_ENV: "production",
       PATH: process.env.PATH ?? "",
       HOME: tmpdir(),
       GIT_CONFIG_NOSYSTEM: "1",
