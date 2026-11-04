@@ -4,7 +4,7 @@ import { DEFAULT_THEME, THEME_BOOT_SCRIPT } from "../lib/theme";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Agent Board",
+  title: "overclick",
   description:
     "Self-hosted board for you and your AI agents. Data stays on this server.",
   robots: { index: false, follow: false },
