@@ -17,6 +17,7 @@ import {
   normalizeShortId,
   organization,
   project,
+  mcpToken,
   projectContextAudit,
   readTranscriptRef,
   resolveUsageSegments,
@@ -96,6 +97,8 @@ import {
 } from "../lib/insights";
 import { manageDenialMessage } from "../lib/manage-capability";
 import {
+  MISSION_NOT_YOURS,
+  canChangeMission,
   canManageStructure,
   canManageWorkspace,
   canSeeOrganization,
@@ -1830,6 +1833,9 @@ async function missionUpdate(
         `Mission ${input.mission_id} not found in this workspace. Call mission_list to see the available missions.`,
       );
     }
+    if (!canChangeMission(principalFromAuth(ctx), current)) {
+      return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
+    }
 
     const contextChanged =
       input.context !== undefined || input.context_ops !== undefined;
@@ -1986,6 +1992,9 @@ async function missionDelete(
       "NOT_FOUND",
       `Mission ${input.mission_id} not found in this workspace. Call mission_list to see the available missions.`,
     );
+  }
+  if (!canChangeMission(principalFromAuth(ctx), current)) {
+    return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
   }
 
   return db.transaction(async (tx) => {
@@ -2780,7 +2789,9 @@ async function taskList(
     order,
     next_offset: truncated ? offset + limit : null,
     tasks: selected.map((row) => {
-      const mapped = mapTaskForRead(mapTask(row.task, row.project));
+      const mapped = mapTaskForRead(
+        withoutOthersTokenLabel(ctx, row.task, mapTask(row.task, row.project)),
+      );
       const costUsd = latestCostByTask.get(mapped.id);
       return {
         short_id: mapped.short_id,
@@ -3174,6 +3185,9 @@ async function taskCreate(
         `Mission ${input.mission} not found. Call mission_list to see the available missions or mission_create to start one.`,
       );
     }
+    if (!canChangeMission(principalFromAuth(ctx), miss)) {
+      return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
+    }
     missionId = miss.id;
   }
 
@@ -3409,6 +3423,16 @@ async function taskClaim(
         lastActivity &&
         isClaimStale(lastActivity, ws.claimTimeoutMinutes),
     );
+
+    // Taking a card away from whoever holds it, by force or because the claim
+    // went stale, is the holder's or an admin's. A member sees the admin's
+    // cards in their projects; seeing is not the right to cut their run short.
+    if (
+      (input.force || reclaimedStale) &&
+      !(await mayActOnClaim(tx, ctx, found.row.claimedByTokenId))
+    ) {
+      return err("PERMISSION_DENIED", CLAIM_NOT_YOURS);
+    }
 
     const reopenComment = await latestReopenComment(tx, found.row);
     const evaluated = evaluateClaim(
@@ -3822,6 +3846,15 @@ async function taskUpdate(
     );
   }
 
+  // Refuse before any other field of this update is written: a member files
+  // cards only in missions they wrote (see canChangeMission).
+  if (input.mission_id) {
+    const target = await findMission(db, ctx, input.mission_id);
+    if (target && !canChangeMission(principalFromAuth(ctx), target)) {
+      return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
+    }
+  }
+
   if (input.status === "validado") {
     // Validating is the admin's (OCL-227): a member may not sign off on the
     // card they wrote, whatever flags their token carries.
@@ -3982,6 +4015,9 @@ async function taskUpdate(
           "NOT_FOUND",
           `Mission ${input.mission_id} not found in this workspace. Call mission_list to see the available missions or mission_create to start one. Send mission_id: null to detach the card.`,
         );
+      }
+      if (!canChangeMission(principalFromAuth(ctx), miss)) {
+        return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
       }
       missionId = miss.id;
     }
@@ -4500,6 +4536,16 @@ async function taskDeliver(
       "NOT_FOUND",
       `Task ${input.task_id} not found in this workspace. Call task_list to see the available cards.`,
     );
+    }
+
+    // A delivery closes the run of whoever holds the claim: the holder, or an
+    // admin. Another member's token, or the admin's agent's claim seen by a
+    // member, is not theirs to hand in.
+    if (
+      found.row.status === "em_execucao" &&
+      !(await mayActOnClaim(tx, ctx, found.row.claimedByTokenId))
+    ) {
+      return err("PERMISSION_DENIED", CLAIM_NOT_YOURS);
     }
 
     const transition = applyTransition(
@@ -5172,6 +5218,53 @@ function requireStructure(ctx: AuthContext, tool: string): Result<never> | null 
 }
 
 /**
+ * A card made without an origem carries the label of the token that made it
+ * as `origem.agent`. A member reading a card another person wrote must not
+ * learn the label of that person's token; their own cards read as written.
+ */
+function withoutOthersTokenLabel<T extends { origem?: { agent?: string } }>(
+  ctx: AuthContext,
+  row: { createdByUserId: string | null },
+  mapped: T,
+): T {
+  const principal = principalFromAuth(ctx);
+  if (!principal || isAdmin(principal) || row.createdByUserId === principal.userId) {
+    return mapped;
+  }
+  if (!mapped.origem?.agent) return mapped;
+  const { agent: _agent, ...rest } = mapped.origem;
+  // An origem needs at least one identifier; the board's own is the fallback.
+  const origem = Object.values(rest).some(Boolean) ? rest : { cli: "board" };
+  return { ...mapped, origem };
+}
+
+const CLAIM_NOT_YOURS =
+  "This card is held by another token. Only the token that holds the claim, another token of the same person, or an admin can take it over or deliver it.";
+
+/**
+ * Whether the caller may take over (force, stale reclaim) or deliver a claim:
+ * an admin always; anyone else only when the claim is their own, by the same
+ * token or by another token of the same person. A claim nobody holds is not
+ * a claim to protect. Unlike `canTakeOverClaim` this does not need the token's
+ * manage flag: an admin's agent reclaiming a stale card is the normal flow.
+ */
+async function mayActOnClaim(
+  db: Tx,
+  ctx: AuthContext,
+  claimedByTokenId: string | null,
+): Promise<boolean> {
+  if (isAdmin(principalFromAuth(ctx))) return true;
+  if (!claimedByTokenId || claimedByTokenId === ctx.tokenId) return true;
+  if (!ctx.userId) return false;
+  const [holder] = await db
+    .select({ owner: mcpToken.ownerUserId })
+    .from(mcpToken)
+    .where(eq(mcpToken.id, claimedByTokenId))
+    .limit(1);
+  return holder?.owner === ctx.userId;
+}
+
+/**
  * Whether the caller may release or keep alive a claim another token holds.
  * The same rule as `requireManage` (OCL-227): the manage flag on a member's
  * token must not let them free, or hold on to, a claim the admin took on one
@@ -5282,11 +5375,15 @@ async function assembleTaskPayload(
     .where(eq(executionAttempt.taskId, row.id))
     .orderBy(desc(executionAttempt.startedAt))
     .limit(1);
-  const mapped = mapTask(row, proj, {
-    reopenComment: comment,
-    reportsCount: count,
-    executor: cardExecutorFromAttempt(latestAttempt),
-  });
+  const mapped = withoutOthersTokenLabel(
+    ctx,
+    row,
+    mapTask(row, proj, {
+      reopenComment: comment,
+      reportsCount: count,
+      executor: cardExecutorFromAttempt(latestAttempt),
+    }),
+  );
   // The business above the project. Loaded only for a briefing: every other
   // read of a card has no use for the organization markdown.
   const projectOrganization = wantsBriefing

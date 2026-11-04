@@ -127,6 +127,23 @@ export function canManageToken(
   return row.ownerUserId !== null && row.ownerUserId === principal.userId;
 }
 
+/**
+ * A mission a member can see is not thereby theirs: they read the whole of it,
+ * but only its author (or an admin) edits it, deletes it or files cards in it.
+ * A mission with no recorded author belongs to the admins.
+ */
+export function canChangeMission(
+  principal: MaybePrincipal,
+  row: { createdByUserId: string | null },
+): boolean {
+  if (!principal) return false;
+  if (isAdmin(principal)) return true;
+  return row.createdByUserId !== null && row.createdByUserId === principal.userId;
+}
+
+export const MISSION_NOT_YOURS =
+  "Only the mission's author or an admin can change it, delete it or file cards in it.";
+
 const NOTHING = sql`false`;
 
 /**

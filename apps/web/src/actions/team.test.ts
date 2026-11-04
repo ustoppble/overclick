@@ -45,7 +45,8 @@ vi.mock("../lib/email", () => ({
   sendEmail: emailState.sendEmail,
 }));
 
-vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+const requestState = vi.hoisted(() => ({ headers: {} as Record<string, string> }));
+vi.mock("next/headers", () => ({ headers: async () => new Headers(requestState.headers) }));
 
 const afterState = vi.hoisted(() => ({ queued: [] as Array<() => unknown> }));
 vi.mock("next/server", () => ({
@@ -136,10 +137,14 @@ async function invite(email: string) {
   return secret;
 }
 
+const PUBLIC_URL = "https://board.example.test";
+
 /** OCL-222: the admin brings a member in, and can switch them off. */
 describe("invitation and team", () => {
   beforeEach(async () => {
     process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.OVERCLICK_PUBLIC_URL = PUBLIC_URL;
+    requestState.headers = {};
     world = await createTestWorld();
     sessionsSet.length = 0;
     emailState.configured = true;
@@ -505,6 +510,55 @@ describe("invitation and team", () => {
       expect(created.emailed).toBe(false);
       expect(created.path).toMatch(/^\/invite\//);
       expect(emailState.sendEmail).not.toHaveBeenCalled();
+    });
+
+    it("the emailed link carries the configured public address, never the request's Host", async () => {
+      requestState.headers = { host: "evil.example.test", "x-forwarded-proto": "http" };
+      const created = await team.createInvitationAction({
+        email: "dev@example.test",
+        organizationId: world.organizationId,
+        projectIds: [world.projectId],
+      });
+      if (!created.ok) throw new Error(created.error);
+      expect(created.emailed).toBe(true);
+      const sent = emailState.sendEmail.mock.calls.map(([m]) => m);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.text).toContain(`${PUBLIC_URL}${created.path}`);
+      expect(sent[0]!.text).not.toContain("evil.example.test");
+      expect(sent[0]!.text).not.toContain("<your-host>");
+    });
+
+    it("without a public address configured no email goes out, forged Host or not, and the link is still there to copy", async () => {
+      delete process.env.OVERCLICK_PUBLIC_URL;
+      requestState.headers = { host: "evil.example.test", "x-forwarded-proto": "https" };
+      const created = await team.createInvitationAction({
+        email: "dev@example.test",
+        organizationId: world.organizationId,
+        projectIds: [world.projectId],
+      });
+      if (!created.ok) throw new Error(created.error);
+      expect(created.emailed).toBe(false);
+      expect(created.notSentBecause).toBe("public-url");
+      expect(created.path).toMatch(/^\/invite\//);
+      expect(emailState.sendEmail).not.toHaveBeenCalled();
+
+      const [row] = await world.db.select().from(invitation);
+      const again = await team.resendInvitationAction(row!.id);
+      if (!again.ok) throw new Error(again.error);
+      expect(again.emailed).toBe(false);
+      expect(again.notSentBecause).toBe("public-url");
+      expect(emailState.sendEmail).not.toHaveBeenCalled();
+    });
+
+    it("an unconfigured mailer is told apart from a missing public address", async () => {
+      emailState.configured = false;
+      const created = await team.createInvitationAction({
+        email: "dev@example.test",
+        organizationId: world.organizationId,
+        projectIds: [world.projectId],
+      });
+      if (!created.ok) throw new Error(created.error);
+      expect(created.notSentBecause).toBe("email");
     });
 
     it("resending makes a new link, sends it, and the old link stops working", async () => {

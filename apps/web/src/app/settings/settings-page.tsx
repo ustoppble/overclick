@@ -25,6 +25,7 @@ import {
 import { APP_VERSION, readUpdaterState } from "../../lib/updates";
 import { SettingsClient } from "./settings-client";
 import { loadPendingInvitations, loadTeam } from "../../lib/invitations";
+import { publicOrigin } from "../../lib/public-url";
 import type { SettingsPlace } from "./groups";
 
 /**
@@ -145,10 +146,12 @@ export async function SettingsPage({
   // A TLS instance sits behind a proxy that terminates it, so the scheme comes
   // from the forwarded header. Never hardcode http: the commands we print carry
   // a bearer token.
+  // The configured public address wins when there is one; the request's own
+  // Host is only the fallback for what is printed on this page, never for an email.
   const host = h.get("host") ?? "<your-host>";
   const proto = h.get("x-forwarded-proto")?.split(",")[0].trim()
     ?? (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
-  const origin = `${proto}://${host}`;
+  const origin = publicOrigin() ?? `${proto}://${host}`;
 
   // Read on the server, from the volume the sidecar shares: a mounted trigger
   // directory says nothing, only a fresh heartbeat means somebody can pull.

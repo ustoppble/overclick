@@ -68,7 +68,15 @@ export function TeamPanel({
       const r = await createInvitationAction({ email: to, organizationId, projectIds: inviteProjects });
       if (!r.ok) { setErr(r.error); return; }
       setFresh({ url: `${origin}${r.path}`, expiresAt: r.expiresAt });
-      setMsg(r.emailed ? t.settings.teamInviteSent(to.toLowerCase()) : t.settings.teamInviteNotSent);
+      setMsg(
+        r.emailed
+          ? t.settings.teamInviteSent(to.toLowerCase())
+          : r.notSentBecause === "public-url"
+            ? t.settings.teamInviteNoPublicUrl
+            : r.notSentBecause === "failed"
+              ? t.settings.teamInviteSendFailed
+              : t.settings.teamInviteNotSent,
+      );
       setEmail("");
       setInviteProjects([]);
       router.refresh();
@@ -79,7 +87,15 @@ export function TeamPanel({
       const r = await resendInvitationAction(inv.id);
       if (!r.ok) { setErr(r.error); return; }
       setFresh({ url: `${origin}${r.path}`, expiresAt: r.expiresAt });
-      setMsg(r.emailed ? t.settings.teamResent(inv.email) : t.settings.teamResentNotSent);
+      setMsg(
+        r.emailed
+          ? t.settings.teamResent(inv.email)
+          : r.notSentBecause === "public-url"
+            ? t.settings.teamResentNoPublicUrl
+            : r.notSentBecause === "failed"
+              ? t.settings.teamResentSendFailed
+              : t.settings.teamResentNotSent,
+      );
       router.refresh();
     });
   const saveProjects = (id: string, projectIds: string[]) =>

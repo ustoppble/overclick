@@ -2,7 +2,6 @@
 
 import { isValidEmail } from "@agent-board/db";
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import type { ActionResult } from "../lib/action-result";
@@ -24,6 +23,7 @@ import {
 } from "../lib/invitations";
 import { sweepLoginRows } from "../lib/login-housekeeping";
 import { LOGIN_CODE_PATTERN } from "../lib/login-code";
+import { publicOrigin } from "../lib/public-url";
 import {
   clearCodeLoginBudget,
   loginOrigin,
@@ -58,43 +58,46 @@ async function adminSession(): Promise<AdminSession> {
 }
 
 export type CreateInvitationResult =
-  | { ok: true; path: string; expiresAt: string; emailed: boolean }
+  | {
+      ok: true;
+      path: string;
+      expiresAt: string;
+      emailed: boolean;
+      /** Why nothing was emailed, when `emailed` is false. */
+      notSentBecause?: "email" | "public-url" | "failed";
+    }
   | { ok: false; error: string };
 
-/**
- * Where this board is reached from, as the admin's own request says: the
- * same origin Settings prints the link with, so the emailed link and the one
- * shown to copy are the same link.
- */
-async function requestOrigin(): Promise<string> {
-  const h = await headers();
-  const host = h.get("host") ?? "<your-host>";
-  const proto = h.get("x-forwarded-proto")?.split(",")[0].trim()
-    ?? (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
-  return `${proto}://${host}`;
-}
+type EmailOutcome = { emailed: true } | { emailed: false; notSentBecause: "email" | "public-url" | "failed" };
 
 /**
  * Sends the link to the invited address, with the sign-in code's sender.
  * Whether it went out is told back, never thrown: the admin always has the
- * link to copy, the plan B when the board has no email configured.
+ * link to copy, the plan B when nothing could be sent.
+ *
+ * The link's origin is the one the operator configured (OVERCLICK_PUBLIC_URL),
+ * never the request's Host or x-forwarded-* headers: those come from whoever
+ * sent the request, and an emailed link built from them is a link to wherever
+ * they say. With no configured address nothing is emailed.
  */
 async function emailInvitation(
   created: Extract<CreatedInvitation, { ok: true }>,
   language: string | null,
-): Promise<boolean> {
-  if (!emailConfigured()) return false;
+): Promise<EmailOutcome> {
+  if (!emailConfigured()) return { emailed: false, notSentBecause: "email" };
+  const origin = publicOrigin();
+  if (!origin) return { emailed: false, notSentBecause: "public-url" };
   const t = dict(language).settings;
-  const url = `${await requestOrigin()}${created.path}`;
-  return sendEmail({
+  const sent = await sendEmail({
     to: created.email,
     subject: t.teamInviteEmailSubject(created.organizationName),
     text: t.teamInviteEmailText(
-      url,
+      `${origin}${created.path}`,
       created.organizationName,
       formatMediumDate(created.expiresAt.toISOString(), asLang(language)),
     ),
   });
+  return sent ? { emailed: true } : { emailed: false, notSentBecause: "failed" };
 }
 
 /** The link is returned once, here, and emailed; the database keeps only its hash. */
@@ -114,9 +117,9 @@ export async function createInvitationAction(input: {
     createdByUserId: admin.userId,
   });
   if (!created.ok) return created;
-  const emailed = await emailInvitation(created, admin.language);
+  const outcome = await emailInvitation(created, admin.language);
   revalidatePath("/settings");
-  return { ok: true, path: created.path, expiresAt: created.expiresAt.toISOString(), emailed };
+  return { ok: true, path: created.path, expiresAt: created.expiresAt.toISOString(), ...outcome };
 }
 
 /** A new link for a pending invitation, emailed again; the old one stops working. */
@@ -129,9 +132,9 @@ export async function resendInvitationAction(invitationId: string): Promise<Crea
     createdByUserId: admin.userId,
   });
   if (!created.ok) return created;
-  const emailed = await emailInvitation(created, admin.language);
+  const outcome = await emailInvitation(created, admin.language);
   revalidatePath("/settings");
-  return { ok: true, path: created.path, expiresAt: created.expiresAt.toISOString(), emailed };
+  return { ok: true, path: created.path, expiresAt: created.expiresAt.toISOString(), ...outcome };
 }
 
 /** Which projects of their organization a member works on. */

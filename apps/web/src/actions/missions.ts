@@ -9,7 +9,7 @@ import { db } from "../lib/db";
 import { MAX_BULK_CARDS } from "../lib/bulk";
 import { looksLikeUuid } from "../mcp/map";
 import { planMissionAssignment, planMissionRestore } from "../lib/mission-assign";
-import { missionScope, taskScope, type Principal } from "../lib/scope";
+import { MISSION_NOT_YOURS, canChangeMission, missionScope, taskScope, type Principal } from "../lib/scope";
 import { sessionPrincipal } from "../lib/web-scope";
 
 type MissionStatus = "ativa" | "pausada" | "concluida";
@@ -142,6 +142,22 @@ export async function updateMissionAction(input: {
     return { ok: false, error: "Mission status is invalid." };
   }
 
+  // A member reads every mission the board shows them and changes only the
+  // ones they wrote; the admin changes any.
+  const [current] = await db()
+    .select({ id: mission.id, createdByUserId: mission.createdByUserId })
+    .from(mission)
+    .where(
+      and(
+        eq(mission.id, input.missionId),
+        eq(mission.workspaceId, workspaceId),
+        missionScope(principal),
+      ),
+    )
+    .limit(1);
+  if (!current) return { ok: false, error: "Mission not found." };
+  if (!canChangeMission(principal, current)) return { ok: false, error: MISSION_NOT_YOURS };
+
   const [updated] = await db()
     .update(mission)
     .set({
@@ -150,13 +166,7 @@ export async function updateMissionAction(input: {
       context: input.context.trim(),
       status: input.status,
     })
-    .where(
-      and(
-        eq(mission.id, input.missionId),
-        eq(mission.workspaceId, workspaceId),
-        missionScope(principal),
-      ),
-    )
+    .where(eq(mission.id, current.id))
     .returning({ id: mission.id });
   if (!updated) return { ok: false, error: "Mission not found." };
 
@@ -177,7 +187,7 @@ export async function deleteEmptyMissionAction(
   const database = db();
   return database.transaction(async (tx) => {
     const [current] = await tx
-      .select({ id: mission.id })
+      .select({ id: mission.id, createdByUserId: mission.createdByUserId })
       .from(mission)
       .where(
         and(
@@ -188,6 +198,9 @@ export async function deleteEmptyMissionAction(
       )
       .limit(1);
     if (!current) return { ok: false, error: "Mission not found." } as const;
+    if (!canChangeMission(principal, current)) {
+      return { ok: false, error: MISSION_NOT_YOURS } as const;
+    }
 
     // Only the cards the user may see count (OCL-227): an admin's card in a
     // member's mission is not the member's to know about. A mission that is
@@ -265,12 +278,22 @@ export async function assignCardsToMissionAction(
       ? ("missing" as const)
       : ((
         await db()
-          .select({ id: mission.id, workspaceId: mission.workspaceId })
+          .select({
+            id: mission.id,
+            workspaceId: mission.workspaceId,
+            createdByUserId: mission.createdByUserId,
+          })
           .from(mission)
           .where(and(eq(mission.id, missionId), missionScope(principal)))
           .limit(1)
       )[0] ?? ("missing" as const))
     : null;
+
+  // A member files cards only in missions they wrote (documented in
+  // canChangeMission): seeing the admin's mission is not adding to it.
+  if (target && target !== "missing" && !canChangeMission(principal, target)) {
+    return { ok: false, error: MISSION_NOT_YOURS };
+  }
 
   const plan = planMissionAssignment({
     requestedIds: requested,
@@ -350,9 +373,16 @@ export async function restoreCardMissionsAction(
     missionIds.length === 0
       ? []
       : await db()
-          .select({ id: mission.id, workspaceId: mission.workspaceId })
+          .select({
+            id: mission.id,
+            workspaceId: mission.workspaceId,
+            createdByUserId: mission.createdByUserId,
+          })
           .from(mission)
           .where(and(inArray(mission.id, missionIds), missionScope(principal)));
+  if (missions.some((row) => !canChangeMission(principal, row))) {
+    return { ok: false, error: MISSION_NOT_YOURS };
+  }
 
   const plan = planMissionRestore({
     moves: clean,

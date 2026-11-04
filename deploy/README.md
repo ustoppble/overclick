@@ -27,10 +27,24 @@ OVERCLICK_PORT=3100                      # optional, the loopback port the proxy
 GITHUB_WEBHOOK_SECRET=<random string>    # optional, see "GitHub release webhook"
 RESEND_API_KEY=<your Resend API key>     # needed to sign in, see "Sign-in by email code"
 EMAIL_FROM=<Name <sender@your-domain>>   # needed to sign in, see "Sign-in by email code"
+OVERCLICK_PUBLIC_URL=<https://board.your-domain>   # optional, see "Public address"
 ```
 
 Generate both with `openssl rand -hex 32`. The app listens on `127.0.0.1:3100`
 by design: nothing reaches it except through the reverse proxy.
+
+## Public address
+
+`OVERCLICK_PUBLIC_URL` is the address people open the board at (scheme and
+domain, no path), for example `https://board.your-domain`. It is the **only**
+origin a link inside an email is built from. Team invitations are emailed with
+it; the request's `Host` and `x-forwarded-*` headers are written by whoever
+sent the request, so they are never used for an emailed link.
+
+While it is empty (or is not an `https://` address, or `http://` on a local
+one) invitations are still made, but **no email is sent**: Settings says so
+and shows the link to copy. Run `./deploy/deploy.sh` after setting it. It is
+unrelated to `OVERCLICK_HOST`, which only configures the proxy overlay.
 
 ## GitHub release webhook
 
