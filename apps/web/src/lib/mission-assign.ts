@@ -61,3 +61,57 @@ export function planMissionAssignment(input: {
 
   return { ok: true, taskIds: requested, missionId: mission?.id ?? null };
 }
+
+/** One card and the mission it goes back to; `null` is "Sem missão". */
+export type MissionRestoreMove = { taskId: string; missionId: string | null };
+
+export type MissionRestorePlan =
+  | { ok: true; groups: { missionId: string | null; taskIds: string[] }[] }
+  | { ok: false; error: string };
+
+/**
+ * The bulk move's undo (navigation plan E6): every card goes back to its own
+ * previous mission, so the plan is one move per mission it found. The same
+ * rule as the move holds for each of them: the card is one the caller reaches,
+ * the mission too, and both live in one workspace. One card out of reach
+ * refuses the whole undo, with the answer an unknown id gets.
+ */
+export function planMissionRestore(input: {
+  moves: MissionRestoreMove[];
+  /** The cards the caller may touch, each with the workspace it belongs to. */
+  cards: MissionAssignCard[];
+  /** The missions the caller may touch, by id. */
+  missions: Map<string, { workspaceId: string }>;
+}): MissionRestorePlan {
+  const moves = input.moves.filter((move) => move.taskId.trim());
+  if (moves.length === 0) {
+    return { ok: false, error: "Select at least one card." };
+  }
+
+  const byId = new Map(input.cards.map((card) => [card.id, card]));
+  const groups = new Map<string | null, string[]>();
+  const seen = new Map<string, string | null>();
+  for (const move of moves) {
+    if (seen.has(move.taskId)) {
+      if (seen.get(move.taskId) === move.missionId) continue;
+      return { ok: false, error: "A card cannot go back to two missions." };
+    }
+    seen.set(move.taskId, move.missionId);
+
+    const found = byId.get(move.taskId);
+    if (!found) return { ok: false, error: "Card not found." };
+    if (move.missionId !== null) {
+      const target = input.missions.get(move.missionId);
+      if (!target) return { ok: false, error: "Mission not found." };
+      if (target.workspaceId !== found.workspaceId) {
+        return { ok: false, error: "That mission belongs to another workspace." };
+      }
+    }
+    groups.set(move.missionId, [...(groups.get(move.missionId) ?? []), move.taskId]);
+  }
+
+  return {
+    ok: true,
+    groups: [...groups].map(([missionId, taskIds]) => ({ missionId, taskIds })),
+  };
+}

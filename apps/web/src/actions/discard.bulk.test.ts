@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
 import { invokeToolForTests as invokeTool } from "../mcp/test-tools";
 import type { AuthContext } from "../mcp/types";
+import { MAX_BULK_CARDS } from "../lib/bulk";
 
 let world: TestWorld;
 let sessionUserId = "";
@@ -22,7 +23,7 @@ vi.mock("../lib/cookies", () => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-const { discardCardsAction, MAX_BULK_CARDS } = await import("./discard");
+const { discardCardsAction } = await import("./discard");
 
 const origem = { session_id: "sess_bulk_discard", cli: "test" };
 const card = (title: string) => ({
