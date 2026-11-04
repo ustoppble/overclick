@@ -6,7 +6,7 @@ import "../../styles/nebula.css";
  * read-only report of tiles and panels — and a second sheet declaring the same
  * tiles is where two visual languages start drifting from one design.
  */
-import "../insights/insights.css";
+import "../usage/insights.css";
 
 export default function OrganizationsLayout({ children }: { children: ReactNode }) {
   return (
