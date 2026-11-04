@@ -5,6 +5,7 @@ import {
   COLUMN_STATUSES,
   countByStatus,
   firstStatusWithCards,
+  type ColumnCounts,
   type ColumnStatus,
 } from "../../lib/board-columns";
 import type { Dict } from "../../lib/i18n";
@@ -40,6 +41,8 @@ export function BoardMobileList({
   labels,
   renderRow,
   renderEmpty,
+  renderMore = () => null,
+  counts: exactCounts,
   countClass = () => "count",
   t,
 }: {
@@ -49,16 +52,22 @@ export function BoardMobileList({
   /** The card as one dense row, rendered by the board that owns the detail. */
   renderRow: (card: BoardCard) => ReactNode;
   renderEmpty: (status: ColumnStatus) => ReactNode;
+  /** The end of a column that still has cards to bring (OCL board lazy). */
+  renderMore?: (status: ColumnStatus) => ReactNode;
+  /** Each column's exact count, when the cards come by page; else what is held. */
+  counts?: ColumnCounts;
   /** The column count's class: the To review count wears the amber for the admin. */
   countClass?: (status: ColumnStatus) => string;
   t: Dict;
 }) {
-  const counts = useMemo(() => countByStatus(cards), [cards]);
+  const held = useMemo(() => countByStatus(cards), [cards]);
+  const counts = exactCounts ?? held;
   // Only the opening column follows the cards. Once a person picks a column,
   // a filter emptying it is an answer, not a reason to move them elsewhere.
   const [status, setStatus] = useState<ColumnStatus>(() =>
-    firstStatusWithCards(countByStatus(cards)),
+    firstStatusWithCards(exactCounts ?? countByStatus(cards)),
   );
+  const more = renderMore(status);
   const list = cards.filter((card) => card.status === status);
 
   return (
@@ -88,7 +97,8 @@ export function BoardMobileList({
         <span className={countClass(status)}>{counts[status]}</span>
       </label>
       <div className="col">
-        {list.length === 0 ? renderEmpty(status) : list.map(renderRow)}
+        {list.length === 0 && !more ? renderEmpty(status) : list.map(renderRow)}
+        {more}
       </div>
     </div>
   );

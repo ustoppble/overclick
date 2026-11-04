@@ -32,12 +32,13 @@ const NOW = new Date("2026-11-03T12:00:00Z");
  * member's scope, and the cards outside the pages still reachable.
  */
 describe("board columns by page", () => {
-  let world: TestWorld | undefined;
+  // Reset after each test, so the cursor test (no database) closes nothing.
+  let world = undefined as unknown as TestWorld;
   let seq = 0;
 
   afterEach(async () => {
     if (world) await closeTestWorld(world);
-    world = undefined;
+    world = undefined as unknown as TestWorld;
   });
 
   function database(): Database {

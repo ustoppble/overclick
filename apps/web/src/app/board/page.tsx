@@ -15,13 +15,9 @@ import {
 import { resolveCardRoute, type CardRoute } from "../../lib/card-route";
 import { CARD_ROUTE_PARAM, withQuery } from "../../lib/redirects";
 import { toBoardCards } from "../../lib/board-card";
-import { findLinkedCard } from "../../lib/board-window";
-import {
-  boardWindowStart,
-  findBoardTaskByShortId,
-  loadBoardTasks,
-  loadBoardTasksByIds,
-} from "../../lib/board-tasks";
+import { COLUMN_STATUSES } from "../../lib/board-columns";
+import { loadBoardColumnsData } from "../../lib/board-page";
+import { findBoardTaskByShortId, loadBoardTasksByIds } from "../../lib/board-tasks";
 import { loadReviewQueue, readReviewScope } from "../../lib/review-queue";
 import { readBoardPerson } from "../../lib/person-filter";
 import { joinReviewQueue } from "../../lib/review-queue-order";
@@ -400,7 +396,7 @@ async function BoardContent({
       : rememberedFilter;
   // The window is the period, in every column: the cards that changed (or were
   // created, if the reader picked that date) in the last 7 days unless they
-  // chose otherwise. The rest come in through the search or a link.
+  // chose otherwise.
   const windowNow = new Date();
   // Read before the cards, so a write landing in between makes the poll
   // refresh once more instead of hiding behind a fingerprint newer than the page.
@@ -411,34 +407,45 @@ async function BoardContent({
   const person = await readBoardPerson(db(), ws.id, principal, scopeOverrideFromSearch(params), {
     remembered: me?.boardPerson ?? null,
   });
-  const rows = await loadBoardTasks(db(), projectIds, principal, {
-    now: windowNow,
-    period: initialFilter.period,
-    periodBy: initialFilter.periodBy,
-    personUserId: person.userId,
-  });
-  // A link to one card (?card=OCL-12) opens it even when the window left it
-  // out. Out of scope reads as no card, the same as an id that matches none.
-  const linked = typeof params.card === "string" ? params.card : null;
-  const linkedRow =
-    addressed ??
-    (linked
-      ? (findLinkedCard(rows, linked) ??
-        (await findBoardTaskByShortId(db(), projectIds, principal, linked)))
-      : null);
-  if (linkedRow && !rows.some((row) => row.id === linkedRow.id)) {
-    rows.push(linkedRow);
-  }
-  // Same rule as the Insights page: no money layer, no price table to read.
-  const prices = ws.pricingEnabled ? await loadModelPrices(db(), ws.id) : [];
-  // Each card's line only: the panel's share (contract, handoff, timeline,
-  // transcript) is read when a card is opened (loadBoardCardDetailAction).
-  const cards = toBoardCards(rows, {
+  // The columns (OCL board lazy): each one's newest page inside the bar's
+  // scope, the person and the period, counted exactly in SQL; the rest comes
+  // as the reader scrolls a column. The scope narrows on the server now, so
+  // one project on the bar reads that project's cards, not every card.
+  const cardContext = {
     tr: t,
     pricingEnabled: ws.pricingEnabled,
     viewerId: session.userId,
     claimTimeoutMinutes: ws.claimTimeoutMinutes,
-  });
+  };
+  const initialColumns = await loadBoardColumnsData(
+    db(),
+    {
+      projects,
+      missionIds: new Set(missions.map((item) => item.id)),
+      principal,
+      personUserId: person.userId,
+      cards: cardContext,
+    },
+    initialFilter,
+    { now: windowNow },
+  );
+  // A link to one card (?card=OCL-12) opens it even when no page holds it.
+  // Out of scope reads as no card, the same as an id that matches none.
+  const linked = typeof params.card === "string" ? params.card : null;
+  const held = COLUMN_STATUSES.flatMap((status) => initialColumns.columns[status].cards);
+  // A held card answers its current short id; an old one is the server's to read.
+  const heldLinked =
+    !addressed && linked
+      ? (held.find((card) => card.shortId.toUpperCase() === linked.trim().toUpperCase()) ?? null)
+      : null;
+  const linkedRow =
+    addressed ??
+    (linked && !heldLinked
+      ? await findBoardTaskByShortId(db(), projectIds, principal, linked)
+      : null);
+  const linkedCard = heldLinked ?? (linkedRow ? toBoardCards([linkedRow], cardContext)[0]! : null);
+  // Same rule as the Insights page: no money layer, no price table to read.
+  const prices = ws.pricingEnabled ? await loadModelPrices(db(), ws.id) : [];
   // The topbar total, aggregated by the same code the Insights page runs so
   // the board and the page can only report the same numbers for one filter.
   const initialTotals = await loadBoardTotals(
@@ -474,12 +481,11 @@ async function BoardContent({
         lang={ws.language}
         missions={missions}
         releases={releases}
-        cards={cards}
+        initialColumns={initialColumns}
+        linkedCard={linkedCard}
         initialFilter={initialFilter}
         initialTotals={initialTotals}
-        openCardId={linkedRow?.id ?? null}
         openedByAddress={addressed !== null}
-        windowSince={boardWindowStart(windowNow, initialFilter.period)?.toISOString() ?? null}
         boardSignature={boardSignature}
         viewerRole={principal.role}
         initialQuery={one(params.q) ?? ""}

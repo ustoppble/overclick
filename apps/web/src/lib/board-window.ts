@@ -3,7 +3,7 @@ import {
   type BoardPeriodField,
   type SearchableBoardCard,
 } from "./board-filter";
-import type { ColumnStatus } from "./board-columns";
+import { COLUMN_STATUSES, type ColumnStatus } from "./board-columns";
 
 /**
  * The client half of the board's window. The page hands over the window (the
@@ -32,6 +32,22 @@ export function mergeBoardCards<T extends WindowCard>(
   return [...byId.values()].sort(
     (a, b) =>
       a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+  );
+}
+
+/**
+ * The columns' own order (OCL board lazy): newest first by the date the
+ * period reads, the id breaking ties, as the server hands the pages over. The
+ * search's answer is laid out the same way, so a card does not jump when the
+ * words are cleared.
+ */
+export function newestFirst<T extends WindowCard>(
+  cards: readonly T[],
+  periodBy: BoardPeriodField,
+): T[] {
+  const at = (card: T) => (periodBy === "created" ? card.createdAt : card.updatedAt);
+  return [...cards].sort(
+    (a, b) => at(b).localeCompare(at(a)) || b.id.localeCompare(a.id),
   );
 }
 
@@ -95,4 +111,57 @@ export function searchWithServerHits<T extends SearchableBoardCard & { id: strin
   if (!query.trim()) return cards;
   const local = new Set(searchBoardCards(cards, query).map((card) => card.id));
   return cards.filter((card) => local.has(card.id) || serverHits.has(card.id));
+}
+
+/** The columns as the browser holds them: what board-page hands over, by any card shape. */
+export type HeldColumns<T extends { id: string }> = {
+  key: string;
+  columns: Record<ColumnStatus, { cards: T[]; next: string | null }>;
+};
+
+/**
+ * A column's next page, added to the columns it was asked from (OCL board
+ * lazy). Dropped when the columns moved on in the meantime (another filter,
+ * or a refresh that already went past that cursor); a card already held
+ * somewhere (it changed columns since) is not drawn twice.
+ */
+export function appendColumnPage<T extends { id: string }, C extends HeldColumns<T>>(
+  held: C,
+  status: ColumnStatus,
+  cursor: string,
+  page: { key: string; cards: T[]; next: string | null },
+): C {
+  if (held.key !== page.key || held.columns[status].next !== cursor) return held;
+  const ids = new Set(COLUMN_STATUSES.flatMap((each) => held.columns[each].cards.map((card) => card.id)));
+  return {
+    ...held,
+    columns: {
+      ...held.columns,
+      [status]: {
+        cards: [...held.columns[status].cards, ...page.cards.filter((card) => !ids.has(card.id))],
+        next: page.next,
+      },
+    },
+  };
+}
+
+/**
+ * What a refresh does with the first pages it brings: take them, when they
+ * answer the filter on screen and no column was scrolled past its first page;
+ * otherwise re-read the columns as deep as they are held, so the poll never
+ * takes away what the reader scrolled in, nor the place they scrolled to.
+ */
+export function columnsAfterRefresh<T extends { id: string }>(
+  held: HeldColumns<T>,
+  incoming: HeldColumns<T>,
+  pageSize: number,
+): { adopt: true } | { adopt: false; depth: Record<ColumnStatus, number> } {
+  const scrolled = COLUMN_STATUSES.some((status) => held.columns[status].cards.length > pageSize);
+  if (incoming.key === held.key && !scrolled) return { adopt: true };
+  return {
+    adopt: false,
+    depth: Object.fromEntries(
+      COLUMN_STATUSES.map((status) => [status, held.columns[status].cards.length]),
+    ) as Record<ColumnStatus, number>,
+  };
 }

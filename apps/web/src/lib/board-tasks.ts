@@ -17,7 +17,12 @@ import {
   type BoardPeriod,
   type BoardPeriodField,
 } from "./board-filter";
-import { COLUMN_STATUSES, type ColumnCounts, type ColumnStatus } from "./board-columns";
+import {
+  BOARD_COLUMN_PAGE,
+  COLUMN_STATUSES,
+  type ColumnCounts,
+  type ColumnStatus,
+} from "./board-columns";
 import { personCondition } from "./person-filter";
 import {
   isAdmin,
@@ -255,12 +260,7 @@ export async function loadBoardTasks(
   );
 }
 
-/**
- * How many cards a column hands over at a time: its newest, and the next ones
- * when the reader scrolls it to its end. Enough to fill a tall screen twice,
- * so the next page is on its way long before the column runs out.
- */
-export const BOARD_COLUMN_PAGE = 40;
+export { BOARD_COLUMN_PAGE };
 
 /** What the board shows, read on the server: the bar's scope, the person, the period and the filters. */
 export type BoardQuery = {

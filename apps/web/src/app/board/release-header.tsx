@@ -17,13 +17,17 @@ const RELEASE_STATUSES = [
 export function releaseOverview(
   cards: BoardCard[],
   missions: BoardMissionOption[],
+  /** The columns' exact counts when the cards come by page (OCL board lazy). */
+  exact?: Record<(typeof RELEASE_STATUSES)[number], number>,
 ) {
-  const counts = Object.fromEntries(
-    RELEASE_STATUSES.map((status) => [
-      status,
-      cards.filter((card) => card.status === status).length,
-    ]),
-  ) as Record<(typeof RELEASE_STATUSES)[number], number>;
+  const counts =
+    exact ??
+    (Object.fromEntries(
+      RELEASE_STATUSES.map((status) => [
+        status,
+        cards.filter((card) => card.status === status).length,
+      ]),
+    ) as Record<(typeof RELEASE_STATUSES)[number], number>);
   const missionIds = new Set(cards.flatMap((card) => card.missionId ?? []));
   const involvedMissions = missions.filter((mission) => missionIds.has(mission.id));
   const executors = [
@@ -35,6 +39,7 @@ export function releaseOverview(
 export function ReleaseHeader({
   release,
   cards,
+  counts,
   missions,
   totals,
   filter,
@@ -43,13 +48,15 @@ export function ReleaseHeader({
 }: {
   release: string | null;
   cards: BoardCard[];
+  /** The columns' exact counts; without them the cards held are counted. */
+  counts?: Record<(typeof RELEASE_STATUSES)[number], number>;
   missions: BoardMissionOption[];
   totals: BoardTotals;
   filter: BoardFilter;
   onMissionSelect: (missionId: string) => void;
   t: Dict;
 }) {
-  const overview = releaseOverview(cards, missions);
+  const overview = releaseOverview(cards, missions, counts);
   const statuses = [
     [t.board.statusOpen, overview.counts.aberto],
     [t.board.statusInProgress, overview.counts.em_execucao],

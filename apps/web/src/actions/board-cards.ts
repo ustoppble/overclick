@@ -1,10 +1,18 @@
 "use server";
 
 import { and, asc, eq } from "drizzle-orm";
-import { project, workspace } from "@agent-board/db";
+import { mission, project, workspace } from "@agent-board/db";
 import type { BoardCard, BoardCardDetail } from "../app/board/board";
 import { toBoardCardDetail, toBoardCards } from "../lib/board-card";
-import { scopeOverrideFromSearch } from "../lib/board-filter";
+import { COLUMN_STATUSES, type ColumnStatus } from "../lib/board-columns";
+import { scopeOverrideFromSearch, type BoardFilter } from "../lib/board-filter";
+import {
+  loadBoardColumnPageData,
+  loadBoardColumnsData,
+  type BoardColumnData,
+  type BoardColumnsData,
+  type BoardPageReader,
+} from "../lib/board-page";
 import { loadBoardSignature } from "../lib/board-signature";
 import { loadGlobalCounts, type GlobalCounts } from "../lib/global-counts";
 import { boardSignatureLimiter } from "../lib/board-signature-guard";
@@ -14,6 +22,7 @@ import {
   type BoardSearchRefusal,
 } from "../lib/board-search-guard";
 import {
+  decodeBoardCursor,
   loadBoardTaskDetail,
   loadBoardTasksByIds,
   searchBoardTaskIds,
@@ -23,7 +32,7 @@ import { db } from "../lib/db";
 import { dict } from "../lib/i18n";
 import { readBoardPerson } from "../lib/person-filter";
 import { loadUsageRecipes } from "../lib/recipes";
-import { projectScope, type Principal } from "../lib/scope";
+import { missionScope, projectScope, type Principal } from "../lib/scope";
 import { sessionPrincipal } from "../lib/web-scope";
 
 /**
@@ -191,4 +200,93 @@ export async function boardSignatureAction(search?: string): Promise<
   } finally {
     slot.release();
   }
+}
+
+/**
+ * What the columns need to read for this reader: their projects and missions
+ * and the person filter the page's query carries (the remembered one when it
+ * says none), so a column read here is the column the page drew.
+ */
+async function columnsReader(reader: BoardReader, search: unknown): Promise<BoardPageReader> {
+  const [missions, person] = await Promise.all([
+    db()
+      .select({ id: mission.id })
+      .from(mission)
+      .where(and(eq(mission.workspaceId, reader.ws.id), missionScope(reader.principal))),
+    readBoardPerson(
+      db(),
+      reader.ws.id,
+      reader.principal,
+      typeof search === "string" ? scopeOverrideFromSearch(search) : undefined,
+    ),
+  ]);
+  return {
+    projects: reader.projects,
+    missionIds: new Set(missions.map((row) => row.id)),
+    principal: reader.principal,
+    personUserId: person.userId,
+    cards: {
+      tr: dict(reader.ws.language),
+      pricingEnabled: reader.ws.pricingEnabled,
+      viewerId: reader.session.userId,
+      claimTimeoutMinutes: reader.ws.claimTimeoutMinutes,
+    },
+  };
+}
+
+function isColumnStatus(value: unknown): value is ColumnStatus {
+  return typeof value === "string" && (COLUMN_STATUSES as readonly string[]).includes(value);
+}
+
+/** How deep the board holds each column, read as numbers and nothing else. */
+function readDepth(value: unknown): Partial<Record<ColumnStatus, number>> {
+  if (!value || typeof value !== "object") return {};
+  const depth: Partial<Record<ColumnStatus, number>> = {};
+  for (const status of COLUMN_STATUSES) {
+    const n = (value as Record<string, unknown>)[status];
+    if (typeof n === "number" && Number.isFinite(n) && n > 0) depth[status] = Math.floor(n);
+  }
+  return depth;
+}
+
+/**
+ * The board's columns for a filter (OCL board lazy): each column's newest
+ * page and the exact counts, read on the server inside the reader's scope.
+ * The filter line asks for it when a filter or the period changes; a refresh
+ * asks with `depth`, so the columns come back as deep as the reader scrolled.
+ */
+export async function loadBoardColumnsAction(
+  filter: Partial<BoardFilter>,
+  /** The page's query: its ?person= narrows the columns, as it narrows the board. */
+  search?: string,
+  depth?: Partial<Record<ColumnStatus, number>>,
+): Promise<BoardColumnsData | null> {
+  const reader = await boardReader();
+  if (!reader) return null;
+  return loadBoardColumnsData(db(), await columnsReader(reader, search), filter ?? null, {
+    depth: readDepth(depth),
+  });
+}
+
+/**
+ * The next page of one column, when the reader scrolls it to its end. A
+ * cursor the board did not write reads as the end of the column.
+ */
+export async function loadBoardColumnPageAction(
+  filter: Partial<BoardFilter>,
+  search: string | undefined,
+  status: ColumnStatus,
+  cursor: string,
+): Promise<(BoardColumnData & { key: string }) | null> {
+  const after = decodeBoardCursor(cursor);
+  if (!isColumnStatus(status) || !after) return null;
+  const reader = await boardReader();
+  if (!reader) return null;
+  return loadBoardColumnPageData(
+    db(),
+    await columnsReader(reader, search),
+    filter ?? null,
+    status,
+    after,
+  );
 }
