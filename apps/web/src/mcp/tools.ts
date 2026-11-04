@@ -123,6 +123,7 @@ import {
 } from "../lib/delivery-verification";
 import { renderBriefingMarkdown } from "./briefing";
 import { refreshProjectContext } from "../lib/project-context-refresh";
+import { insertProject, isPrefixConflict } from "../lib/project-create";
 import {
   normalizeClaimCli,
   resolveClaimExecutor,
@@ -1298,56 +1299,25 @@ async function projectCreate(
   if (choice.refusal) return choice.refusal;
   const org = choice.row;
 
-  let row: ProjectRow | undefined;
-  try {
-    [row] = await db
-      .insert(project)
-      .values({
-        workspaceId: ctx.workspaceId,
-        organizationId: org.id,
-        name,
-        repoUrl: input.repo_url?.trim() || null,
-        context: input.context?.trim() ? input.context : null,
-        currentVersion: input.current_version?.trim() || null,
-        contextSource: input.context_source
-          ? {
-              ...(input.context_source.releases_repo
-                ? { releasesRepo: input.context_source.releases_repo }
-                : {}),
-              ...(input.context_source.context_file
-                ? { contextFile: input.context_source.context_file }
-                : {}),
-              refresh: input.context_source.refresh,
-            }
-          : null,
-        contextUpdatedAt:
-          input.context || input.current_version || input.context_source
-            ? new Date()
-            : null,
-        idPrefix: prefix,
-        nextNumber: 1,
-      })
-      .returning();
-  } catch (error) {
-    if (isPrefixConflict(error)) {
-      return err(
-        "INVALID_ARGUMENT",
-        `Card prefix '${prefix}' was just taken by another project. Pass a different id_prefix.`,
-      );
-    }
-    throw error;
+  const inserted = await insertProject(db, {
+    workspaceId: ctx.workspaceId,
+    organizationId: org.id,
+    name,
+    prefix,
+    repoUrl: input.repo_url,
+    context: input.context,
+    currentVersion: input.current_version,
+    contextSource: input.context_source ?? null,
+  });
+  if (!inserted.ok) {
+    return err(
+      "INVALID_ARGUMENT",
+      `Card prefix '${prefix}' was just taken by another project. Pass a different id_prefix.`,
+    );
   }
-  if (!row) {
-    throw new Error("failed to insert project");
-  }
+  const row = inserted.row;
 
   return { project: mapProjectDetail(row, org.name, emptyCardCounts()) };
-}
-
-function isPrefixConflict(error: unknown): boolean {
-  const message =
-    error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : "";
-  return message.includes("project_workspace_prefix");
 }
 
 async function countCards(db: Tx, projectId: string): Promise<number> {

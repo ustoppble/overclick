@@ -20,7 +20,7 @@ export const GLOBAL_COUNTS_INTERVAL_MS = 60_000;
 
 const PLACES = [
   { key: "board", href: "/home", icon: "board" },
-  { key: "usage", href: "/insights", icon: "insights" },
+  { key: "usage", href: "/usage", icon: "insights" },
 ] as const;
 
 const REVIEW_HREF = "/home?status=feito";
@@ -60,8 +60,7 @@ export function AvatarMenu({
         </div>
       </div>
       <hr />
-      {/* Meu agente lives in Settings › Tokens until it gets its own page (E5). */}
-      <a className="gb-mi" role="menuitem" href="/settings?tab=tokens" onClick={onClose}>
+            <a className="gb-mi" role="menuitem" href="/account/agent" onClick={onClose}>
         <Icon name="plug" label={null} size={14} />
         <span>
           {t.nav.myAgent}
@@ -69,7 +68,7 @@ export function AvatarMenu({
         </span>
       </a>
       {role === "admin" ? (
-        <a className="gb-mi" role="menuitem" href="/settings" onClick={onClose}>
+        <a className="gb-mi" role="menuitem" href="/settings/organizations-projects" onClick={onClose}>
           <Icon name="settings" label={null} size={14} />
           <span>
             {t.nav.settings}
@@ -77,14 +76,6 @@ export function AvatarMenu({
           </span>
         </a>
       ) : null}
-      {/* Provisional, until Settings groups organizations and projects (E5). */}
-      <a className="gb-mi" role="menuitem" href="/organizations" onClick={onClose}>
-        <Icon name="roles" label={null} size={14} />
-        <span>
-          {t.nav.organizations}
-          <span className="gb-mi-sub">{t.nav.organizationsSub}</span>
-        </span>
-      </a>
       <hr />
       <ThemePicker t={t} />
       <hr />
@@ -257,7 +248,7 @@ export function GlobalBarClient({
             <span className={`gb-tab-badge${admin ? " attention" : ""}`}>{counts.review}</span>
           ) : null}
         </a>
-        <a className="gb-tab" href="/insights" aria-current={here("usage")}>
+        <a className="gb-tab" href="/usage" aria-current={here("usage")}>
           <Icon name="insights" label={null} size={20} />
           <span>{t.nav.usage}</span>
         </a>

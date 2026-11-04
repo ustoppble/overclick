@@ -114,7 +114,7 @@ export async function savePricesAction(
   }
 
   revalidatePath("/settings");
-  revalidatePath("/insights");
+  revalidatePath("/usage");
   revalidatePath("/home");
   return { ok: true };
 }
@@ -141,7 +141,7 @@ export async function savePricingEnabledAction(
     .where(eq(workspace.id, ws.id));
 
   revalidatePath("/settings");
-  revalidatePath("/insights");
+  revalidatePath("/usage");
   revalidatePath("/home");
   return { ok: true };
 }

@@ -29,7 +29,7 @@ type Warn = { text: string; href: string };
  * named, because a total that swallows them is worth less than no total.
  */
 export function totalParts(totals: BoardTotals, filter: BoardFilter, t: Dict) {
-  const href = `/insights?${boardFilterToQuery(filter)}`;
+  const href = `/usage?${boardFilterToQuery(filter)}`;
   const estimated = totals.estimated > 0;
   const tokensText = `${formatTokens(totals.tokens)} ${t.board.tokensWord}`;
   const time = formatDuration(totals.durationMs);
@@ -76,7 +76,7 @@ export function totalParts(totals: BoardTotals, filter: BoardFilter, t: Dict) {
     // Insights, so this one caveat points at Settings instead.
     warns.push({
       text: t.board.totalUnpriced(totals.costUnpriced),
-      href: "/settings?tab=prices",
+      href: "/settings/prices",
     });
   }
   if (totals.estimated > 0) {

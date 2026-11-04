@@ -26,7 +26,9 @@ const read = (path: string) => readFileSync(join(here, path), "utf8");
 const COMPONENT_SHEETS = {
   "styles/nebula.css": read("nebula.css"),
   "styles/global-bar.css": read("global-bar.css"),
-  "app/insights/insights.css": read("../app/insights/insights.css"),
+  "app/usage/insights.css": read("../app/usage/insights.css"),
+  "app/usage/usage-tabs.css": read("../app/usage/usage-tabs.css"),
+  "app/settings/settings-groups.css": read("../app/settings/settings-groups.css"),
   "app/settings/project-context.module.css": read(
     "../app/settings/project-context.module.css",
   ),

@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 import HomeLoading from "./home/loading";
 import { BoardSkeleton } from "./home/board-skeleton";
 import { DetailSkeleton } from "./home/detail-skeleton";
-import InsightsLoading from "./insights/loading";
-import { InsightsSkeleton } from "./insights/insights-skeleton";
-import SettingsLoading from "./settings/loading";
+import InsightsLoading from "./usage/loading";
+import { InsightsSkeleton } from "./usage/insights-skeleton";
+import SettingsLoading from "./settings/[group]/loading";
 import { SettingsSkeleton } from "./settings/settings-skeleton";
 
 /**
