@@ -64,7 +64,7 @@ export async function createOrganizationAction(input: {
     if (!created) return { ok: false, error: "Could not create the organization." };
 
     revalidatePath("/settings");
-    revalidatePath("/organizations");
+    revalidatePath("/settings/organizations-projects");
     revalidatePath("/board");
     return { ok: true, organization: created };
   } catch {
@@ -119,7 +119,7 @@ export async function saveOrganizationAction(input: {
   }
 
   revalidatePath("/settings");
-  revalidatePath("/organizations");
+  revalidatePath("/settings/organizations-projects");
   revalidatePath("/board");
   return { ok: true };
 }
@@ -208,7 +208,7 @@ export async function deleteOrganizationAction(input: {
     );
 
   revalidatePath("/settings");
-  revalidatePath("/organizations");
+  revalidatePath("/settings/organizations-projects");
   revalidatePath("/board");
   return { ok: true };
 }

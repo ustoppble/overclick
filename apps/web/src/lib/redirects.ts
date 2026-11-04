@@ -2,10 +2,9 @@
  * Where the links that already left the app land now (navigation plan E3 and
  * E5). One hop each: the old page answers with a redirect, and nothing
  * chains. The pages that ask for these are `/home` (E3), `/insights`,
- * `/organizations` and `/settings?tab=…` (E5). The redirects are temporary
- * (307) in the release that introduces them and become permanent (308) in
- * the next one: a 308 is kept by the browser, and a rollback would leave it
- * pointing at a route that is gone.
+ * `/organizations` and `/settings?tab=…` (E5). The redirects were temporary
+ * (307) in the release that introduced them and are permanent (308) from E4
+ * on, except `/settings?tab=`, whose destination depends on who asks.
  */
 
 export type RedirectRole = "admin" | "member";
@@ -81,12 +80,28 @@ function first(value: string | string[] | undefined): string | null {
  * (`/cards/OCL-12?card=OCL-12`), so `/home` is a page that only redirects.
  */
 export function homeDestination(query: Query): string {
-  const card = first(query.card);
-  if (card && first(query.status) !== "feito") {
-    return `/cards/${encodeURIComponent(card)}`;
-  }
+  const card = homeCardAsked(query);
+  if (card) return withQuery(`/cards/${encodeURIComponent(card)}`, query, ["card"]);
   const qs = queryString(query);
   return qs ? `/board?${qs}` : "/board";
+}
+
+/** The card a `/home` link asks for by its own address, or null (the review list keeps `?card=`). */
+export function homeCardAsked(query: Query): string | null {
+  const card = first(query.card);
+  return card && first(query.status) !== "feito" ? card : null;
+}
+
+/**
+ * A path with the query a link carried, minus the parameters the path itself
+ * now says (the card's id, the rewrite's own parameter). The period and the
+ * filters ride along, so the board behind a card is the one the link meant
+ * (E3 review).
+ */
+export function withQuery(path: string, query: Query, drop: readonly string[]): string {
+  const kept = Object.fromEntries(Object.entries(query).filter(([key]) => !drop.includes(key)));
+  const qs = queryString(kept);
+  return qs ? `${path}?${qs}` : path;
 }
 
 /**
