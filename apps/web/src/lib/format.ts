@@ -72,24 +72,77 @@ export function formatElapsed(ms: number): string {
 }
 
 /**
+ * The zone a workspace's dates are read in. The board has no zone setting of
+ * its own (and E7 adds no migration), so the zone follows the workspace's
+ * language: São Paulo for pt-BR, UTC for English. What matters is that it is
+ * one fixed answer: the server renders the card and the browser hydrates it
+ * with the same day, instead of each using its own clock's zone and a card
+ * created at 22:30 in São Paulo reading "04/11" on a UTC server and "03/11" in
+ * the browser.
+ */
+const TIME_ZONES: Record<Lang, string> = { en: "UTC", "pt-BR": "America/Sao_Paulo" };
+
+export function workspaceTimeZone(lang: Lang): string {
+  return TIME_ZONES[lang];
+}
+
+function yearIn(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone }).format(date);
+}
+
+/**
  * Day and month in the reader's order: `03/11` in pt-BR, `11/03` in en. A
  * fixed `en-US` made 3 November read as 11 March to everyone in Portuguese.
+ * A date from another year carries it (`03/11/2025`), so last November is
+ * never read as this one; the day is decided in the workspace's zone.
  */
-export function formatShortDate(date: Date | string, lang: Lang): string {
-  return new Date(date).toLocaleDateString(LOCALES[lang], {
+export function formatShortDate(
+  date: Date | string,
+  lang: Lang,
+  now: Date = new Date(),
+): string {
+  const when = new Date(date);
+  const timeZone = workspaceTimeZone(lang);
+  return when.toLocaleDateString(LOCALES[lang], {
     day: "2-digit",
     month: "2-digit",
+    year: yearIn(when, timeZone) === yearIn(now, timeZone) ? undefined : "numeric",
+    timeZone,
   });
 }
 
 /** The short date with its time: `03/11, 14:05` / `11/03, 02:05 PM`. */
-export function formatShortDateTime(date: Date | string, lang: Lang): string {
-  return new Date(date).toLocaleString(LOCALES[lang], {
+export function formatShortDateTime(
+  date: Date | string,
+  lang: Lang,
+  now: Date = new Date(),
+): string {
+  const when = new Date(date);
+  const timeZone = workspaceTimeZone(lang);
+  return when.toLocaleString(LOCALES[lang], {
     day: "2-digit",
     month: "2-digit",
+    year: yearIn(when, timeZone) === yearIn(now, timeZone) ? undefined : "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone,
   });
+}
+
+/**
+ * A calendar day stored as `YYYY-MM-DD` (a price table's "read on"), in the
+ * reader's order and always with its year: `01/09/2026` / `09/01/2026`. It is
+ * a day, not an instant, so no zone may move it; anything else comes back as
+ * it was given.
+ */
+export function formatCalendarDate(isoDay: string, lang: Lang): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDay);
+  if (!match) return isoDay;
+  const [, y, m, d] = match;
+  return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d))).toLocaleDateString(
+    LOCALES[lang],
+    { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" },
+  );
 }
 
 export function formatRate(rate: number): string {

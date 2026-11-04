@@ -20,13 +20,16 @@
      --oc-accent hover    ← --color-brand-2   #dc2626
      --oc-text-1          ← --foreground      #ededed  (app near-white; bundle ink is #fff)
      --oc-text-2          ← --color-muted-2   #9ca3af
-     --oc-text-3          ← --color-muted     #6b7280
+     --oc-text-3          ← --color-muted     #6b7280, lifted to #757c89 (E7:
+                            #6b7280 is 4.34:1 on black and 4.15:1 on a panel)
      --oc-border          ← --color-faintest  #1f2937  "hairlines, borders"
      --oc-border-hover    ← --color-faint     #4b5563
      --oc-border-strong   ← --border-brand-2  rgba(239,68,68,0.40)
      --oc-ok              ← --status-online   #22c55e
      --oc-danger-rgb      ← promoted from --oc-danger-deep-rgb 127 29 29
                             (was --status-error #ef4444; U1 requires accent ≠ danger)
+     --oc-danger          ← red-300 #fca5a5 as text (E7: the deep red read at
+                            2.1:1; the triplet above still tints fills/borders)
      --oc-warn            ← --status-warn     #facc15
      --oc-warn-pip        ← --status-busy     #eab308
      --oc-star-far        ← --status-idle     #6b7280
@@ -99,7 +102,7 @@
   --oc-warn-3-rgb: 234 179 8;
   /* navigation plan E1: what waits for you wears this theme's own warn */
   --oc-attention-rgb: 250 204 21;
-  --oc-mist-rgb: 107 114 128;
+  --oc-mist-rgb: 117 124 137;
   --oc-mist-deep-rgb: 75 85 99;
   --oc-haze-rgb: 239 68 68;
   --oc-scrim-rgb: 5 5 5;
@@ -136,13 +139,15 @@
   /* ---------- text ---------- */
   --oc-text-1: #ededed;
   --oc-text-2: #9ca3af;
-  --oc-text-3: #6b7280;
+  /* E7: the app's #6b7280 read at 4.34:1 on black; the same slate one step
+     up clears 4.5:1 on every floor, the panel included (contrast.test.ts) */
+  --oc-text-3: #757c89;
   --oc-text-glow: rgb(var(--oc-accent-rgb) / 0.15);
   --oc-icon: #6b7280;
 
   /* ---------- the ladder ---------- */
   --oc-mist-deep: #4b5563;
-  --oc-mist: #6b7280;
+  --oc-mist: #757c89;
   --oc-mist-light: #9ca3af;
   --oc-accent: #ef4444;
   --oc-accent-contrast: #000000;
@@ -153,7 +158,10 @@
 
   /* ---------- status ---------- */
   --oc-ok: #22c55e;
-  --oc-danger: rgb(var(--oc-danger-rgb));
+  /* E7: danger as text is the light red, readable on black (11:1) and still
+     apart from the brand red; --oc-danger-rgb keeps the deep red for the
+     tints a bug border and a danger fill are drawn with */
+  --oc-danger: #fca5a5;
   --oc-info: #06b6d4;
   --oc-todo: rgb(var(--oc-todo-rgb));
   --oc-warn: #facc15;
@@ -233,7 +241,8 @@
   --oc-banner-bg: var(--oc-surface-deep);
   --oc-banner-border: var(--oc-border);
   --oc-btn-light-bg: var(--oc-accent);
-  --oc-btn-light-text: #ffffff;
+  /* E7: white on the brand red is 3.8:1; black is 5.6:1 */
+  --oc-btn-light-text: #000000;
   --oc-btn-account-bg: rgb(var(--oc-surface-btn-rgb) / 0.65);
   --oc-btn-account-border: var(--oc-border);
   --oc-btn-account-blur: 12px;

@@ -24,6 +24,7 @@ import {
   type PluginPairing,
 } from "../../components/plugin-install";
 import { UpdatePanel } from "../../components/update-panel";
+import { formatCalendarDate } from "../../lib/format";
 import { LANGUAGES, dict, type Dict } from "../../lib/i18n";
 import type { Runtime } from "../../lib/runtime";
 import type { UpdaterState } from "../../lib/updates";
@@ -548,7 +549,7 @@ export function SettingsClient({
                   ))}
                   <td className="who" data-label={t.settings.thPriceOrigin}>
                     {row.source === "seed" && row.seededAt ? (
-                      <span className="dim">{t.settings.priceSeeded(row.seededAt)}</span>
+                      <span className="dim">{t.settings.priceSeeded(formatCalendarDate(row.seededAt, t.lang))}</span>
                     ) : (
                       <>
                         {t.settings.priceEdited}

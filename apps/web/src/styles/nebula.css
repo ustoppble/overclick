@@ -1480,6 +1480,14 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .card.dim h4 { color: var(--nebula-text-secondary); }
 .nb .card.dim .cid-prefix,
 .nb .card.dim .meta-harness { color: var(--nebula-text-tertiary); }
+/* and its chips with it (E0 review): the seals, the type, the cost, the CLI's
+   name and the footer's numbers read in the same bottom ink, which is the
+   rung contrast.test.ts holds at 4.5:1 in every theme */
+.nb .card.dim .selo,
+.nb .card.dim .card-type,
+.nb .card.dim .card-cost,
+.nb .card.dim .cli-name,
+.nb .card.dim .card-foot { color: var(--nebula-text-tertiary); }
 
 /* ---------- focus, one ring for the board and its panel (AGB-68) ----------
    The card and the row are the board's own controls, so they answer the
