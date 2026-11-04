@@ -41,7 +41,7 @@ body {
 
 .brand {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
@@ -130,7 +130,7 @@ button:disabled {
 .foot {
   margin-top: 20px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 

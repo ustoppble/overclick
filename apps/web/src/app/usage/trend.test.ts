@@ -29,7 +29,7 @@ function row(over: Partial<InsightAttemptRow>): InsightAttemptRow {
     executor: "claude-code",
     modelSource: null,
     result: "success",
-    finishedAt: new Date(2026, 7, 10, 12),
+    finishedAt: new Date(Date.UTC(2026, 7, 10, 15)),
     usageSegments: null,
     tokensIn: 1_000_000,
     tokensOut: 100_000,
@@ -53,8 +53,8 @@ describe("buildDailyTrend", () => {
     const trend = buildDailyTrend(
       [
         row({}),
-        row({ attemptId: "a2", finishedAt: new Date(2026, 7, 10, 18) }),
-        row({ attemptId: "a3", finishedAt: new Date(2026, 7, 12, 9) }),
+        row({ attemptId: "a2", finishedAt: new Date(Date.UTC(2026, 7, 10, 20)) }),
+        row({ attemptId: "a3", finishedAt: new Date(Date.UTC(2026, 7, 12, 12)) }),
       ],
       { prices: [], pricingEnabled: false, lang: "en" },
     );
@@ -109,5 +109,32 @@ describe("buildDailyTrend", () => {
       { prices: [], pricingEnabled: false, lang: "en" },
     );
     expect(trend.points[0]).toMatchObject({ attempts: 1, tokens: 0 });
+  });
+
+  it("buckets by the workspace's day, not the server's (E7 review)", () => {
+    // 01:30 UTC on 4 August is still 3 August in São Paulo
+    const late = row({ finishedAt: new Date(Date.UTC(2026, 7, 4, 1, 30)) });
+    const br = buildDailyTrend([late], { prices: [], pricingEnabled: false, lang: "pt-BR" });
+    const en = buildDailyTrend([late], { prices: [], pricingEnabled: false, lang: "en" });
+    expect(br.points[0].dayKey).toBe("2026-08-03");
+    expect(br.points[0].label).toBe("3/8");
+    expect(en.points[0].dayKey).toBe("2026-08-04");
+    expect(en.points[0].label).toBe("8/4");
+  });
+
+  it("zero-fills across a month end without skipping or doubling a day", () => {
+    const trend = buildDailyTrend(
+      [
+        row({ finishedAt: new Date(Date.UTC(2026, 7, 30, 15)) }),
+        row({ attemptId: "a2", finishedAt: new Date(Date.UTC(2026, 8, 2, 15)) }),
+      ],
+      { prices: [], pricingEnabled: false, lang: "pt-BR" },
+    );
+    expect(trend.points.map((p) => p.dayKey)).toEqual([
+      "2026-08-30",
+      "2026-08-31",
+      "2026-09-01",
+      "2026-09-02",
+    ]);
   });
 });

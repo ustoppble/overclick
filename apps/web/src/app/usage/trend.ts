@@ -4,6 +4,7 @@ import {
   type ModelPrice,
   type UsageSegment,
 } from "@agent-board/db";
+import { asLang, workspaceDay } from "../../lib/format";
 import type { InsightUsageRow } from "../../lib/insights";
 
 /**
@@ -17,7 +18,7 @@ import type { InsightUsageRow } from "../../lib/insights";
  */
 
 export type TrendPoint = {
-  /** yyyy-mm-dd in the server's local time. */
+  /** yyyy-mm-dd in the workspace's zone (lib/format.ts), not the server's. */
   dayKey: string;
   /** Axis label, d/m or m/d depending on the workspace language. */
   label: string;
@@ -38,17 +39,14 @@ export type DailyTrend = {
 
 const MAX_DAYS = 45;
 
-function dayKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function dayKey(d: Date, lang: string): string {
+  const { year, month, day } = workspaceDay(d, asLang(lang));
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function dayLabel(d: Date, lang: string): string {
-  const m = d.getMonth() + 1;
-  const day = d.getDate();
-  return lang === "pt-BR" ? `${day}/${m}` : `${m}/${day}`;
+  const { month, day } = workspaceDay(d, asLang(lang));
+  return lang === "pt-BR" ? `${day}/${month}` : `${month}/${day}`;
 }
 
 /** Mirrors the data layer's fallback: stored segments win, flat counters fold
@@ -89,7 +87,7 @@ export function buildDailyTrend(
   for (const a of rows) {
     // Same scope the totals use: finished attempts, example cards out.
     if (a.taskIsExample || !a.finishedAt) continue;
-    const key = dayKey(a.finishedAt);
+    const key = dayKey(a.finishedAt, lang);
     let bucket = buckets.get(key);
     if (!bucket) {
       bucket = {
@@ -131,14 +129,14 @@ export function buildDailyTrend(
     if (i > 0) {
       const prev = sorted[i - 1];
       const gap = Math.round(
-        (Date.parse(`${current.dayKey}T12:00:00`) -
-          Date.parse(`${prev.dayKey}T12:00:00`)) /
+        (Date.parse(`${current.dayKey}T12:00:00Z`) -
+          Date.parse(`${prev.dayKey}T12:00:00Z`)) /
           86_400_000,
       );
       for (let g = 1; g < gap; g++) {
-        const d = new Date(Date.parse(`${prev.dayKey}T12:00:00`) + g * 86_400_000);
+        const d = new Date(Date.parse(`${prev.dayKey}T12:00:00Z`) + g * 86_400_000);
         filled.push({
-          dayKey: dayKey(d),
+          dayKey: dayKey(d, lang),
           label: dayLabel(d, lang),
           tokens: 0,
           costUsd: 0,

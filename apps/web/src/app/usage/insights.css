@@ -69,7 +69,7 @@
   padding: 9px 12px;
   border-radius: 9px;
   font-family: var(--nebula-font-mono);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.03em;
   color: var(--nebula-text-tertiary);
   font-variant-numeric: tabular-nums;
@@ -93,7 +93,7 @@
 .nb .ins-tile .ins-note:first-of-type { margin-top: auto; padding-top: 6px; }
 .nb .ins-tile .ins-lbl {
   font-family: var(--nebula-font-label);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -111,7 +111,7 @@
 .nb .ins-tile .ins-note {
   margin-top: 6px;
   font-family: var(--nebula-font-mono);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.03em;
   color: var(--nebula-text-tertiary);
 }
@@ -125,7 +125,7 @@
   gap: var(--nebula-space-3);
   margin-bottom: 12px;
   font-family: var(--nebula-font-label);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -141,7 +141,7 @@
 .nb .ins-cap-note {
   text-transform: none;
   letter-spacing: 0.03em;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--nebula-text-tertiary);
   text-align: right;
   white-space: nowrap;
@@ -196,7 +196,7 @@
   justify-content: space-between;
   margin-top: 6px;
   font-family: var(--nebula-font-mono);
-  font-size: 9.5px;
+  font-size: 12px;
   letter-spacing: 0.04em;
   color: var(--nebula-text-tertiary);
 }
@@ -210,7 +210,7 @@
 }
 .nb .ins-share-name {
   font-family: var(--nebula-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--nebula-text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -230,7 +230,7 @@
 }
 .nb .ins-share-val {
   font-family: var(--nebula-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--nebula-text-primary);
   text-align: right;
   white-space: nowrap;
@@ -238,7 +238,7 @@
 }
 .nb .ins-share-pct {
   font-family: var(--nebula-font-mono);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--nebula-text-tertiary);
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -298,7 +298,7 @@
 .nb .ins-col-rate { width: 64px; }
 .nb .ins-table th {
   font-family: var(--nebula-font-label);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -320,7 +320,7 @@
 .nb .ins-table .num { text-align: right; }
 .nb .ins-table td.num {
   font-family: var(--nebula-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--nebula-text-secondary);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -342,14 +342,14 @@
 .nb .ins-group-line {
   display: block;
   margin-top: 2px;
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--nebula-text-tertiary);
 }
 .nb .ins-mono {
   font-family: var(--nebula-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--nebula-text-secondary);
 }
@@ -361,7 +361,7 @@
 }
 .nb .ins-cid {
   font-family: var(--nebula-font-mono);
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--nebula-mist-light);
   letter-spacing: 0.03em;
   flex-shrink: 0;
@@ -377,7 +377,7 @@
 /* The qualifier marker on a value, and the footnote it points to. */
 .nb .ins-mark {
   margin-left: 4px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--nebula-text-tertiary);
   cursor: help;
 }
@@ -386,7 +386,7 @@
 .nb .ins-legend {
   margin: 12px 0 0;
   font-family: var(--nebula-font-label);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.02em;
   line-height: 1.6;
   color: var(--nebula-text-tertiary);
@@ -399,7 +399,7 @@
   margin: 12px 0 0;
   max-width: 96ch;
   font-family: var(--nebula-font-mono);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.03em;
   line-height: 1.7;
   color: var(--nebula-text-tertiary);
@@ -460,7 +460,7 @@
    the whole workspace, with one link back to counting everything. */
 .nb .ins-filter {
   margin: -6px 0 18px;
-  font-family: var(--nebula-font-mono); font-size: 11px;
+  font-family: var(--nebula-font-mono); font-size: 12px;
   letter-spacing: 0.04em; color: var(--nebula-text-secondary);
 }
 .nb .ins-filter b { color: var(--nebula-text-primary); font-weight: var(--nebula-weight-medium); }
@@ -497,7 +497,7 @@
   .nb .ins-tile { padding: 12px 13px; }
   .nb .ins-tile .ins-lbl { margin-bottom: 6px; }
   .nb .ins-tile .ins-num { font-size: 19px; }
-  .nb .ins-tile .ins-note { font-size: 9.5px; }
+  .nb .ins-tile .ins-note { font-size: 12px; }
   .nb .ins-panel { padding: 14px 14px 12px; }
   .nb .ins-cap { flex-direction: column; align-items: stretch; gap: 3px; }
   .nb .ins-cap .ins-cap-note { max-width: 100%; text-align: left; }

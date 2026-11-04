@@ -16,12 +16,25 @@
  * `prefers-color-scheme` is deliberately ignored: every theme here is dark.
  */
 
-export const THEMES = ["nebula", "xai", "overclock"] as const;
+/** In the order the account menu offers them: x.ai · Overclock · Nebula. */
+export const THEMES = ["xai", "overclock", "nebula"] as const;
 
 export type Theme = (typeof THEMES)[number];
 
-/** What an unknown, missing or tampered value falls back to. */
-export const DEFAULT_THEME: Theme = "nebula";
+/**
+ * The contract (navigation plan E7). nebula's file is the one on `:root`: it
+ * declares every token, every other theme overrides part of it, and an
+ * unknown `data-theme` still draws with it. It stays the base even though it
+ * is no longer what anyone sees first, so the guards in `tokens.test.ts`
+ * read the contract from here and not from the default.
+ */
+export const BASE_THEME: Theme = "nebula";
+
+/**
+ * What a person who never chose sees, members included, and what an
+ * unknown, missing or tampered value falls back to (E7, owner's decision 8).
+ */
+export const DEFAULT_THEME: Theme = "xai";
 
 export const THEME_COOKIE = "oc-theme";
 
@@ -34,8 +47,9 @@ export function isTheme(value: unknown): value is Theme {
 
 /**
  * The only way a theme name enters the app. Anything that is not one of the
- * three is the default, which is also what the CSS does on its own: an
- * unknown `data-theme` matches no theme rule and `:root` (nebula) answers.
+ * three is the default. The CSS has a fallback of its own underneath this
+ * (an unknown `data-theme` matches no theme rule and `:root`, the base,
+ * answers), but nothing here ever writes an unknown name to the page.
  */
 export function resolveTheme(raw: string | null | undefined): Theme {
   return isTheme(raw) ? raw : DEFAULT_THEME;

@@ -1,5 +1,5 @@
 /* ============================================================
-   THEME — nebula (the board's original skin, and the default)
+   THEME — nebula (the board's original skin, and the base)
 
    OCL-56. This file is the token contract: every other theme is the same
    list of `--oc-*` names with different values, and nothing else. A theme
@@ -11,7 +11,9 @@
    is the fallback for a theme nobody recognises: `data-theme="whatever"`
    matches no theme rule, so the values here are what the board draws with.
    Unknown theme falls back to nebula without a line of JavaScript deciding
-   it.
+   it. Navigation plan E7 split the two roles: nebula stays the base (this
+   block, `BASE_THEME`), and xai is what a person who never chose sees
+   (`DEFAULT_THEME`, written on <html> by the layout and the boot script).
 
    Every value below is the value nebula.css already drew with, moved, not
    redesigned: the board looks exactly as it did before the extraction.

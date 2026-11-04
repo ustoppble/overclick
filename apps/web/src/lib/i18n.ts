@@ -250,7 +250,7 @@ const en = {
      * Theme names are names, so they do not translate: nebula and xai are
      * what the design doctrine calls them, and overclock is a product.
      */
-    themeName: { nebula: "Nebula", xai: "xAI", overclock: "Overclock" },
+    themeName: { nebula: "Nebula", xai: "x.ai", overclock: "Overclock" },
     running: (n: number) => `${n} in progress`,
     noAgentRunning: "no agent running",
     minAgo: (m: number) => `${m} min ago`,
@@ -1140,7 +1140,7 @@ const ptBR: Dict = {
     },
     accountMenu: "Conta e navegação",
     theme: "Tema",
-    themeName: { nebula: "Nebula", xai: "xAI", overclock: "Overclock" },
+    themeName: { nebula: "Nebula", xai: "x.ai", overclock: "Overclock" },
     running: (n: number) => `${n} em execução`,
     noAgentRunning: "nenhum agente rodando",
     minAgo: (m: number) => `há ${m} min`,

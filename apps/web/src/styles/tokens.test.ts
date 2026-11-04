@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { COMPONENT_SHEETS, LEGACY_LOCAL_TOKEN_SHEETS } from "./audited-sheets";
-import { DEFAULT_THEME, THEMES, type Theme } from "../lib/theme";
+import { BASE_THEME, THEMES, type Theme } from "../lib/theme";
 
 /**
  * The token contract, enforced (OCL-56).
@@ -66,7 +66,7 @@ describe("component sheets carry no colour of their own", () => {
 });
 
 describe("every token a component asks for is declared", () => {
-  const base = declaredTokens(THEME_FILES[DEFAULT_THEME]);
+  const base = declaredTokens(THEME_FILES[BASE_THEME]);
 
   for (const [name, css] of Object.entries(COMPONENT_SHEETS)) {
     if (LEGACY_LOCAL_TOKEN_SHEETS.has(name)) continue;
@@ -77,7 +77,7 @@ describe("every token a component asks for is declared", () => {
   }
 
   it("the base theme's own references resolve inside itself", () => {
-    const missing = [...usedTokens(THEME_FILES[DEFAULT_THEME])].filter(
+    const missing = [...usedTokens(THEME_FILES[BASE_THEME])].filter(
       (token) => !base.has(token),
     );
     expect(missing).toEqual([]);
@@ -134,12 +134,25 @@ describe("a theme file changes values, never layout", () => {
         .map((chunk) => chunk.split("}").pop()!.trim())
         .filter(Boolean);
       const expected =
-        theme === DEFAULT_THEME
+        theme === BASE_THEME
           ? [`:root,\n[data-theme="${theme}"]`.replace(/\s+/g, " ")]
           : [`[data-theme="${theme}"]`];
       expect(selectors.map((s) => s.replace(/\s+/g, " "))).toEqual(expected);
     });
   }
+});
+
+describe("the base and the default are two answers (navigation plan E7)", () => {
+  it(":root is the base theme, nebula, even though a newcomer opens on xai", () => {
+    // The contract lives on :root so an unknown data-theme still draws with
+    // every token declared; which theme a person *sees* first is decided by
+    // DEFAULT_THEME in theme.ts and the boot script, not by this file.
+    expect(BASE_THEME).toBe("nebula");
+    expect(stripComments(THEME_FILES.nebula)).toMatch(/:root,\s*\[data-theme="nebula"\]\s*\{/);
+    for (const theme of THEMES.filter((t) => t !== BASE_THEME)) {
+      expect(stripComments(THEME_FILES[theme])).not.toMatch(/:root/);
+    }
+  });
 });
 
 describe("the token snapshot, per theme", () => {
