@@ -79,8 +79,9 @@ pixel-faithful to today; `xai` is the reference implementation of this document;
 Overclock app and documented value by value (OCL-56). What a theme may and may not
 diverge on is settled below, in **Theme conformance**.
 
-Type ramp (all themes): 22/16/13/12/11 px = display/title/body/label/data,
-weights 400/500/600 only. UI face: `Inter, -apple-system, sans-serif`.
+Type ramp (all themes): 22/16/13/12 px = display/title/body/label, data at
+the label size, nothing under 12 px (amendment A3), weights 400/500/600 only.
+UI face: `Inter, -apple-system, sans-serif`, served by the app (A3).
 Data face: `"SF Mono", ui-monospace, Menlo, monospace`.
 
 | Token | Role | nebula (today) | xai (new) | overclock |
@@ -203,7 +204,7 @@ hover   → bg --oc-surface-3 · border --oc-border-strong · text-1 · 200ms
 open    → same as hover, chevron/funnel rotates, stays until close
 active  → (filter applied) text-1 + count badge:
           [ 18px min-width · radius 9px · bg --oc-accent · --oc-accent-contrast
-            font --oc-font-data 11px/600 ]  e.g. "Filtros ②"
+            font --oc-font-data 12px/600 ]  e.g. "Filtros ②"
 ```
 
 The funnel icon is Lucide `filter` at 14px — never an emoji, never a toggle-switch
@@ -278,11 +279,11 @@ device, not a dense control.
 
 ```
 ┌────────────────────────────────────────────┐   surface-2 · radius 12 · border 1px
-│ OCL-27 · feature                     ~$2.10│   ← data face 11px text-3; cost right
+│ OCL-27 · feature                     ~$2.10│   ← data face 12px text-3; cost right
 │ Continuação do OCL-15: contexto do         │   ← UI face 13px/500 text-1, 2 lines max
 │ projeto (context + current_version…)       │
 │ ● sol · aberto 21 min                      │   ← 7px status dot (--oc-ok when running)
-└────────────────────────────────────────────┘     + data face 11px text-3; no badges
+└────────────────────────────────────────────┘     + data face 12px text-3; no badges
 ```
 
 Type (`bug`/`feature`/`rfc`) is a plain text word in the meta line — no colored
@@ -292,7 +293,7 @@ permitted scanning aid. Hover: border-strong + surface-3, no scale transform.
 ### Detail modal
 
 Two columns (main 1fr / rail 300px), surface-2, radius 12, padding 24. Section
-titles are UI face 11px/600 uppercase text-3 letter-spacing .06em. Rail facts
+titles are UI face 12px/600 uppercase text-3 letter-spacing .06em. Rail facts
 (harness, executor, branch) in data face. No horizontal scroll anywhere (OCL-10
 rule); rail truncates with ellipsis. Timeline entries: 1px left rule, kind label in
 data face text-3 — `report` entries get the only allowed accent-colored label.

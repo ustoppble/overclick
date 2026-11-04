@@ -283,3 +283,52 @@ Not touched by this card: the theme file itself. The doctrine lands first.
   in all three theme files. Closes checklist items 2 (the semantic half), 10,
   16, 17.
 - **Guard:** U1–U4 as assertions in `tokens.test.ts`, evaluated for every theme.
+
+---
+
+## A3 — Nothing under 12px, and xai is what a newcomer sees
+
+> Navigation plan E7 (owner's decision 8, 2026-11-03).
+
+### The conflict, as it stood
+
+§2 set a five-step ramp, 22/16/13/12/11 px, and called the 11 "data". The
+board read it as permission: about 150 declarations sat under 12 px across
+`nebula.css` and `insights.css` (11 ×63, 10 ×30, 11.5 ×15, 9.5 ×16, 9 ×15,
+10.5 ×10, 8.5 ×1), most of them frozen in `type-ramp-exceptions.ts`. Seals at
+8.5 px and ids at 10 px are the text people scan most, and they were the
+smallest on the screen. §2 also named Inter as the UI face while the app never
+loaded it (finding M14), and the overclock theme's `text-3` read at 4.34:1.
+
+### The decision
+
+- The ramp is **22/16/13/12 px** (display/title/body/label). Data reads at the
+  label size. No component rule declares a size under 12 px, in `font-size` or
+  in the `font` shorthand, and the escape list keeps no entry under 12.
+- **xai is the default theme** for whoever never chose, members included.
+  nebula stays the **base**: its file is the `:root` contract every theme
+  overrides (`BASE_THEME`), while `DEFAULT_THEME` is only what the layout and
+  the boot script write on `<html>` when there is no cookie.
+- **Inter is served by the app** (`next/font/local`, weights 400/500/600, the
+  OFL beside the files); no font CDN.
+- **Every theme clears 4.5:1** for every ink a component paints text with, on
+  every floor (canvas, card surface, panel, modal).
+
+### Rationale
+
+The owner's rule is "nothing under 12 px". A floor is only a floor if the
+guard holds it in every theme, so the contrast check moved from a per-PR
+review note to `contrast.test.ts`, computed from the theme files.
+
+### Tokens and files affected
+
+| What | Where | Change |
+|---|---|---|
+| Ramp | `apps/web/src/styles/type-ramp.ts` | `[22, 16, 13, 12]` |
+| Escapes | `apps/web/src/styles/type-ramp-exceptions.ts` | every entry under 12 px removed |
+| Guard | `type-ramp.test.ts` | reads the `font` shorthand too; no step and no escape under 12 |
+| Themes | `apps/web/src/lib/theme.ts` | `BASE_THEME = "nebula"`, `DEFAULT_THEME = "xai"`; picker order x.ai · Overclock · Nebula |
+| overclock | `themes/overclock.css` | `text-3`/`mist` `#757c89`, `danger` as text `#fca5a5`, `btn-light-text` `#000000` |
+| Inter | `apps/web/src/app/fonts.ts`, `app/fonts/` | served locally; xai's `--oc-font-ui` leads with `var(--font-inter)` |
+| Guards | `contrast.test.ts` (new), `tokens.test.ts`, `theme.test.ts` | the base is read from `BASE_THEME` |
+| Probe | `scripts/legibility-probe.mjs` | measures the rendered page: size ≥12 px and ≥4.5:1, and the rendered font |
