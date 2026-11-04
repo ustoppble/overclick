@@ -32,10 +32,12 @@
  *
  * Usage:
  *   node scripts/topbar-one-line.mjs
- *   node scripts/topbar-one-line.mjs --url http://localhost:3000/home --shots ./out
+ *   node scripts/topbar-one-line.mjs --url http://localhost:3000/board --shots ./out
  *
  * Environment:
- *   BOARD_URL     page to measure (default http://localhost:3000/home)
+ *   BOARD_URL     page to measure; a bare origin (the default,
+ *                 http://localhost:3000) measures the board, the missions list
+ *                 and the first mission's page
  *   BOARD_COOKIE  value of the ab_session cookie, for a board behind login
  *   CHROME_BIN    path to a Chrome or Chromium binary
  *   WIDTHS        comma separated widths (default 1728,1440,1280,1024,768,390,320)
@@ -50,6 +52,10 @@
  * "to review" count never drops. At every width it is on screen, either as
  * the chip in the global bar or, on the phone, as the Review tab of the
  * bottom bar.
+ *
+ * Navigation plan E3 gave the missions their own pages under the same bar:
+ * with no URL given the guard measures /board, /missions and the first
+ * mission's page (/missions/<id>, found on the list), each at every width.
  *
  * Exit code is 0 when every width holds the rule and 1 when any width breaks
  * it, so this runs as a check in CI as easily as by hand.
@@ -360,7 +366,10 @@ async function evaluate(cdp, session, expression) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const url = args.url || process.env.BOARD_URL || "http://localhost:3000/home";
+  const given = args.url || process.env.BOARD_URL || "http://localhost:3000";
+  const origin = new URL(given).origin;
+  // A bare origin measures the board and the missions; a path, that page only.
+  const asked = new URL(given).pathname === "/" ? null : given;
   const widths = (args.widths || process.env.WIDTHS || "")
     .split(",")
     .map((value) => Number(value.trim()))
@@ -407,7 +416,7 @@ async function main() {
     await cdp.send("Runtime.enable", {}, sessionId);
     await cdp.send("Network.enable", {}, sessionId);
     if (cookie) {
-      const target = new URL(url);
+      const target = new URL(origin);
       await cdp.send(
         "Network.setCookie",
         {
@@ -420,102 +429,118 @@ async function main() {
       );
     }
 
-    console.log(`one-line guard on ${url}`);
-    for (const width of sweep) {
-      await cdp.send(
-        "Emulation.setDeviceMetricsOverride",
-        { width, height: HEIGHT, deviceScaleFactor: 1, mobile: width < 700 },
-        sessionId,
-      );
-      await cdp.send("Page.navigate", { url }, sessionId);
-      // The bar is server rendered; this settles hydration and web fonts.
+    // One page when asked for one; otherwise the board and the missions (E3).
+    const pages = asked ? [asked] : [`${origin}/board`, `${origin}/missions`];
+    if (!asked) {
+      await cdp.send("Page.navigate", { url: `${origin}/missions` }, sessionId);
       await sleep(1200);
-      await evaluate(cdp, sessionId, CLOSE_MENU);
-
-      const review = await evaluate(cdp, sessionId, REVIEW_VISIBLE);
-      if (review.applies) {
-        if (review.where) {
-          console.log(`  ok   ${width}px: "to review" on screen, in the ${review.where}`);
-        } else {
-          failed = true;
-          console.log(`  FAIL ${width}px: "to review" is not on screen`);
-        }
-      }
-
-      const rows = [];
-      for (const { name, selector } of BARS) {
-        const closed = await evaluate(cdp, sessionId, measure(selector));
-        if (closed.missing) continue;
-        rows.push({ state: "bar", name, ...closed });
-        if (closed.menuVisible) {
-          await evaluate(cdp, sessionId, OPEN_MENU);
-          await sleep(250);
-          rows.push({ state: "menu open", name, ...(await evaluate(cdp, sessionId, measure(selector))) });
-          await evaluate(cdp, sessionId, CLOSE_MENU);
-          await sleep(150);
-        }
-      }
-      if (rows.length === 0) throw new Error(`${width}px: no bar on this page`);
-
-      for (const row of rows) {
-        const label = `${width}px ${row.name} (${row.state})`;
-        if (row.offenders.length) {
-          failed = true;
-          console.log(
-            `  FAIL ${label}: ${row.offenders.length} of ${row.labels} labels wrap`,
-          );
-          for (const item of row.offenders) {
-            console.log(
-              `        ${item.lines} lines  "${item.text}"  at ${item.where}`,
-            );
-          }
-        } else {
-          console.log(`  ok   ${label}: ${row.labels} labels, one line each`);
-        }
-        // OCL-82: on the phone the collapsed bar (Filtros button on screen)
-        // owes one row. Since the owner's "esse menu em 2 linhas me incomoda"
-        // the desktop owes one too: wordmark, filters, state, cost and menu on
-        // a single line at every width, with what does not fit stepping aside.
-        if (row.state === "bar") {
-          if (row.rows === 1) {
-            console.log(`  ok   ${label}: one row of chrome`);
-          } else {
-            failed = true;
-            console.log(
-              `  FAIL ${label}: the bar spends ${row.rows} rows of chrome, and it may spend one`,
-            );
-          }
-        }
-        if (process.env.VERBOSE) {
-          for (const item of row.measured) {
-            console.log(`        ${String(item.width).padStart(5)}px of ${String(item.natural).padEnd(5)} ${item.where}  "${item.text}"`);
-          }
-        }
-        if (row.state === "bar" && row.overlaps.length) {
-          failed = true;
-          for (const overlap of row.overlaps) {
-            console.log(`  FAIL ${label}: ${overlap} draw over each other`);
-          }
-        }
-        if (row.overflow > 1) {
-          failed = true;
-          console.log(
-            `  FAIL ${label}: the bar overflows by ${row.overflow}px (${row.contentWidth} in ${row.barWidth})`,
-          );
-        }
-      }
-
-      if (args.shots) {
-        await evaluate(cdp, sessionId, CLOSE_MENU);
-        await sleep(150);
-        const shot = await cdp.send(
-          "Page.captureScreenshot",
-          { format: "png", captureBeyondViewport: false },
+      const first = await evaluate(
+        cdp,
+        sessionId,
+        `(() => { const a = document.querySelector(".ms-row"); return a ? a.getAttribute("href") : null; })()`,
+      );
+      if (first) pages.push(`${origin}${first}`);
+      else console.log("  note: no mission on /missions, so no /missions/<id> to measure");
+    }
+    for (const url of pages) {
+      console.log(`one-line guard on ${url}`);
+      const slug = new URL(url).pathname.replace(/^\/+/, "").replace(/[^a-z0-9]+/gi, "-") || "root";
+      for (const width of sweep) {
+        await cdp.send(
+          "Emulation.setDeviceMetricsOverride",
+          { width, height: HEIGHT, deviceScaleFactor: 1, mobile: width < 700 },
           sessionId,
         );
-        const file = path.join(args.shots, `topbar-${width}.png`);
-        fs.writeFileSync(file, Buffer.from(shot.data, "base64"));
-        console.log(`       shot ${file}`);
+        await cdp.send("Page.navigate", { url }, sessionId);
+        // The bar is server rendered; this settles hydration and web fonts.
+        await sleep(1200);
+        await evaluate(cdp, sessionId, CLOSE_MENU);
+
+        const review = await evaluate(cdp, sessionId, REVIEW_VISIBLE);
+        if (review.applies) {
+          if (review.where) {
+            console.log(`  ok   ${width}px: "to review" on screen, in the ${review.where}`);
+          } else {
+            failed = true;
+            console.log(`  FAIL ${width}px: "to review" is not on screen`);
+          }
+        }
+
+        const rows = [];
+        for (const { name, selector } of BARS) {
+          const closed = await evaluate(cdp, sessionId, measure(selector));
+          if (closed.missing) continue;
+          rows.push({ state: "bar", name, ...closed });
+          if (closed.menuVisible) {
+            await evaluate(cdp, sessionId, OPEN_MENU);
+            await sleep(250);
+            rows.push({ state: "menu open", name, ...(await evaluate(cdp, sessionId, measure(selector))) });
+            await evaluate(cdp, sessionId, CLOSE_MENU);
+            await sleep(150);
+          }
+        }
+        if (rows.length === 0) throw new Error(`${width}px: no bar on this page`);
+
+        for (const row of rows) {
+          const label = `${width}px ${row.name} (${row.state})`;
+          if (row.offenders.length) {
+            failed = true;
+            console.log(
+              `  FAIL ${label}: ${row.offenders.length} of ${row.labels} labels wrap`,
+            );
+            for (const item of row.offenders) {
+              console.log(
+                `        ${item.lines} lines  "${item.text}"  at ${item.where}`,
+              );
+            }
+          } else {
+            console.log(`  ok   ${label}: ${row.labels} labels, one line each`);
+          }
+          // OCL-82: on the phone the collapsed bar (Filtros button on screen)
+          // owes one row. Since the owner's "esse menu em 2 linhas me incomoda"
+          // the desktop owes one too: wordmark, filters, state, cost and menu on
+          // a single line at every width, with what does not fit stepping aside.
+          if (row.state === "bar") {
+            if (row.rows === 1) {
+              console.log(`  ok   ${label}: one row of chrome`);
+            } else {
+              failed = true;
+              console.log(
+                `  FAIL ${label}: the bar spends ${row.rows} rows of chrome, and it may spend one`,
+              );
+            }
+          }
+          if (process.env.VERBOSE) {
+            for (const item of row.measured) {
+              console.log(`        ${String(item.width).padStart(5)}px of ${String(item.natural).padEnd(5)} ${item.where}  "${item.text}"`);
+            }
+          }
+          if (row.state === "bar" && row.overlaps.length) {
+            failed = true;
+            for (const overlap of row.overlaps) {
+              console.log(`  FAIL ${label}: ${overlap} draw over each other`);
+            }
+          }
+          if (row.overflow > 1) {
+            failed = true;
+            console.log(
+              `  FAIL ${label}: the bar overflows by ${row.overflow}px (${row.contentWidth} in ${row.barWidth})`,
+            );
+          }
+        }
+
+        if (args.shots) {
+          await evaluate(cdp, sessionId, CLOSE_MENU);
+          await sleep(150);
+          const shot = await cdp.send(
+            "Page.captureScreenshot",
+            { format: "png", captureBeyondViewport: false },
+            sessionId,
+          );
+          const file = path.join(args.shots, `topbar-${slug}-${width}.png`);
+          fs.writeFileSync(file, Buffer.from(shot.data, "base64"));
+          console.log(`       shot ${file}`);
+        }
       }
     }
   } finally {

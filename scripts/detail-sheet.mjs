@@ -29,12 +29,18 @@
  * none of them wider than the sheet. At 1440 the running card's own box is
  * printed too, so a change to it shows in the PR.
  *
+ * And the card's own address (navigation plan E3): opening a card from the
+ * board puts /cards/<id> on the address bar and closing it goes back to the
+ * board; Back closes the sheet without reloading the board; the address opened
+ * directly shows the sheet over the board, a reload keeps it open, and Back
+ * from there lands on the board with its cards.
+ *
  * Usage:
  *   node scripts/detail-sheet.mjs
  *   node scripts/detail-sheet.mjs --shots ./out
  *
  * Environment:
- *   BOARD_URL     page to measure (default http://localhost:3000/home)
+ *   BOARD_URL     page to measure (default http://localhost:3000/board)
  *   BOARD_COOKIE  value of the ab_session cookie, for a board behind login
  *   CHROME_BIN    path to a Chrome or Chromium binary
  *   WIDTHS        comma separated phone widths (default 390,320)
@@ -176,10 +182,19 @@ const OPEN_CARD = `(() => {
     ? rows.find((row) => (row.querySelector(".cid")?.textContent || "").trim() === wanted)
     : null;
   const row = named || rows.find(ranRow) || rows[0];
-  if (!row) return { opened: false, ran: false };
+  if (!row) return { opened: false, ran: false, id: null };
+  const id = (row.querySelector(".cid")?.textContent || "").trim();
   row.click();
-  return { opened: true, ran: ranRow(row) };
+  return { opened: true, ran: ranRow(row), id };
 })()`;
+
+/** Where the page is, and whether the card sheet is on screen. */
+const WHERE = `(() => ({
+  path: location.pathname + location.search,
+  sheet: Boolean(document.querySelector(".ov .d-close")),
+  cards: document.querySelectorAll(".board .card").length,
+  kept: window.__sheetGuardMark === true,
+}))()`;
 
 /**
  * The phone shows one column at a time and opens on the first with cards,
@@ -324,14 +339,97 @@ async function shoot(cdp, session) {
   return Buffer.from(shot.data, "base64");
 }
 
+/** The address a card opens at, as the board writes it. */
+function cardPath(id) {
+  return `/cards/${encodeURIComponent(id)}`;
+}
+
+function checkAddress(label, where, expected, sheet) {
+  if (where.path !== expected || where.sheet !== sheet) {
+    console.log(
+      `  FAIL ${label}: at ${where.path} with the sheet ${where.sheet ? "open" : "closed"}, expected ${expected} with it ${sheet ? "open" : "closed"}`,
+    );
+    return false;
+  }
+  console.log(`  ok   ${label}: ${where.path}, sheet ${sheet ? "open" : "closed"}`);
+  return true;
+}
+
+/**
+ * The card's address (E3): from the board, open pushes /cards/<id> and Back
+ * closes the sheet on the same board (the page is not reloaded); the address
+ * opened directly shows the sheet, F5 keeps it, and Back lands on the board.
+ */
+async function checkCardAddress(cdp, sessionId, url, id, shots) {
+  if (!id) {
+    console.log("  note 1440px: the opened card carried no id; the address went unchecked");
+    return true;
+  }
+  const board = new URL(url);
+  const boardPath = board.pathname + board.search;
+  const direct = `${board.origin}${cardPath(id)}`;
+  let ok = true;
+
+  await cdp.send("Page.navigate", { url }, sessionId);
+  await sleep(1500);
+  await evaluate(cdp, sessionId, "(window.__sheetGuardMark = true), true");
+  const named = await evaluate(cdp, sessionId, OPEN_CARD);
+  await sleep(600);
+  ok = checkAddress(`1440px open ${named.id}`, await evaluate(cdp, sessionId, WHERE), cardPath(named.id), true) && ok;
+  await evaluate(cdp, sessionId, "history.back(), true");
+  await sleep(600);
+  const back = await evaluate(cdp, sessionId, WHERE);
+  ok = checkAddress("1440px Back", back, boardPath, false) && ok;
+  if (!back.kept) {
+    ok = false;
+    console.log("  FAIL 1440px Back: the board was reloaded instead of the sheet closing");
+  } else {
+    console.log("  ok   1440px Back: the same board, not reloaded");
+  }
+
+  // Opened from the board, then F5, then Back: the sheet comes back, then closes.
+  await evaluate(cdp, sessionId, OPEN_CARD);
+  await sleep(600);
+  await cdp.send("Page.reload", {}, sessionId);
+  await sleep(2000);
+  const reloaded = await evaluate(cdp, sessionId, WHERE);
+  ok = checkAddress("1440px F5", reloaded, cardPath(named.id), true) && ok;
+  if (shots) {
+    fs.writeFileSync(path.join(shots, "card-address-reload-1440.png"), await shoot(cdp, sessionId));
+  }
+  await evaluate(cdp, sessionId, "history.back(), true");
+  await sleep(2000);
+  const landed = await evaluate(cdp, sessionId, WHERE);
+  ok = checkAddress("1440px F5 then Back", landed, boardPath, false) && ok;
+  if (landed.cards === 0) {
+    ok = false;
+    console.log("  FAIL 1440px F5 then Back: the board came back with no cards");
+  } else {
+    console.log(`  ok   1440px F5 then Back: the board, ${landed.cards} cards`);
+  }
+
+  // The address opened directly: the sheet over the board, closing it is the board.
+  await cdp.send("Page.navigate", { url: direct }, sessionId);
+  await sleep(2000);
+  ok = checkAddress(`1440px ${cardPath(id)} direct`, await evaluate(cdp, sessionId, WHERE), cardPath(id), true) && ok;
+  if (shots) {
+    fs.writeFileSync(path.join(shots, "card-address-direct-1440.png"), await shoot(cdp, sessionId));
+  }
+  await evaluate(cdp, sessionId, `(document.querySelector(".d-close") || {}).click?.(), true`);
+  await sleep(600);
+  ok = checkAddress("1440px direct, closed", await evaluate(cdp, sessionId, WHERE), "/board", false) && ok;
+  return ok;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const url = args.url || process.env.BOARD_URL || "http://localhost:3000/home";
+  const url = args.url || process.env.BOARD_URL || "http://localhost:3000/board";
   const widths = (args.widths || process.env.WIDTHS || "")
     .split(",")
     .map((value) => Number(value.trim()))
     .filter((value) => Number.isFinite(value) && value > 0);
   const phones = widths.length ? widths : PHONE_WIDTHS;
+  const boardPath = new URL(url).pathname + new URL(url).search;
   const cookie = process.env.BOARD_COOKIE || "";
   if (args.shots) fs.mkdirSync(args.shots, { recursive: true });
 
@@ -468,6 +566,9 @@ async function main() {
       if (!checkAttempts(`${width}px`, opened, await evaluate(cdp, sessionId, ATTEMPTS))) {
         failed = true;
       }
+      if (!checkAddress(`${width}px open`, await evaluate(cdp, sessionId, WHERE), cardPath(opened.id), true)) {
+        failed = true;
+      }
       const reach = await evaluate(cdp, sessionId, CLOSE_REACH);
       if (reach.error || !reach.onScreen) {
         failed = true;
@@ -494,6 +595,9 @@ async function main() {
         `(document.querySelector(".d-close") || {}).click?.(), true`,
       );
       await sleep(400);
+      if (!checkAddress(`${width}px closed`, await evaluate(cdp, sessionId, WHERE), boardPath, false)) {
+        failed = true;
+      }
       const after = await evaluate(cdp, sessionId, "Math.round(window.scrollY)");
       if (Math.abs(after - before) > 2) {
         failed = true;
@@ -545,6 +649,11 @@ async function main() {
     }
     if (args.shots) {
       fs.writeFileSync(path.join(args.shots, "sheet-desktop-1440.png"), await shoot(cdp, sessionId));
+    }
+
+    // E3: the card's own address, at 1440.
+    if (!(await checkCardAddress(cdp, sessionId, url, openedDesktop.id, args.shots))) {
+      failed = true;
     }
   } finally {
     if (cdp) cdp.close();
