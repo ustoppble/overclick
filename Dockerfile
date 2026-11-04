@@ -43,13 +43,11 @@ RUN pnpm --filter @agent-board/web build
 
 # The runtime user has no shell and no home, and owns nothing it does not have
 # to write: the code above stays root-owned and read-only to it, so a hole in the
-# app cannot rewrite the app. The two directories it does write are created
-# here, owned by it: /update-trigger (the volume the compose file mounts, which
-# Docker seeds from this ownership on first creation) and Next's runtime cache.
+# app cannot rewrite the app. The directory it does write is created
+# here, owned by it: Next's runtime cache.
 RUN groupadd --system --gid 10001 overclick \
     && useradd --system --uid 10001 --gid overclick --no-create-home \
        --home-dir /nonexistent --shell /usr/sbin/nologin overclick \
-    && install -d -o overclick -g overclick -m 0755 /update-trigger \
     && install -d -o overclick -g overclick -m 0755 /app/apps/web/.next/cache
 
 USER overclick:overclick

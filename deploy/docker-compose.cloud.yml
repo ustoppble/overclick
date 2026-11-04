@@ -36,10 +36,11 @@ services:
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in deploy/.env (32+ chars)}
       NEXT_TELEMETRY_DISABLED: "1"
       PORT: "3000"
-      UPDATE_TRIGGER_DIR: /update-trigger
       # OCL-73: tells the update banner/panel this is the hosted project, so
       # they show ./deploy/deploy.sh, never the quickstart's raw compose
-      # command (that mismatch is what took the board down in OCL-43).
+      # command (that mismatch is what took the board down in OCL-43). Nothing
+      # in the app updates the instance: the update is that script, run on
+      # the host.
       OVERCLICK_DEPLOY_MODE: hosted
       # GHSA-hccf: the pairing endpoint charges guesses to the caller's
       # origin, and the only way it learns one is from the proxy in front.
@@ -72,13 +73,11 @@ services:
       # tmpfs below, since the root filesystem is read-only. It is mode 0700
       # and in memory, so a link never survives a restart.
       OVERCLICK_EMERGENCY_DIR: /run/emergency
-    volumes:
-      - update-trigger:/update-trigger
     # Hardening: the image runs as an unprivileged user (uid 10001), so this
     # locks the rest. Nothing in the container can be rewritten, gain a
     # capability or escalate through a setuid binary; only the tmpfs mounts
-    # and the update-trigger volume are writable. /tmp is also HOME (pnpm,
-    # corepack); Next writes its runtime cache under .next/cache.
+    # are writable. /tmp is also HOME (pnpm, corepack); Next writes its runtime
+    # cache under .next/cache.
     read_only: true
     cap_drop: [ALL]
     security_opt:
@@ -92,67 +91,8 @@ services:
       - "127.0.0.1:${OVERCLICK_PORT:-3100}:3000"
     networks: [overclick]
 
-  # One-click updater for the hosted deploy (OCL-73). Off by default; enable
-  # with:
-  #   docker compose -p overclick -f deploy/docker-compose.cloud.yml --profile updater up -d
-  #
-  # On trigger it runs the exact same ./deploy/deploy.sh a human would run by
-  # hand, from inside this container, over the checkout mounted at /workspace
-  # and the docker socket: same git pull, same build, same health probe, same
-  # legacy-orphan and compose-project guards. It takes the same
-  # /tmp/overclick-deploy.lock flock deploy.sh takes (OCL-43) — host /tmp is
-  # bind-mounted straight over the container's own, so it is literally the
-  # same lock file — so whichever of the two gets there first, a human running
-  # deploy.sh on the host or this sidecar answering the UI button, blocks the
-  # other out instead of letting two deploys interleave.
-  #
-  # It needs the docker socket, which is root on the host, which is why it
-  # stays behind an explicit profile. Without it Settings shows the command
-  # that enables it and the one (./deploy/deploy.sh) that updates by hand.
-  updater:
-    image: docker:27-cli
-    restart: unless-stopped
-    profiles: ["updater"]
-    working_dir: /workspace
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - update-trigger:/trigger
-      - ..:/workspace
-      - /tmp:/tmp
-    networks: [overclick]
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        say() {
-          printf '{"phase":"%s","at":"%s","detail":%s}' \
-            "$$1" "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$${2:-null}" \
-            > /trigger/update-status
-        }
-        # deploy.sh needs bash, git, python3 and curl; this image ships only
-        # docker and a busybox shell. Installed once at boot, not per trigger.
-        apk add --no-cache bash git python3 curl util-linux >/dev/null 2>&1 || true
-        while true; do
-          date -u +%Y-%m-%dT%H:%M:%SZ > /trigger/updater-alive
-          if [ -f /trigger/update-requested ]; then
-            rm -f /trigger/update-requested
-            if ! command -v bash >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
-              say failed "\"updater image is missing bash/git; check its network egress to install them\""
-            else
-              say pulling
-              if bash /workspace/deploy/deploy.sh > /trigger/update-log 2>&1; then
-                say done
-              else
-                say failed "\"$$(tail -c 400 /trigger/update-log | tr -d '\"' | tr '\n' ' ')\""
-              fi
-            fi
-          fi
-          sleep 5
-        done
-
 volumes:
   overclick_pgdata:
-  update-trigger:
 
 networks:
   overclick:

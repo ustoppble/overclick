@@ -46,19 +46,9 @@ owned by root, so the app user cannot rewrite it. What it may write:
 | `/tmp` (also `HOME`) | pnpm and Node scratch | tmpfs, 64 MB |
 | `/app/apps/web/.next/cache` | Next's runtime cache | tmpfs, 256 MB |
 | `/run/emergency` | `pnpm emergency-login` link files (mode 700) | tmpfs, 1 MB |
-| `/update-trigger` | the Update button's trigger files | the `update-trigger` volume |
 
 Migrations and the seed run at container start as that user and write nothing
 outside the database. A `docker exec overclick-app-1 id` should print uid 10001.
-
-**Upgrading an existing host:** the `update-trigger` volume was created by root
-and Docker only seeds ownership into a *new* volume, so on a host that already
-has it, hand it to the app user once, or the Update button cannot write its
-trigger file (nothing else is affected):
-
-```bash
-docker run --rm -v overclick_update-trigger:/t alpine chown 10001:10001 /t
-```
 
 ## Public address
 
@@ -307,22 +297,29 @@ enabled, `deploy/docker-compose.traefik.yml`. If the listing contains a root
 compose file, stop and remove that legacy project before retrying; the deploy
 script refuses to guess which project is safe to change.
 
-## One-click update from the UI
+## There is no update button
 
-Off by default; a signed-in owner turns it on from Settings → Updates, or a
-human runs it directly:
+The board never updates itself. The one-click updater sidecar was removed: it
+mounted the docker socket (root on the host), a writable checkout and the
+host's `/tmp`, so whoever compromised it owned the machine. Settings → System
+→ Updates and the new-version banner only say which version this instance runs
+and, when a newer release exists, the command to run, in every runtime. Updating is always
+done on the server, with `./deploy/deploy.sh` (see "Deploying again").
+
+If you ran the sidecar before (`--profile updater`), do this once, on the
+host, not from the Update button:
 
 ```bash
-docker compose -p overclick -f deploy/docker-compose.cloud.yml --profile updater up -d
+cd /opt/overclick && ./deploy/deploy.sh
 ```
 
-It watches for the Update button in the board, then runs `./deploy/deploy.sh`
-itself, from inside the sidecar container, over the checkout and the docker
-socket. It takes the same `/tmp/overclick-deploy.lock` flock a human running
-`./deploy/deploy.sh` on the host takes, so the two can never interleave: one
-waits its turn. Progress and any failure detail land in the board's Settings
-page. It needs the docker socket, which is root on the host — that is the
-whole reason it stays behind the `updater` profile instead of running always.
+`deploy.sh` removes the old `updater` container itself (looked up by its
+compose labels, so the app and the database are never touched) and then, after
+the app is recreated without it (and after the pre-deploy backup and rollback tag), the `overclick_update-trigger` volume it left
+behind, when no container uses it any more. The app container is recreated on
+that deploy, as on every deploy; the data volume is not touched. Running the
+first deploy from the old button instead would remove the very container
+running it, halfway through, so use the host.
 
 ## Releasing a new version
 

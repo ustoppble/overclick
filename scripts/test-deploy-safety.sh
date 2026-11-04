@@ -34,6 +34,7 @@ case "$*" in
       stopped) case "$*" in *--status*) ;; *) echo db-container-id ;; esac ;;
     esac
     exit 0 ;;
+  "ps -a -q"*service=updater*) echo updater-container-id ;;
   *" ls "*) printf '[{"Name":"overclick","ConfigFiles":"/opt/overclick/deploy/docker-compose.cloud.yml"}]' ;;
   *" ps -q app"*) echo app-container-id ;;
   "inspect --format"*) echo sha256:abc ;;
@@ -104,7 +105,7 @@ run_deploy() {
 
 # line number of the first log line matching an extended regex (0 when absent)
 first() { grep -nE "$1" "$LOG" | head -n 1 | cut -d: -f1; }
-MUTATIONS='^docker (container rm|volume rm|rmi|builder prune)|^docker compose .* (up|down|rm|stop)|^git pull'
+MUTATIONS='^docker (container rm|rm -f|volume rm|rmi|builder prune)|^docker compose .* (up|down|rm|stop)|^git pull'
 
 # 3a. the backup fails -> the deploy aborts and mutates nothing
 run_deploy dp-fail 42 running
@@ -121,8 +122,13 @@ if [ "$RC" -eq 0 ] && [ "$bk" -gt 0 ] && [ "$tg" -gt "$bk" ] && [ "$mu" -gt "$tg
 else
   bad "deploy: wrong order (exit $RC, backup=$bk tag=$tg mutation=$mu)"
 fi
-if [ -z "$(first '^docker volume rm')" ]; then ok "deploy: legacy data volume is never removed"; else bad "deploy: removed a data volume"; fi
-orphan=$(first '^docker container rm')
+if [ -z "$(first '^docker volume rm overclick_pgdata')" ]; then ok "deploy: legacy data volume is never removed"; else bad "deploy: removed a data volume"; fi
+# The retired updater's trigger volume holds no data, but it is still a mutation.
+vol=$(first '^docker volume rm overclick_update-trigger')
+if [ -z "$vol" ] || [ "$vol" -gt "$tg" ]; then ok "deploy: retired updater volume removed only after the tag"; else bad "deploy: updater volume removed before the tag (line $vol)"; fi
+orphan=$(first '^docker container rm -f overclick-postgres-1')
+side=$(first '^docker rm -f')
+if [ -n "$side" ] && [ "$side" -gt "$tg" ]; then ok "deploy: updater sidecar removed only after the tag (line $side)"; else bad "deploy: updater sidecar not removed after the tag (line ${side:-none})"; fi
 if [ "$orphan" -gt "$tg" ]; then ok "deploy: legacy orphan container removed only after the tag"; else bad "deploy: orphan removed before the tag (line $orphan)"; fi
 
 if [ "$failures" -ne 0 ]; then
