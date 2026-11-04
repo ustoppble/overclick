@@ -32,8 +32,10 @@
  *   WIDTHS        comma separated widths (default 1440,390)
  *   THEMES        comma separated themes (default xai,overclock,nebula);
  *                 "none" opens without a theme cookie, as a first visit does
- *   PAGES         comma separated paths (default /board, the first card,
- *                 the first mission, /usage and /settings/prices)
+ *   PAGES         comma separated paths (default /board, the first card
+ *                 with its sheet scrolled to the foot, the first mission,
+ *                 /usage, every Settings group, /onboarding, and /login with
+ *                 the session cookie dropped — the screens E7 raised to 12px)
  *   REPORT_ONLY   print the failures but exit 0 (for "before" shots)
  *
  * Exit code is 0 when every page, width and theme holds both rules and 1 when
@@ -227,6 +229,20 @@ const PROBE = `(() => {
   return out;
 })()`;
 
+/** Scrolls the page and every scroll container to its end, so a sheet's foot is on screen. */
+const SCROLL_TO_END = `(() => {
+  for (const el of document.querySelectorAll("*")) {
+    if (el.scrollHeight > el.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(el).overflowY)) el.scrollTop = el.scrollHeight;
+  }
+  window.scrollTo(0, document.documentElement.scrollHeight);
+})()`;
+
+/** Texts whose size only the browser decides (<small>) must be on screen at least once. */
+const SHRINKING_ON_SCREEN = `document.querySelectorAll(".release-usage small, small, sub, sup").length`;
+
+/** Pages that are read signed out: the probe drops the session cookie for them. */
+const PUBLIC_PAGES = new Set(["/login"]);
+
 /** Settles hydration, the data fetches and web fonts before anything is read. */
 const SETTLE = `(async () => { await document.fonts.ready; return document.documentElement.getAttribute("data-theme"); })()`;
 
@@ -305,9 +321,19 @@ async function main() {
       await go(`${origin}/missions`);
       const mission = await evaluate(cdp, sessionId, `(() => { const a = document.querySelector(".ms-row"); return a ? a.getAttribute("href") : null; })()`);
       if (mission) pages.push(mission);
-      pages.push("/usage", "/settings/prices");
+      pages.push(
+        "/usage",
+        "/settings/prices",
+        "/settings/organizations-projects",
+        "/settings/agents",
+        "/settings/team",
+        "/settings/system",
+        "/onboarding",
+        "/login",
+      );
     }
 
+    let shrinkingSeen = false;
     for (const theme of themeSweep) {
       if (theme === "none") {
         await cdp.send("Network.deleteCookies", { name: "oc-theme", domain: host }, sessionId);
@@ -325,8 +351,21 @@ async function main() {
             deviceScaleFactor: mobile ? 2 : 1,
             mobile,
           }, sessionId);
+          const pathname = new URL(url).pathname;
+          if (cookie) {
+            if (PUBLIC_PAGES.has(pathname)) {
+              await cdp.send("Network.deleteCookies", { name: "ab_session", domain: host }, sessionId);
+            } else {
+              await cdp.send("Network.setCookie", { name: "ab_session", value: cookie, domain: host, path: "/" }, sessionId);
+            }
+          }
           const applied = await go(url);
+          // A sheet's foot is below the fold: scroll to it before reading.
+          if (pathname.startsWith("/cards/")) await evaluate(cdp, sessionId, SCROLL_TO_END);
           const audit = await evaluate(cdp, sessionId, PROBE);
+          if (pathname === "/board" && !shrinkingSeen) {
+            shrinkingSeen = (await evaluate(cdp, sessionId, SHRINKING_ON_SCREEN)) > 0;
+          }
           const font = await renderedFont(cdp, sessionId);
           const bad = audit.fails.length > 0;
           if (bad) failed = true;
@@ -341,6 +380,9 @@ async function main() {
           }
         }
       }
+    }
+    if (!shrinkingSeen) {
+      console.log("note: no <small> on /board (a release header without notes); that rule is held by type-ramp.test.ts, not by this run");
     }
   } finally {
     cdp?.close();
