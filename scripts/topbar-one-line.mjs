@@ -42,6 +42,15 @@
  *   VERBOSE       print the width every control ended up with, and the width
  *                 it wanted, which is how you see what yielded and by how much
  *
+ * Navigation plan E1 put a global bar above every signed-in page (places,
+ * the work-state chips and the avatar) and left the board's filters on a line
+ * of their own under it. Both are measured, each by the rules above: the
+ * global bar is `.global-bar`, the filter line is the board's `.topbar-wrap`
+ * (other screens may have no second bar at all). And one rule is new: the
+ * "to review" count never drops. At every width it is on screen, either as
+ * the chip in the global bar or, on the phone, as the Review tab of the
+ * bottom bar.
+ *
  * Exit code is 0 when every width holds the rule and 1 when any width breaks
  * it, so this runs as a check in CI as easily as by hand.
  */
@@ -143,11 +152,17 @@ function connect(wsUrl) {
  * Runs in the page. Counts the line boxes under every label in the bar.
  * Kept as one string because it crosses into the browser as source.
  */
-const MEASURE = `(() => {
-  // OCL-35: the board bar is two levels inside .topbar-wrap; the other
-  // screens keep a bare .topbar. Measure whichever this page has.
-  const bar = document.querySelector(".topbar-wrap") || document.querySelector(".topbar");
-  if (!bar) return { error: "no .topbar on this page" };
+/** The bars a page may carry, in the order they are reported. */
+const BARS = [
+  { name: "global bar", selector: ".global-bar" },
+  // OCL-35: the board's filter line is two levels inside .topbar-wrap; older
+  // screens may still keep a bare .topbar.
+  { name: "filter line", selector: ".topbar-wrap, .topbar" },
+];
+
+const measure = (selector) => `((barSelector) => {
+  const bar = document.querySelector(barSelector);
+  if (!bar) return { missing: true };
 
   const where = (el) => {
     const parts = [];
@@ -161,11 +176,16 @@ const MEASURE = `(() => {
   // The controls each level lays out. .topbar-more is display:contents on
   // the desktop and a stacked panel on the phone; either way its children
   // are the controls, and the wrapper itself is never one line by design.
-  const levels = bar.classList.contains("topbar-wrap") ? Array.from(bar.children) : [bar];
+  const levels =
+    bar.classList.contains("topbar-wrap") || bar.classList.contains("global-bar")
+      ? Array.from(bar.children)
+      : [bar];
+  // The groups that only arrange controls: their children are the controls.
+  const GROUPS = ["topbar-more", "gb-places", "gb-right"];
   const controls = [];
   for (const level of levels) {
     for (const child of level.children) {
-      if (child.classList.contains("topbar-more")) controls.push(...child.children);
+      if (GROUPS.some((cls) => child.classList.contains(cls))) controls.push(...child.children);
       else controls.push(child);
     }
   }
@@ -255,7 +275,7 @@ const MEASURE = `(() => {
       const cs = getComputedStyle(el);
       if (cs.display === "none" || cs.visibility === "hidden" || cs.position === "absolute" || cs.position === "fixed") continue;
       // what an open panel hangs below the bar is not on the line
-      if (el.closest("[role=dialog], [role=listbox], .pf-panel, .mf-panel, .period-panel, .ff-panel, .am-panel")) continue;
+      if (el.closest("[role=dialog], [role=listbox], [role=menu], .pf-panel, .mf-panel, .period-panel, .ff-panel, .gb-menu")) continue;
       const r = el.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) continue;
       left = Math.min(left, r.left);
@@ -290,6 +310,27 @@ const MEASURE = `(() => {
       return Boolean(btn && getComputedStyle(btn).display !== "none");
     })(),
   };
+})(${JSON.stringify(selector)})`;
+
+/**
+ * The rule that never bends: "to review" is on screen at every width. The
+ * chip in the global bar, or the Review tab of the phone's bottom bar. A box
+ * counts only when it is drawn and inside the viewport.
+ */
+const REVIEW_VISIBLE = `(() => {
+  if (!document.querySelector(".global-bar")) return { applies: false };
+  const shown = (el) => {
+    if (!el) return false;
+    for (let node = el; node; node = node.parentElement) {
+      const cs = getComputedStyle(node);
+      if (cs.display === "none" || cs.visibility === "hidden") return false;
+    }
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.right > 0 && r.left < innerWidth && r.bottom > 0 && r.top < innerHeight;
+  };
+  if (shown(document.querySelector(".global-bar .gb-chip-review"))) return { applies: true, where: "global bar" };
+  if (shown(document.querySelector(".gb-tabbar .gb-tab-review"))) return { applies: true, where: "bottom bar" };
+  return { applies: true, where: null };
 })()`;
 
 const OPEN_MENU = `(() => {
@@ -391,18 +432,33 @@ async function main() {
       await sleep(1200);
       await evaluate(cdp, sessionId, CLOSE_MENU);
 
-      const closed = await evaluate(cdp, sessionId, MEASURE);
-      if (closed.error) throw new Error(`${width}px: ${closed.error}`);
-
-      const rows = [{ state: "bar", ...closed }];
-      if (closed.menuVisible) {
-        await evaluate(cdp, sessionId, OPEN_MENU);
-        await sleep(250);
-        rows.push({ state: "menu open", ...(await evaluate(cdp, sessionId, MEASURE)) });
+      const review = await evaluate(cdp, sessionId, REVIEW_VISIBLE);
+      if (review.applies) {
+        if (review.where) {
+          console.log(`  ok   ${width}px: "to review" on screen, in the ${review.where}`);
+        } else {
+          failed = true;
+          console.log(`  FAIL ${width}px: "to review" is not on screen`);
+        }
       }
 
+      const rows = [];
+      for (const { name, selector } of BARS) {
+        const closed = await evaluate(cdp, sessionId, measure(selector));
+        if (closed.missing) continue;
+        rows.push({ state: "bar", name, ...closed });
+        if (closed.menuVisible) {
+          await evaluate(cdp, sessionId, OPEN_MENU);
+          await sleep(250);
+          rows.push({ state: "menu open", name, ...(await evaluate(cdp, sessionId, measure(selector))) });
+          await evaluate(cdp, sessionId, CLOSE_MENU);
+          await sleep(150);
+        }
+      }
+      if (rows.length === 0) throw new Error(`${width}px: no bar on this page`);
+
       for (const row of rows) {
-        const label = `${width}px (${row.state})`;
+        const label = `${width}px ${row.name} (${row.state})`;
         if (row.offenders.length) {
           failed = true;
           console.log(
