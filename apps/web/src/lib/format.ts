@@ -71,6 +71,27 @@ export function formatElapsed(ms: number): string {
   return `${Math.round(h / 24)}d`;
 }
 
+/**
+ * Day and month in the reader's order: `03/11` in pt-BR, `11/03` in en. A
+ * fixed `en-US` made 3 November read as 11 March to everyone in Portuguese.
+ */
+export function formatShortDate(date: Date | string, lang: Lang): string {
+  return new Date(date).toLocaleDateString(LOCALES[lang], {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
+/** The short date with its time: `03/11, 14:05` / `11/03, 02:05 PM`. */
+export function formatShortDateTime(date: Date | string, lang: Lang): string {
+  return new Date(date).toLocaleString(LOCALES[lang], {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function formatRate(rate: number): string {
   return `${Math.round(rate * 100)}%`;
 }

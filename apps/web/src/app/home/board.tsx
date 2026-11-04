@@ -23,6 +23,7 @@ import {
 } from "../../actions/review";
 import { COLUMN_STATUSES, type ColumnStatus } from "../../lib/board-columns";
 import { pickRowNumber, typeInitial } from "../../lib/board-row";
+import { formatShortDateTime } from "../../lib/format";
 import { dict, type Dict } from "../../lib/i18n";
 import { CliMark } from "../../components/cli-mark";
 import { Markdown } from "../../components/markdown";
@@ -610,16 +611,6 @@ function CardRow({
   );
 }
 
-function fmtTickWhen(at: string): string {
-  const d = new Date(at);
-  return d.toLocaleString("en-US", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 /**
  * The How-to-confirm contract. Read-only list before delivery; on a done card
  * each step is a checkbox the reviewer ticks while following the script.
@@ -667,7 +658,7 @@ function ConfirmChecklist({
               </span>
               {tick ? (
                 <span className="d-check-meta">
-                  {t.detail.checkedBy} {tick.byEmail} · {fmtTickWhen(tick.at)}
+                  {t.detail.checkedBy} {tick.byEmail} · {formatShortDateTime(tick.at, t.lang)}
                 </span>
               ) : null}
             </span>

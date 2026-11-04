@@ -25,6 +25,7 @@ import {
   formatDuration,
   formatElapsed,
   formatMoney,
+  formatShortDate,
   formatTokens,
 } from "./format";
 import type { Dict } from "./i18n";
@@ -53,10 +54,6 @@ function fmtElapsed(from: Date, t: Dict): string {
   const h = Math.round(m / 60);
   if (h < 24) return t.board.hAgo(h);
   return t.board.dAgo(Math.round(h / 24));
-}
-
-function fmtDate(d: Date): string {
-  return d.toLocaleDateString("en-US", { day: "2-digit", month: "2-digit" });
 }
 
 function githubCommitUrl(
@@ -512,7 +509,7 @@ export function toBoardCardDetail(
         | "claim_stale",
       body: c.body,
       author: c.authorAgentRef,
-      at: fmtDate(c.createdAt),
+      at: formatShortDate(c.createdAt, tr.lang),
     }));
   const reportsCount = comments.filter((c) => c.kind === "report").length;
   const { telemetry, duration, ranModels } = cardTelemetry(
@@ -541,7 +538,7 @@ export function toBoardCardDetail(
     harness: claimed.harness,
     executor: t.claimedByExecutor ?? latestAttempt?.executor ?? null,
     harnessRan: ranChain && ranChain !== claimedChain ? ranChain : null,
-    origem: `${origem} · ${fmtDate(t.createdAt)}`,
+    origem: `${origem} · ${formatShortDate(t.createdAt, tr.lang)}`,
     branch: t.branch ?? latestHandoff?.branch ?? null,
     commit,
     commitUrl: githubCommitUrl(t.project?.repoUrl, commit),
