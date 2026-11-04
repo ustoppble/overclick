@@ -1,6 +1,15 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // E7: next/font/local only exists inside the Next build (see the stub).
+      "next/font/local": fileURLToPath(
+        new URL("./src/test-support/next-font-local.ts", import.meta.url),
+      ),
+    },
+  },
   test: {
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     environment: "node",
