@@ -204,16 +204,34 @@ function codeRequestScope(
   return `code-${kind}:${value}`;
 }
 
+/** Thrown inside the request transaction to undo every charge it took. */
+class RequestRefused extends Error {}
+
 /**
- * Charges one code request and says whether a code may be issued. The global
- * cap is only read first: when it is spent nothing else is charged, so asks
- * turned away for it cost their owners none of the minute's or hour's
- * allowance and the address works again the moment the window opens. Then
- * the buckets are charged in order and a refusal stops the chain: an ask the
- * minute bucket turned away must not also eat the hour's allowance, or a
- * stranger hammering an address for a second would leave its owner without
- * codes for the whole hour. Which bucket refused cannot tell a caller
- * whether the address has an account — none of them looks at that.
+ * Charges one code request to the address's and the origin's buckets and says
+ * whether the ask may go on to issue a code. Two rules decide the order and
+ * the bookkeeping:
+ *
+ * - The instance-wide cap is only read here, first: when it is spent nothing
+ *   else is charged, so asks turned away for it cost their owners none of the
+ *   minute's or hour's allowance. It is *spent* when an email is really about
+ *   to go out (`spendGlobalSend`, from the callback that runs after the
+ *   response), never by an ask for an address with no account, so a stranger
+ *   typing made-up addresses cannot use up the cap and shut everyone out.
+ * - The charges are one transaction. A refusal by any bucket — the minute's,
+ *   the hour's, or the origin's own — undoes the ones taken before it, so an
+ *   ask that is turned away costs nothing anywhere. Without that, twenty asks
+ *   at one address (refused after the first by the minute bucket) used up the
+ *   origin's twenty and locked out every other address behind the same proxy.
+ *
+ * Which bucket refused cannot tell a caller whether the address has an
+ * account — none of them looks at that.
+ *
+ * Where a challenge would go: a CAPTCHA/Turnstile token, once the owner opens
+ * the account and key it needs, is verified by the action *before* this is
+ * called (`requestLoginCodeAction`, `requestSetupCodeAction`,
+ * `requestInviteCodeAction`), so a request that fails it costs no bucket and
+ * no email. Nothing here changes for it.
  */
 export async function withinCodeRequestBudget(
   db: McpDatabase,
@@ -226,47 +244,59 @@ export async function withinCodeRequestBudget(
     return false;
   }
 
-  const originOk = origin
-    ? await spendBudget(
-        db,
-        loginCodeRequest,
-        codeRequestScope("hour-origin", origin),
-        CODE_REQUESTS_PER_ORIGIN_HOUR,
-        CODE_REQUEST_HOUR_MS,
-      )
-    : true;
-  if (!originOk) return false;
-
-  const minuteOk = await spendBudget(
-    db,
-    loginCodeRequest,
-    codeRequestScope("minute-email", email),
-    CODE_REQUESTS_PER_MINUTE,
-    CODE_REQUEST_MINUTE_MS,
-  );
-  if (!minuteOk) return false;
-
-  const hourOk = await spendBudget(
-    db,
-    loginCodeRequest,
-    codeRequestScope("hour-email", email),
-    CODE_REQUESTS_PER_HOUR,
-    CODE_REQUEST_HOUR_MS,
-  );
-  if (!hourOk) return false;
-
-  // Charged for every ask that got this far, account or not, so the cap is
-  // no more an oracle than the buckets above.
-  return spendGlobalSend(db);
+  try {
+    await db.transaction(async (tx) => {
+      const charges = tx as McpDatabase;
+      if (
+        origin &&
+        !(await spendBudget(
+          charges,
+          loginCodeRequest,
+          codeRequestScope("hour-origin", origin),
+          CODE_REQUESTS_PER_ORIGIN_HOUR,
+          CODE_REQUEST_HOUR_MS,
+        ))
+      ) {
+        throw new RequestRefused();
+      }
+      if (
+        !(await spendBudget(
+          charges,
+          loginCodeRequest,
+          codeRequestScope("minute-email", email),
+          CODE_REQUESTS_PER_MINUTE,
+          CODE_REQUEST_MINUTE_MS,
+        ))
+      ) {
+        throw new RequestRefused();
+      }
+      if (
+        !(await spendBudget(
+          charges,
+          loginCodeRequest,
+          codeRequestScope("hour-email", email),
+          CODE_REQUESTS_PER_HOUR,
+          CODE_REQUEST_HOUR_MS,
+        ))
+      ) {
+        throw new RequestRefused();
+      }
+    });
+  } catch (error) {
+    if (error instanceof RequestRefused) return false;
+    throw error;
+  }
+  return true;
 }
 
 /**
  * Charges one email to the instance-wide hourly cap and says whether it fits.
- * Every email this flow sends is counted here: the asks that reach the end of
- * `withinCodeRequestBudget`, and the warning a lock sends (`claimLockNotice`).
- * The read in `withinCodeRequestBudget` is not atomic with this charge, so a
- * burst may overshoot by a few; the count here is what keeps it from going
- * further.
+ * Called only when an email is really about to leave — a code issued to an
+ * account (or to the address setup or an invitation is for), and the warning a
+ * lock sends (`claimLockNotice`) — never for an ask that found nothing to
+ * send. The read in `withinCodeRequestBudget` is not atomic with this charge,
+ * so a burst may overshoot by a few; the count here is what keeps it from
+ * going further, and an email that does not fit is not sent.
  */
 export async function spendGlobalSend(db: McpDatabase): Promise<boolean> {
   const cap = loginCodeSendCap();

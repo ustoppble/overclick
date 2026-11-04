@@ -24,6 +24,7 @@ import {
   clearCodeUserFailures,
   loginOrigin,
   refundCodeLoginOrigin,
+  spendGlobalSend,
   withinCodeLoginBudget,
   withinCodeRequestBudget,
 } from "../lib/login-rate-limit";
@@ -83,7 +84,11 @@ export async function requestSetupCodeAction(
     after(async () => {
       try {
         const issued = await issueSignupCode(db(), setupScope(email), email);
-        if (issued) await sendEmail(signupCodeEmail("setup", email, issued.code));
+        // The instance-wide cap is spent here, by an email that really goes
+        // out, and by nothing else (`withinCodeRequestBudget`).
+        if (issued && (await spendGlobalSend(db()))) {
+          await sendEmail(signupCodeEmail("setup", email, issued.code));
+        }
       } catch (err) {
         console.error(
           `[login-code] issuing or sending a setup code failed (${err instanceof Error ? err.name : "unknown"})`,
@@ -168,6 +173,9 @@ export async function requestLoginCodeAction(
 
   await sweepLoginRows(db());
   const origin = await loginOrigin();
+  // A CAPTCHA/Turnstile token would be verified here, before any bucket is
+  // charged (see `withinCodeRequestBudget`); the owner has not opened the
+  // account and key it needs yet.
   if (await withinCodeRequestBudget(db(), email, origin)) {
     // Everything that depends on the address having an account — the insert
     // that finds one, the round trip to Resend — runs once the response is
@@ -177,7 +185,12 @@ export async function requestLoginCodeAction(
     after(async () => {
       try {
         const issued = await issueLoginCode(db(), email);
-        if (issued) await sendEmail(loginCodeEmail(email, issued.code));
+        // Only an address with an account has a code to send, so only it
+        // spends the instance-wide cap; the answer was sent already, so the
+        // difference shows to no caller.
+        if (issued && (await spendGlobalSend(db()))) {
+          await sendEmail(loginCodeEmail(email, issued.code));
+        }
       } catch (err) {
         // Only the error's kind: its message can quote the address.
         console.error(

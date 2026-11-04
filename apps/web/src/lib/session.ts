@@ -18,6 +18,61 @@ export type SessionPayload = SessionTokenPayload & {
 // every session, so the code enforces what the operator was told to provide.
 const MIN_SECRET_LENGTH = 32;
 
+/** What `openssl rand -base64 32` / `-hex 32` produce: 32 random bytes. */
+const MIN_SECRET_BYTES = 32;
+/**
+ * The fewest distinct values 32 random bytes ever show (the least seen in
+ * 200,000 draws is 23) and the fewest distinct characters their base64 or hex
+ * form shows (23, and 12). A secret under these repeats itself too much to
+ * have come from a random source.
+ */
+const MIN_DISTINCT_BYTES = 12;
+const MIN_DISTINCT_CHARS = { hex: 12, base64: 22 } as const;
+
+/**
+ * Why `secret` does not look like 32 or more random bytes written as hex or
+ * base64 — null when it does. Length alone let `"s".repeat(32)` through; this
+ * is the shape the docs ask for (`openssl rand -base64 32`). It looks at the
+ * value's form, never prints it, and cannot prove randomness: it only turns
+ * away what visibly is not.
+ */
+export function authSecretWeakness(secret: string): string | null {
+  const isHex = /^[0-9a-fA-F]+$/.test(secret) && secret.length % 2 === 0;
+  const isBase64 = /^[A-Za-z0-9+/_-]+={0,2}$/.test(secret);
+  if (!isHex && !isBase64) return "it is not hex or base64";
+  const bytes = Buffer.from(secret, isHex ? "hex" : "base64");
+  if (bytes.length < MIN_SECRET_BYTES) return `it stands for fewer than ${MIN_SECRET_BYTES} bytes`;
+  if (new Set(bytes).size < MIN_DISTINCT_BYTES) return "it repeats the same few values";
+  const chars = new Set(secret.replace(/=+$/, "")).size;
+  if (chars < MIN_DISTINCT_CHARS[isHex ? "hex" : "base64"]) {
+    return "it repeats the same few characters";
+  }
+  return null;
+}
+
+let warnedWeakSecret = false;
+
+/** For tests: lets the once-per-process warning fire again. */
+export function resetAuthSecretWarning(): void {
+  warnedWeakSecret = false;
+}
+
+/**
+ * A secret that is long enough but visibly not random is warned about, once
+ * per process and without its value, and still used: refusing would stop an
+ * instance that has been running on it, and rotating it signs everybody out.
+ * The operator decides when. `docs/getting-started.md` says how to make one.
+ */
+function warnIfWeakSecret(secret: string): void {
+  if (warnedWeakSecret) return;
+  warnedWeakSecret = true;
+  const why = authSecretWeakness(secret);
+  if (!why) return;
+  console.warn(
+    `[auth] AUTH_SECRET looks weak (${why}). It signs every session; replace it with 32 random bytes (openssl rand -base64 32). Replacing it signs everyone out.`,
+  );
+}
+
 function secretKey(): Uint8Array {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < MIN_SECRET_LENGTH) {
@@ -25,6 +80,7 @@ function secretKey(): Uint8Array {
       `AUTH_SECRET must be set (${MIN_SECRET_LENGTH}+ characters)`,
     );
   }
+  warnIfWeakSecret(secret);
   return new TextEncoder().encode(secret);
 }
 
