@@ -1,3 +1,4 @@
+import { BODY_LIMITS, readBodyCapped } from "../../../lib/body-limit";
 import { clientOrigin } from "../../../lib/client-origin";
 import { db } from "../../../lib/db";
 import { exchangePairingCode } from "../../../lib/pairing";
@@ -30,9 +31,18 @@ function guessOrigin(request: Request): string | null {
  * refusal — wrong code, and no budget left to look — indistinguishable.
  */
 export async function POST(request: Request): Promise<Response> {
-  const body = (await request.json().catch(() => null)) as
-    | { code?: unknown }
-    | null;
+  // Over the ceiling is refused before the budget is touched: it is not a
+  // guess at a code, it is a body no honest agent sends.
+  const read = await readBodyCapped(request, BODY_LIMITS.pair);
+  if (!read.ok) {
+    return Response.json({ error: "request body too large" }, { status: read.status });
+  }
+  let body: { code?: unknown } | null = null;
+  try {
+    body = JSON.parse(read.text) as { code?: unknown } | null;
+  } catch {
+    body = null;
+  }
   const code = typeof body?.code === "string" ? body.code.trim() : "";
 
   const result = await exchangePairingCode(db(), code, guessOrigin(request));

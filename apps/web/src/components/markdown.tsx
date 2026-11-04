@@ -46,10 +46,23 @@ function isBlockLine(line: string): boolean {
   );
 }
 
+/** Schemes a link may carry. Everything else (javascript:, data:, file:, ...) is text. */
+const LINK_SCHEMES = new Set(["https", "http", "mailto"]);
+
+/**
+ * A link survives only if it is relative, or its scheme is on the allowlist.
+ * A denylist loses to the next scheme nobody thought of, and to the ones a
+ * browser quietly repairs: it drops tabs and newlines inside a URL and reads a
+ * backslash as a slash, so both are refused here instead of being parsed the
+ * way a browser would. A protocol-relative `//host` is a link to another site
+ * wearing a relative path, so it is refused too.
+ */
 function sanitizeHref(href: string): string | null {
   const value = href.trim();
-  if (value === "" || /[\r\n]/.test(value)) return null;
-  return /^(\s*(javascript|vbscript|data):)/i.test(value) ? null : value;
+  if (value === "" || /[\u0000-\u001f\u007f\\]/.test(value)) return null;
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(value);
+  if (scheme) return LINK_SCHEMES.has(scheme[1].toLowerCase()) ? value : null;
+  return value.startsWith("//") ? null : value;
 }
 
 function parseInlineMarkdown(text: string): ReactNode[] {

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { isPairingCode } from "../../lib/plugin-install";
+import { publicOrigin } from "../../lib/public-url";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,28 +14,17 @@ async function readInstaller() {
 }
 
 /**
- * A host we are willing to write into a shell script. Everything here ends up
- * inside double quotes in bash, so the danger is not an odd hostname, it is a
- * quote or a `$` or a backtick in one. The set below is what a host can
- * legally contain (name, port, bracketed IPv6) and nothing that can end a
- * string or start a substitution; anything else means we serve the plain
- * installer and let it ask.
+ * The address written into the script: the operator's configured
+ * `OVERCLICK_PUBLIC_URL` (validated by `publicOrigin`: https, or http for a
+ * local address, no credentials, origin only), never the request's Host or
+ * x-forwarded-* — those are written by whoever sent the request, and a script
+ * served with the caller's own address inside it is a script that sends the
+ * pairing code wherever the caller said. Without the variable there is no
+ * address we can vouch for, so no paired installer is generated and the plain
+ * one, which asks, is served instead.
  */
-const SAFE_HOST = /^[A-Za-z0-9.\-_:[\]]+$/;
-
-function instanceUrl(request: Request): string | null {
-  const host = request.headers.get("host") ?? new URL(request.url).host;
-  if (!SAFE_HOST.test(host)) return null;
-  // A TLS instance sits behind a proxy that terminates it, so the scheme comes
-  // from the forwarded header; the local case is the only one that is http.
-  const forwarded = request.headers.get("x-forwarded-proto")?.split(",")[0].trim();
-  const proto =
-    forwarded === "http" || forwarded === "https"
-      ? forwarded
-      : host.startsWith("localhost") || host.startsWith("127.0.0.1")
-        ? "http"
-        : "https";
-  return `${proto}://${host}`;
+function instanceUrl(): string | null {
+  return publicOrigin();
 }
 
 /**
@@ -65,7 +55,7 @@ function withPairing(script: string, url: string, code: string): string {
 export async function GET(request: Request) {
   const script = await readInstaller();
   const code = new URL(request.url).searchParams.get("code");
-  const url = isPairingCode(code) ? instanceUrl(request) : null;
+  const url = isPairingCode(code) ? instanceUrl() : null;
   const body = url === null || !isPairingCode(code)
     ? script
     : withPairing(script, url, code);

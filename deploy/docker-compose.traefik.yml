@@ -30,6 +30,17 @@ services:
       traefik.http.routers.overclick-https.tls: "true"
       traefik.http.routers.overclick-https.tls.certresolver: ${PROXY_CERTRESOLVER:-letsencrypt}
       traefik.http.routers.overclick-https.service: overclick
+      traefik.http.routers.overclick-https.middlewares: overclick-security
+      # Browser security headers, repeated at the proxy so a response the app
+      # never produced (a 502, a restart) carries them too. The app sets the
+      # same values (apps/web/src/lib/security-headers.ts); the
+      # Content-Security-Policy is the app's alone, its nonce is per request.
+      traefik.http.middlewares.overclick-security.headers.stsSeconds: "31536000"
+      traefik.http.middlewares.overclick-security.headers.stsIncludeSubdomains: "true"
+      traefik.http.middlewares.overclick-security.headers.contentTypeNosniff: "true"
+      traefik.http.middlewares.overclick-security.headers.frameDeny: "true"
+      traefik.http.middlewares.overclick-security.headers.referrerPolicy: strict-origin-when-cross-origin
+      traefik.http.middlewares.overclick-security.headers.permissionsPolicy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()
 
 networks:
   proxy:

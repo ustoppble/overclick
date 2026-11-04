@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { project } from "@agent-board/db";
+import { BODY_LIMITS, readBodyCapped } from "../../../../lib/body-limit";
 import { db } from "../../../../lib/db";
 import { applyProjectRelease } from "../../../../lib/project-context-refresh";
 
@@ -48,7 +49,13 @@ export async function POST(request: Request): Promise<Response> {
   if (!secret) {
     return Response.json({ error: "github webhook secret is not configured" }, { status: 503 });
   }
-  const payload = await request.text();
+  // The ceiling comes before the HMAC: the signature is computed over the whole
+  // body, so an unbounded one would be buffered and hashed for any caller.
+  const read = await readBodyCapped(request, BODY_LIMITS.githubRelease);
+  if (!read.ok) {
+    return Response.json({ error: "webhook body too large" }, { status: read.status });
+  }
+  const payload = read.text;
   if (!validSignature(secret, payload, request.headers.get("x-hub-signature-256"))) {
     return Response.json({ error: "invalid webhook signature" }, { status: 401 });
   }

