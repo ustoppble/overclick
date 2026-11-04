@@ -108,7 +108,7 @@ export async function dismissInstallNoticesAction(): Promise<ActionResult> {
   const admin = await adminSession();
   if (!admin.ok) return admin;
   await dismissInstallNotices(db(), admin.userId);
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }
 

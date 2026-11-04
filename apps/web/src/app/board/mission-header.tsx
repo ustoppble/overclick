@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import {
   deleteEmptyMissionAction,
   updateMissionAction,
@@ -75,10 +75,15 @@ export function MissionHeader({
   mission,
   t,
   onDeleted,
+  className = "mission-header nebula-glass",
+  children,
 }: {
   mission: BoardMissionOption;
   t: Dict;
   onDeleted: () => void;
+  className?: string;
+  /** What the header reads when it is not editing; the overview by default. */
+  children?: ReactNode;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -133,10 +138,7 @@ export function MissionHeader({
   }
 
   return (
-    <section
-      className="mission-header nebula-glass"
-      aria-label={t.board.missionLabel}
-    >
+    <section className={className} aria-label={t.board.missionLabel}>
       {editing ? (
         <div className="mission-editor">
           <div className="mission-editor-fields">
@@ -209,7 +211,7 @@ export function MissionHeader({
         </div>
       ) : (
         <>
-          <MissionOverview mission={mission} t={t} />
+          {children ?? <MissionOverview mission={mission} t={t} />}
           {error ? <p className="mission-error">{error}</p> : null}
           <div className="mission-actions">
             {mission.counts.total === 0 ? (

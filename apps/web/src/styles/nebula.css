@@ -1127,29 +1127,36 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .mission-objective { max-width: 82ch; }
 .nb .mission-empty { margin: 0; color: var(--nebula-text-tertiary); font-size: 12px; }
 .nb .mission-counts { display: flex; align-items: flex-start; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
-/* ---------- mission progress bar (OCL-138) ----------
-   4 colours, stacked: vermelho/aberto, amarelo/em_execucao, verde/feito,
-   azul/validado. Colour never carries the meaning alone — the bar's
-   aria-label/title and the printed % say the same numbers. */
+/* ---------- mission progress bar (OCL-138; variant A since E3) ----------
+   Grey only: validated in the first ink, to review in the second, running
+   in the third, on a 10% track that is the queue. Shade never carries the
+   meaning alone: the bar's aria-label/title and the printed % say the same
+   numbers, and the large bar's legend repeats the status marks. */
 .nb .mission-progress-row { grid-column: 1 / -1; }
-.nb .mission-progress { display: flex; align-items: center; gap: 8px; }
+.nb .mission-progress { display: flex; flex-direction: column; gap: 8px; }
+.nb .mission-progress-line { display: flex; align-items: center; gap: 8px; }
 .nb .mission-progress-bar {
   display: flex; flex: 1; min-width: 40px; overflow: hidden;
-  background: var(--oc-border); border-radius: var(--oc-radius-pill);
+  background: rgb(var(--oc-white-rgb) / 0.1); border-radius: var(--oc-radius-pill);
 }
 .nb .mission-progress-sm .mission-progress-bar { height: 4px; }
-.nb .mission-progress-lg .mission-progress-bar { height: 8px; }
+.nb .mission-progress-lg .mission-progress-bar { height: 4px; }
 .nb .mission-progress-seg { flex-shrink: 0; height: 100%; }
-.nb .mission-progress-seg.seg-aberto { background: var(--oc-todo); }
-.nb .mission-progress-seg.seg-em-execucao { background: var(--oc-warn); }
-.nb .mission-progress-seg.seg-feito { background: var(--oc-ok); }
-.nb .mission-progress-seg.seg-validado { background: var(--oc-info); }
-.nb .mission-progress-seg.seg-empty { background: transparent; }
+.nb .mission-progress-seg + .mission-progress-seg { box-shadow: inset 2px 0 0 var(--oc-bg); }
+.nb .mission-progress-seg.seg-validado { background: var(--oc-text-1); }
+.nb .mission-progress-seg.seg-feito { background: var(--oc-text-2); }
+.nb .mission-progress-seg.seg-em-execucao { background: var(--oc-text-3); }
 .nb .mission-progress-pct {
-  flex: none; color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 11px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums;
+  flex: none; color: var(--oc-text-2); font-family: var(--oc-font-data);
+  font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums;
 }
-.nb .mission-progress-lg .mission-progress-pct { font-size: 12px; color: var(--nebula-text-primary); }
+.nb .mission-progress-legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px;
+  font-size: 12px; line-height: 16px; color: var(--oc-text-2);
+}
+.nb .mission-progress-key { display: inline-flex; align-items: center; gap: 4px; }
+.nb .mission-progress-key b { font-family: var(--oc-font-data); font-weight: 600; color: var(--oc-text-1); }
+.nb .mission-progress-legend .mission-progress-pct { margin-left: auto; color: var(--oc-text-1); font-weight: 600; }
 .nb .mission-count {
   display: flex; align-items: baseline; gap: 5px; padding: 5px 8px;
   border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill);

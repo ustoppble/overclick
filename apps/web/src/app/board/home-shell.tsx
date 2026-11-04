@@ -44,7 +44,6 @@ import { Board, type BoardCard, type BoardMissionOption } from "./board";
 import { BoardTotal } from "./board-total";
 import { FacetFilters } from "./facet-filters";
 import { PeriodByFilter, PeriodFilter } from "./period-filter";
-import { MissionHeader } from "./mission-header";
 import { MissionFilter } from "./mission-filter";
 import { OrganizationFilter } from "./organization-filter";
 import { ProjectFilter } from "./project-filter";
@@ -154,6 +153,7 @@ export function HomeShell({
   initialFilter,
   initialTotals,
   openCardId,
+  openedByAddress = false,
   windowSince,
   boardSignature,
   viewerRole,
@@ -169,6 +169,8 @@ export function HomeShell({
   initialTotals: BoardTotals;
   /** The card a link asked to open, already among the cards. */
   openCardId: string | null;
+  /** The page is the open card's own address (/cards/OCL-12, E3). */
+  openedByAddress?: boolean;
   /** Where the window starts, by the date the period reads; null for all time. */
   windowSince: string | null;
   /** The board's fingerprint when the page was built; the poll compares against it. */
@@ -515,6 +517,14 @@ export function HomeShell({
               onCreated={(missionId) => apply({ ...filter, missionId })}
               t={t}
             />
+            {/* The mission filter stays a quick filter; the mission itself
+                is a place now (E3), one step away. */}
+            {selectedMission ? (
+              <a className="mission-open-link" href={`/missions/${selectedMission.id}`}>
+                {t.missions.openPage}
+                <Icon name="chevronRight" label={null} size={12} />
+              </a>
+            ) : null}
             <PeriodFilter
               value={period}
               onChange={(next) => apply({ ...filter, period: next })}
@@ -626,14 +636,6 @@ export function HomeShell({
         <div className="menu-backdrop" onClick={() => setFiltersOpen(false)} />
       ) : null}
 
-      {selectedMission ? (
-        <MissionHeader
-          mission={selectedMission}
-          t={t}
-          onDeleted={() => apply({ ...filter, missionId: null })}
-        />
-      ) : null}
-
       {filter.resolvedIn !== undefined ? (
         <ReleaseHeader
           release={filter.resolvedIn}
@@ -654,8 +656,9 @@ export function HomeShell({
         selectable={picking}
         selectedIds={selected}
         onToggleSelect={toggleSelect}
-        onMissionSelect={(missionId) => apply({ ...filter, missionId })}
         initialOpen={openCard}
+        cardAddresses
+        openedByAddress={openedByAddress}
         detailVersion={boardSignature}
         viewerRole={viewerRole}
       />

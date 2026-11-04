@@ -112,7 +112,7 @@ export async function saveProjectContextAction(
   }
 
   revalidatePath("/settings");
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }
 
@@ -198,7 +198,7 @@ export async function createProjectAction(
   }
 
   revalidatePath("/settings");
-  revalidatePath("/home");
+  revalidatePath("/board");
   return {
     ok: true,
     project: { id: inserted.row.id, name: inserted.row.name, idPrefix: inserted.row.idPrefix },

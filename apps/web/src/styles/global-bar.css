@@ -238,7 +238,7 @@
   .global-bar .gb-chip-review { display: none; }
   .gb-tabbar {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     position: fixed;
     left: 0;
     right: 0;
@@ -290,7 +290,7 @@
 .status-mark[data-status="descartado"] { color: var(--oc-text-3); }
 .status-mark .sm-tick { stroke: var(--oc-bg); }
 
-/* ---------- the To review list (/home?status=feito) ---------- */
+/* ---------- the To review list (/board?status=feito) ---------- */
 /* no z-index here: a stacking context would hold the card sheet (the .ov
    modal rung) under the global bar */
 .rq-page { max-width: 1320px; margin: 0 auto; }

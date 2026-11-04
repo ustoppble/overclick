@@ -38,7 +38,7 @@ export async function releaseClaimAction(taskId: string): Promise<ActionResult> 
     return { ok: false, error };
   }
 
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }
 
@@ -60,7 +60,7 @@ export async function saveClaimTimeoutAction(
     .update(workspace)
     .set({ claimTimeoutMinutes: timeoutMinutes })
     .where(eq(workspace.id, ws.id));
-  revalidatePath("/home");
+  revalidatePath("/board");
   revalidatePath("/settings");
   return { ok: true };
 }

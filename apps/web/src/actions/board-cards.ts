@@ -2,7 +2,7 @@
 
 import { and, eq } from "drizzle-orm";
 import { project, workspace } from "@agent-board/db";
-import type { BoardCard, BoardCardDetail } from "../app/home/board";
+import type { BoardCard, BoardCardDetail } from "../app/board/board";
 import { toBoardCardDetail, toBoardCards } from "../lib/board-card";
 import { loadBoardSignature } from "../lib/board-signature";
 import { loadGlobalCounts, type GlobalCounts } from "../lib/global-counts";

@@ -1,0 +1,279 @@
+/* ============================================================
+   MISSIONS — navigation plan E3 (variant A, "one colour only")
+
+   The missions list (/missions), a mission's page (/missions/<id>), the
+   link from the board's mission filter to that page, and the pages that
+   find nothing. Its own sheet, so the stages that rework nebula.css in
+   parallel do not fight over it.
+
+   The rules of plan §3.5 hold here from day one: nothing under 12px, no
+   stacked opacity on text, radius 4/8/12, spacing 4/8/12/16/24/32/48, 200ms
+   motion on colour and background only, mono only for data, and no amber:
+   nothing on these pages is on the attention colour's closed list.
+   ============================================================ */
+
+/* ---------- shared: the page, its head, the status chip ---------- */
+.ms-page { max-width: 1320px; margin: 0 auto; }
+.ms-crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  margin-bottom: var(--oc-space-4);
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--oc-text-2);
+}
+.ms-crumbs a { color: var(--oc-text-2); text-decoration: none; transition: color 200ms; }
+.ms-crumbs a:hover { color: var(--oc-text-1); }
+.ms-crumbs .ms-crumb-here {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--oc-text-1);
+}
+.ms-head { display: flex; align-items: flex-end; gap: var(--oc-space-4); margin-bottom: var(--oc-space-6); }
+.ms-head-text { display: flex; flex-direction: column; gap: var(--oc-space-2); min-width: 0; }
+.ms-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: var(--oc-tracking-tight);
+  color: var(--oc-text-1);
+}
+.ms-lead { margin: 0; max-width: 68ch; font-size: 13px; line-height: 20px; color: var(--oc-text-2); }
+.ms-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-1);
+  height: 24px;
+  padding: 0 var(--oc-space-2);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control-sm);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--oc-text-2);
+  vertical-align: middle;
+}
+.ms-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  height: 32px;
+  padding: 0 var(--oc-space-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  font: 500 13px/16px var(--oc-font-ui);
+  color: var(--oc-text-2);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 200ms, background-color 200ms;
+}
+.ms-btn:hover { color: var(--oc-text-1); background: var(--oc-surface-hover); }
+.ms-btn.primary { background: var(--oc-text-1); border-color: var(--oc-text-1); color: var(--oc-bg); }
+.ms-btn.primary:hover { background: var(--oc-text-2); }
+.ms-btn:disabled { cursor: not-allowed; color: var(--oc-text-3); }
+.ms-btn:focus-visible,
+.ms-row:focus-visible,
+.ms-tabs a:focus-visible,
+.mission-open-link:focus-visible,
+.nf-act:focus-visible { outline: none; box-shadow: var(--oc-focus-ring); }
+
+/* ---------- /missions: the list ---------- */
+.ms-head .ms-new { margin-left: auto; flex: none; display: flex; align-items: center; gap: var(--oc-space-2); }
+.ms-new input {
+  height: 32px;
+  width: 260px;
+  padding: 0 var(--oc-space-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-surface-input);
+  font: 400 13px/16px var(--oc-font-ui);
+  color: var(--oc-text-1);
+}
+.ms-new .ms-err { font-size: 12px; line-height: 16px; color: var(--oc-text-2); }
+.ms-tabs {
+  display: inline-flex;
+  gap: var(--oc-space-1);
+  padding: var(--oc-space-1);
+  margin-bottom: var(--oc-space-4);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-card);
+  background: var(--oc-surface);
+}
+.ms-tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  height: 28px;
+  padding: 0 var(--oc-space-3);
+  border-radius: var(--oc-radius-control);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--oc-text-2);
+  text-decoration: none;
+  transition: color 200ms, background-color 200ms;
+}
+.ms-tabs a[aria-current="page"] { background: var(--oc-surface-on); color: var(--oc-text-1); }
+.ms-tabs .ms-num { font-family: var(--oc-font-data); font-size: 12px; color: var(--oc-text-3); }
+.ms-list { display: flex; flex-direction: column; gap: var(--oc-space-2); }
+.ms-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px 140px 120px;
+  gap: var(--oc-space-6);
+  align-items: center;
+  padding: var(--oc-space-4) var(--oc-space-6);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-card);
+  background: var(--oc-surface);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 200ms, border-color 200ms;
+}
+.ms-row:hover { background: var(--oc-surface-2); border-color: var(--oc-border-hover); }
+.ms-row h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--oc-space-2);
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--oc-text-1);
+}
+.ms-row .ms-obj {
+  margin: var(--oc-space-1) 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--oc-text-2);
+}
+.ms-row .ms-projs { margin-top: var(--oc-space-1); font-size: 12px; line-height: 16px; color: var(--oc-text-3); }
+.ms-row .ms-r { text-align: right; font-size: 12px; line-height: 16px; color: var(--oc-text-3); }
+.ms-row .ms-rev { font-size: 13px; font-weight: 600; color: var(--oc-text-1); }
+.ms-row .ms-r b { display: block; font: 500 12px/20px var(--oc-font-data); color: var(--oc-text-1); }
+.ms-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oc-space-2);
+  padding: var(--oc-space-8);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-card);
+  background: var(--oc-surface);
+}
+.ms-empty h2 { margin: 0; font-size: 16px; line-height: 20px; font-weight: 600; color: var(--oc-text-1); }
+.ms-empty p { margin: 0; max-width: 68ch; font-size: 13px; line-height: 20px; color: var(--oc-text-2); }
+
+/* ---------- /missions/<id>: one mission ---------- */
+.mp-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 40%);
+  gap: var(--oc-space-8);
+  align-items: start;
+}
+.mp-head .ms-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--oc-space-2); }
+.mp-objective { margin-top: var(--oc-space-2); max-width: 72ch; font-size: 13px; line-height: 20px; color: var(--oc-text-2); }
+.mp-objective p { margin: 0; }
+.mp-stats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--oc-space-6); margin-top: var(--oc-space-4); font-size: 12px; line-height: 16px; color: var(--oc-text-3); }
+.mp-stats b { display: block; font: 600 16px/20px var(--oc-font-data); color: var(--oc-text-1); }
+.mp-ran { display: flex; flex-wrap: wrap; align-items: center; gap: var(--oc-space-1) var(--oc-space-3); margin-top: var(--oc-space-3); }
+.mp-ran-label { font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: var(--oc-tracking-wide); text-transform: uppercase; color: var(--oc-text-3); }
+.mp-rec { display: inline-flex; align-items: center; gap: var(--oc-space-1); font: 400 12px/16px var(--oc-font-data); color: var(--oc-text-2); }
+.mp-rec .mp-eff { color: var(--oc-text-3); }
+.mp-side { padding-top: var(--oc-space-2); }
+.mp-note { margin: var(--oc-space-3) 0 0; font-size: 12px; line-height: 16px; color: var(--oc-text-3); }
+.mp-context { margin-top: var(--oc-space-6); border: 1px solid var(--oc-border); border-radius: var(--oc-radius-card); background: var(--oc-surface); }
+.mp-context summary {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  padding: var(--oc-space-2) var(--oc-space-3);
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--oc-text-1);
+}
+.mp-context summary::-webkit-details-marker { display: none; }
+.mp-context[open] summary .mp-chev { transform: rotate(90deg); }
+.mp-context .mp-context-body { padding: 0 var(--oc-space-4) var(--oc-space-3) var(--oc-space-8); font-size: 13px; line-height: 20px; color: var(--oc-text-2); }
+.mp-only-yours { margin-top: var(--oc-space-4); font-size: 12px; line-height: 16px; color: var(--oc-text-2); }
+.mp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--oc-space-2); margin-top: var(--oc-space-4); }
+.mp-board { margin-top: var(--oc-space-6); }
+/* The edit form reuses the board's mission editor, outside the glass. */
+.nb .mission-header.mp-header { margin: 0 0 var(--oc-space-4); padding: 0; border: 0; background: none; box-shadow: none; }
+
+/* ---------- the board: the mission filter's way to its page ---------- */
+.mission-open-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-1);
+  flex: none;
+  height: 32px;
+  padding: 0 var(--oc-space-2);
+  border-radius: var(--oc-radius-control);
+  font: 500 13px/16px var(--oc-font-ui);
+  color: var(--oc-text-2);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 200ms, background-color 200ms;
+}
+.mission-open-link:hover { color: var(--oc-text-1); background: var(--oc-surface-hover); }
+
+/* ---------- a card or a mission that is not there ---------- */
+.nf-page { padding: var(--oc-space-9) var(--oc-space-6); }
+.nf-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oc-space-2);
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--oc-space-8);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-card);
+  background: var(--oc-surface);
+}
+.nf-box h1 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 600; color: var(--oc-text-1); }
+.nf-box p { margin: 0; font-size: 13px; line-height: 20px; color: var(--oc-text-2); }
+.nf-acts { display: flex; flex-wrap: wrap; gap: var(--oc-space-2); margin-top: var(--oc-space-2); }
+.nf-act {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--oc-space-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  font: 500 13px/16px var(--oc-font-ui);
+  color: var(--oc-text-2);
+  text-decoration: none;
+  transition: color 200ms, background-color 200ms;
+}
+.nf-act.primary { background: var(--oc-text-1); border-color: var(--oc-text-1); color: var(--oc-bg); }
+
+@media (max-width: 1099px) {
+  .mp-head { grid-template-columns: 1fr; gap: var(--oc-space-4); }
+  .ms-row { grid-template-columns: minmax(0, 1fr) 200px 120px; }
+  .ms-row .ms-upd { display: none; }
+}
+@media (max-width: 767px) {
+  .ms-head { flex-wrap: wrap; }
+  .ms-head .ms-new { margin-left: 0; }
+  .ms-new input { width: 100%; }
+  .ms-row { grid-template-columns: 1fr; gap: var(--oc-space-3); padding: var(--oc-space-4); }
+  .ms-row .ms-r { text-align: left; }
+  .ms-row .ms-obj { white-space: normal; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ms-btn, .ms-row, .ms-tabs a, .ms-crumbs a, .mission-open-link, .nf-act { transition: none; }
+}
+
+/* The editor's buttons sit under the overview, at its start (E3). */
+.nb .mission-header.mp-header .mission-actions { justify-content: flex-start; }

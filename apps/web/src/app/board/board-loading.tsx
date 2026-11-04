@@ -2,12 +2,15 @@ import { NebulaAtmosphere } from "../../components/nebula-atmosphere";
 import { BoardSkeleton } from "./board-skeleton";
 
 /**
- * Route-level loading fallback for /home.
+ * The board's loading fallback, while the server page loads projects, cards
+ * and totals: the atmospheric background and a board-shaped skeleton.
  *
- * Keeps the atmospheric background alive and renders a board-shaped skeleton
- * while the server page loads projects, cards and totals.
+ * Not a route-level loading.tsx since E3: that boundary starts the response
+ * before the page runs, so a card's address could only answer 200. The page
+ * decides /cards/<id> first (a real 307 or 404) and then streams the board
+ * behind this fallback.
  */
-export default function HomeLoading() {
+export function BoardLoading() {
   return (
     <div className="nb nebula-surface">
       <NebulaAtmosphere />

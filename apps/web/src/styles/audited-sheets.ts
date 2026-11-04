@@ -17,6 +17,8 @@ export const COMPONENT_SHEETS: Record<string, string> = {
   // Navigation plan E1: the global bar, the status mark, the review list and
   // the attention amber's closed list, in a sheet of their own.
   "styles/global-bar.css": read("global-bar.css"),
+  // Navigation plan E3: the missions list and page, and the not-found pages.
+  "styles/missions.css": read("missions.css"),
   "app/usage/insights.css": read("../app/usage/insights.css"),
   "app/usage/usage-tabs.css": read("../app/usage/usage-tabs.css"),
   "app/settings/settings-groups.css": read("../app/settings/settings-groups.css"),

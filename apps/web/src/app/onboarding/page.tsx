@@ -48,7 +48,7 @@ export default async function OnboardingPage({
       ),
       columns: { id: true },
     });
-    if (ownUsed && sp.step === undefined) redirect("/home");
+    if (ownUsed && sp.step === undefined) redirect("/board");
     return (
       <div className="nb nebula-surface nb-center">
         <Wizard
@@ -67,7 +67,7 @@ export default async function OnboardingPage({
     where: and(eq(mcpToken.workspaceId, ws.id), eq(mcpToken.revoked, false)),
     columns: { lastUsedAt: true },
   });
-  if (usedToken?.lastUsedAt && sp.step === undefined) redirect("/home");
+  if (usedToken?.lastUsedAt && sp.step === undefined) redirect("/board");
 
   const proj = await db().query.project.findFirst({
     where: eq(project.workspaceId, ws.id),

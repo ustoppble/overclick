@@ -117,6 +117,6 @@ export async function saveProjectAction(input: ProjectInput): Promise<ActionResu
     return { ok: false, error: "A project with that prefix already exists. Try another." };
   }
   revalidatePath("/onboarding");
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }

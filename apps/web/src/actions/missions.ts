@@ -115,7 +115,7 @@ export async function createMissionAction(input: {
     .returning({ id: mission.id });
   if (!created) return { ok: false, error: "Could not create the mission." };
 
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true, mission: created };
 }
 
@@ -158,7 +158,7 @@ export async function updateMissionAction(input: {
     .returning({ id: mission.id });
   if (!updated) return { ok: false, error: "Mission not found." };
 
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }
 
@@ -204,7 +204,7 @@ export async function deleteEmptyMissionAction(
 
     await tx.update(task).set({ missionId: null }).where(eq(task.missionId, current.id));
     await tx.delete(mission).where(eq(mission.id, current.id));
-    revalidatePath("/home");
+    revalidatePath("/board");
     return { ok: true } as const;
   });
 }
@@ -261,6 +261,6 @@ export async function assignCardsToMissionAction(
     .set({ missionId: plan.missionId })
     .where(and(inArray(task.parentId, plan.taskIds), taskScope(principal)));
 
-  revalidatePath("/home");
+  revalidatePath("/board");
   return { ok: true };
 }

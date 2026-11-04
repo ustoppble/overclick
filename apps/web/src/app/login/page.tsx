@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
   const session = await getSession();
-  if (session) redirect("/home");
+  if (session) redirect("/board");
 
   const users = await countUsers();
   if (canCreateFirstAdmin(users)) redirect("/setup");

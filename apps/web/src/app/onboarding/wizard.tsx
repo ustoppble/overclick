@@ -165,7 +165,7 @@ export function Wizard({
         if (!r.ok) return setErr(r.error);
         setStep(CONNECT_STEP);
       } else {
-        router.push("/home");
+        router.push("/board");
       }
     });
 
@@ -430,7 +430,7 @@ export function Wizard({
                   <button
                     type="button"
                     className="skip"
-                    onClick={() => router.push("/home")}
+                    onClick={() => router.push("/board")}
                   >
                     {t.wizard.configureLater}
                   </button>
