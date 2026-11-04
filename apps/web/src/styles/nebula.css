@@ -1892,7 +1892,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .steps-ind {
   display: flex; gap: 22px; margin: 0 0 44px; padding: 0; list-style: none;
-  font-family: var(--nebula-font-label); font-size: 10.5px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: .08em; text-transform: uppercase;
 }
 /* one line each: the step label is a landmark, and a landmark that reflows
@@ -1919,7 +1919,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
      axis, which centred the caption over its own field */
   display: flex; flex-direction: row; align-items: center; gap: 6px;
   min-height: 14px; margin-bottom: 5px;
-  font-family: var(--nebula-font-label); font-size: 10px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: .06em; text-transform: uppercase; color: var(--nebula-text-tertiary);
   white-space: nowrap; overflow: hidden;
 }
@@ -1928,7 +1928,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .field label .lbl-text {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.nb .field label .opt { flex: none; color: var(--nebula-text-tertiary); opacity: .7; border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill); padding: 1px 6px; margin-left: 0; font-size: 9px; }
+.nb .field label .opt { flex: none; color: var(--nebula-text-tertiary); opacity: .7; border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill); padding: 1px 6px; margin-left: 0; font-size: 12px; }
 .nb .input {
   width: 100%; background: rgb(var(--oc-surface-deep-rgb) / .6); border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-box);
   color: var(--nebula-text-primary); font-size: 13.5px; padding: 10px 12px; font-family: var(--nebula-font-sans); outline: none;
@@ -1939,10 +1939,10 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .input.mono { font-family: var(--nebula-font-mono); font-size: 12.5px; }
 .nb .preview {
   margin-top: 16px; padding: 13px 16px; border-radius: var(--oc-radius-card); background: rgb(var(--oc-mist-rgb) / .07);
-  border: 1px solid rgb(var(--oc-mist-rgb) / .14); font-family: var(--nebula-font-label); font-size: 11.5px;
+  border: 1px solid rgb(var(--oc-mist-rgb) / .14); font-family: var(--nebula-font-label); font-size: 12px;
   color: var(--nebula-mist-light); line-height: 1.6;
 }
-.nb .preview .cap { font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--nebula-text-tertiary); display: block; margin-bottom: 3px; }
+.nb .preview .cap { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--nebula-text-tertiary); display: block; margin-bottom: 3px; }
 .nb .preview.ghost { opacity: .35; }
 .nb .preview b { color: var(--nebula-mist-glow); font-weight: 500; }
 
@@ -1951,7 +1951,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   background: rgb(var(--oc-warn-3-rgb) / .05); padding: 12px 14px; }
 .nb .price-alert .sec-cap { color: rgb(var(--oc-warn-2-rgb) / .95); }
 .nb .policy .act small.price-flag { display: inline-block; margin-top: 4px;
-  font-size: 9.5px; font-family: var(--nebula-font-label); color: rgb(var(--oc-warn-2-rgb) / .9);
+  font-size: 12px; font-family: var(--nebula-font-label); color: rgb(var(--oc-warn-2-rgb) / .9);
   border: 1px solid rgb(var(--oc-warn-3-rgb) / .35); border-radius: var(--oc-radius-pill); padding: 1px 8px;
   letter-spacing: .04em; }
 /* The executors grid left with E2. This rule was the grid's tile, and the
@@ -1982,7 +1982,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .tabs button {
   flex: none;
   appearance: none; background: none; border: 0;
-  font-family: var(--nebula-font-label); font-size: 11px; letter-spacing: .05em;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .05em;
   color: var(--nebula-text-tertiary);
   min-height: 34px; padding: 0 0 5px;
   border-bottom: 1px solid transparent;
@@ -1996,7 +1996,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .cmd {
   background: rgb(var(--oc-scrim-rgb) / .85); border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-card);
-  font-family: var(--nebula-font-mono); font-size: 11.5px; line-height: 1.7; color: var(--nebula-mist-glow);
+  font-family: var(--nebula-font-mono); font-size: 12px; line-height: 1.7; color: var(--nebula-mist-glow);
   padding: 14px 16px; position: relative; white-space: pre-wrap; word-break: break-all;
 }
 /* The six digits are the whole point of the screen, so they get the biggest
@@ -2011,14 +2011,14 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   width: fit-content; max-width: 100%;
 }
 .nb .copy {
-  position: absolute; top: 9px; right: 9px; font-family: var(--nebula-font-mono); font-size: 10px;
+  position: absolute; top: 9px; right: 9px; font-family: var(--nebula-font-mono); font-size: 12px;
   background: var(--oc-surface-hover); border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill);
   color: var(--nebula-text-secondary); padding: 4px 11px; cursor: pointer; transition: all .15s;
 }
 .nb .copy.ok { color: var(--oc-ok); border-color: rgb(var(--oc-ok-rgb) / .4); }
 .nb .copy:hover { color: var(--nebula-text-primary); border-color: rgb(var(--oc-white-rgb) / .2); }
 .nb .copy:focus-visible { outline: none; box-shadow: var(--nebula-focus-ring-offset); }
-.nb .tok-note { font-family: var(--nebula-font-label); font-size: 9.5px; letter-spacing: .05em; color: var(--nebula-text-tertiary); margin-top: 7px; }
+.nb .tok-note { font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .05em; color: var(--nebula-text-tertiary); margin-top: 7px; }
 .nb .reveal { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .nb .conn {
   margin-top: 16px; min-height: 72px; border-radius: var(--oc-radius-card); padding: 13px 16px;
@@ -2028,8 +2028,8 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .conn.lit { border-color: rgb(var(--oc-ok-rgb) / .55); }
 .nb .conn .l1 { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; }
-.nb .conn .l2 { font-size: 11.5px; color: var(--nebula-text-secondary); margin-left: 21px; font-family: var(--nebula-font-label); }
-.nb .conn .cap { position: absolute; right: 14px; bottom: 9px; font-family: var(--nebula-font-label); font-size: 9.5px; letter-spacing: .07em; color: var(--nebula-text-tertiary); text-transform: uppercase; }
+.nb .conn .l2 { font-size: 12px; color: var(--nebula-text-secondary); margin-left: 21px; font-family: var(--nebula-font-label); }
+.nb .conn .cap { position: absolute; right: 14px; bottom: 9px; font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .07em; color: var(--nebula-text-tertiary); text-transform: uppercase; }
 .nb .pip { width: 11px; height: 11px; border-radius: var(--oc-radius-circle); background: var(--oc-warn-pip); animation: nb-pulse 1.8s ease-in-out infinite; position: relative; }
 .nb .pip.green { background: var(--oc-ok); animation: none; }
 @keyframes nb-pulse { 0%,100% { opacity: .4 } 50% { opacity: 1 } }
@@ -2060,7 +2060,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .btn-next.go { box-shadow: var(--oc-glow-ok); }
 .nb .skip {
   appearance: none; background: none; border: 0; padding: 0;
-  font-family: inherit; font-size: 11.5px; color: var(--nebula-text-tertiary);
+  font-family: inherit; font-size: 12px; color: var(--nebula-text-tertiary);
   text-decoration: underline; text-underline-offset: 3px;
   cursor: pointer; white-space: nowrap;
 }
@@ -2091,7 +2091,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .settabs button {
   flex: none;
   appearance: none; background: none; border: 0;
-  font-family: var(--nebula-font-label); font-size: 11px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: .08em; text-transform: uppercase;
   color: var(--nebula-text-tertiary);
   /* the target is the whole tab; the A1 utility grows it on a phone */
@@ -2155,24 +2155,24 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .policy.prices th:nth-child(5) { width: 14%; }
 .nb .policy.prices th:nth-child(6) { width: 16%; }
 .nb .policy th {
-  font-family: var(--nebula-font-label); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
   color: var(--nebula-text-tertiary); text-align: left; padding: 0 10px 8px 0; font-weight: 400;
 }
 .nb .policy td { padding: 5px 10px 5px 0; border-top: 1px solid var(--nebula-plan-divider); vertical-align: middle; }
 .nb .policy td:last-child { padding-right: 0; }
 .nb .policy .act { font-size: 12.5px; font-weight: 500; line-height: 1.35; }
-.nb .policy .act small { display: block; font-family: var(--nebula-font-label); font-size: 9.5px; color: var(--nebula-text-tertiary); letter-spacing: .04em; line-height: 1.45; margin-top: 1px; font-weight: 400; }
+.nb .policy .act small { display: block; font-family: var(--nebula-font-label); font-size: 12px; color: var(--nebula-text-tertiary); letter-spacing: .04em; line-height: 1.45; margin-top: 1px; font-weight: 400; }
 /* every control in a table cell is the width of its share, not of its text */
 .nb .policy .sel { width: 100%; min-width: 0; padding: 6px 20px 6px 7px; background-position: right 7px center; text-overflow: ellipsis; }
 .nb .policy td .input { width: 100%; max-width: 140px; padding: 6px 9px; font-size: 12px; }
-.nb .policy .who { font-family: var(--nebula-font-label); font-size: 10px; line-height: 1.45; color: var(--nebula-mist-light); letter-spacing: .03em; overflow-wrap: anywhere; }
-.nb .policy .who small { display: block; font-size: 9.5px; color: var(--nebula-text-tertiary); margin-top: 2px; }
+.nb .policy .who { font-family: var(--nebula-font-label); font-size: 12px; line-height: 1.45; color: var(--nebula-mist-light); letter-spacing: .03em; overflow-wrap: anywhere; }
+.nb .policy .who small { display: block; font-size: 12px; color: var(--nebula-text-tertiary); margin-top: 2px; }
 .nb .policy .who .dim { color: var(--nebula-text-tertiary); }
 .nb .sel {
   appearance: none; -webkit-appearance: none;
   background: rgb(var(--oc-surface-deep-rgb) / .6) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' stroke='%238C96AB' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 10px center;
   border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-note); color: var(--nebula-text-primary);
-  font-family: var(--nebula-font-label); font-size: 11px; padding: 7px 26px 7px 10px; outline: none; cursor: pointer;
+  font-family: var(--nebula-font-label); font-size: 12px; padding: 7px 26px 7px 10px; outline: none; cursor: pointer;
   min-width: 130px; transition: border-color .15s;
 }
 .nb .sel:hover { border-color: rgb(var(--oc-white-rgb) / .2); }
@@ -2202,7 +2202,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .policy td { display: block; padding: 0; border-top: 0; }
   .nb .policy td::before {
     content: attr(data-label); display: block;
-    font-family: var(--nebula-font-label); font-size: 9px; letter-spacing: .08em;
+    font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .08em;
     text-transform: uppercase; color: var(--nebula-text-tertiary); margin-bottom: 5px;
   }
   /* the title of the block and the signature take the full width */
@@ -2210,7 +2210,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .policy td.act::before { content: none; }
   .nb .policy td.act { padding-bottom: 2px; }
   /* the signature is a caption and a name: one line, not two */
-  .nb .policy td.who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 10px; }
+  .nb .policy td.who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12px; }
   .nb .policy td.who::before { margin-bottom: 0; }
   .nb .policy td.who small { display: inline; }
   /* a control under a thumb, not a control for a mouse */
@@ -2223,7 +2223,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 
 .nb .policy-note {
-  margin-top: 14px; font-family: var(--nebula-font-label); font-size: 10.5px; letter-spacing: .04em;
+  margin-top: 14px; font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .04em;
   color: var(--nebula-text-tertiary); padding-top: 12px; border-top: 1px solid var(--nebula-plan-divider);
   line-height: 1.6;
 }
@@ -2246,18 +2246,18 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .cover-list .cover-cli { font-size: 12px; }
 .nb .cover-list .cover-state {
-  font-family: var(--nebula-font-label); font-size: 9.5px; letter-spacing: .06em;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .06em;
   text-transform: uppercase; color: var(--nebula-text-tertiary);
 }
 .nb .cover-list li.has .cover-state { color: var(--oc-ok); }
 .nb .cover-list li.missing { border-color: rgb(var(--oc-warn-2-rgb) / .35); }
 .nb .cover-list li.missing .cover-state { color: rgb(var(--oc-warn-2-rgb) / .95); }
-.nb .rec-cover .sec-cap { text-transform: none; letter-spacing: .02em; font-size: 11px; margin: 12px 0 0; }
-.nb .rec-cover .rec-head .sec-cap { text-transform: uppercase; letter-spacing: .08em; font-size: 10px; margin: 0; }
+.nb .rec-cover .sec-cap { text-transform: none; letter-spacing: .02em; font-size: 12px; margin: 12px 0 0; }
+.nb .rec-cover .rec-head .sec-cap { text-transform: uppercase; letter-spacing: .08em; font-size: 12px; margin: 0; }
 .nb .recipe .rec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 0 0 10px; }
 .nb .recipe .rec-head .rec-name { font-size: 13px; font-weight: 500; }
 .nb .recipe .lbl {
-  display: block; font-family: var(--nebula-font-label); font-size: 9.5px; letter-spacing: .08em;
+  display: block; font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .08em;
   text-transform: uppercase; color: var(--nebula-text-tertiary); margin: 12px 0 5px;
 }
 /* Whole lines, always: a textarea sized by `rows` under border-box loses the
@@ -2267,7 +2267,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    sans face after .d-mono asked for the mono one, so the recipe that every
    agent copies was rendered in prose. The height is whole lines, so the box
    never ends halfway through one. */
-.nb .recipe textarea.d-mono { font-family: var(--nebula-font-mono); font-size: 11.5px; }
+.nb .recipe textarea.d-mono { font-family: var(--nebula-font-mono); font-size: 12px; }
 .nb .recipe textarea.d-mono.filled { height: calc(8 * 1.6em + 22px); }
 
 /* The three modes are one decision, so they read as one group of options. */
@@ -2290,7 +2290,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
   padding: 2px 8px; border-radius: var(--oc-radius-pill);
   border: 1px solid var(--nebula-glass-border); background: none;
-  font-family: var(--nebula-font-label); font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
   color: var(--nebula-text-tertiary); font-weight: 400; cursor: pointer;
   transition: border-color .15s, background .15s, color .15s;
 }
@@ -2303,13 +2303,13 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 /* the legacy global `.sub` ends with a 28px paragraph margin, which inside a
    card is 28px of nothing under every token: a row three times the height of
    the two lines it holds */
-.nb .tok .sub { font-family: var(--nebula-font-label); font-size: 10px; color: var(--nebula-text-tertiary); letter-spacing: .03em; margin-bottom: 0; }
-.nb .tok .val { font-family: var(--nebula-font-mono); font-size: 11px; color: var(--nebula-mist-light); letter-spacing: .03em; }
+.nb .tok .sub { font-family: var(--nebula-font-label); font-size: 12px; color: var(--nebula-text-tertiary); letter-spacing: .03em; margin-bottom: 0; }
+.nb .tok .val { font-family: var(--nebula-font-mono); font-size: 12px; color: var(--nebula-mist-light); letter-spacing: .03em; }
 .nb .tok.revoked { opacity: .4; }
 .nb .tok.revoked .val { text-decoration: line-through; }
 .nb .btn-rev {
   background: none; border: 1px solid rgb(var(--oc-danger-rgb) / .3); border-radius: var(--oc-radius-pill); color: var(--oc-danger);
-  font-size: 11px; padding: 5px 13px; cursor: pointer; transition: all .15s; font-family: var(--nebula-font-sans);
+  font-size: 12px; padding: 5px 13px; cursor: pointer; transition: all .15s; font-family: var(--nebula-font-sans);
 }
 .nb .btn-rev:hover { background: rgb(var(--oc-danger-rgb) / .1); }
 .nb .btn-rev:disabled { opacity: .4; cursor: default; background: none; }
@@ -2323,9 +2323,9 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .btn-new:disabled { opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; }
 .nb .btn-new:focus-visible { outline: none; box-shadow: var(--nebula-focus-ring-offset); }
 @media (prefers-reduced-motion: reduce) { .nb .btn-new:hover { transform: none; } }
-.nb .sec-cap { font-family: var(--nebula-font-label); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--nebula-text-tertiary); margin: 22px 0 10px; }
+.nb .sec-cap { font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--nebula-text-tertiary); margin: 22px 0 10px; }
 .nb .fresh-tok { margin-bottom: 16px; }
-.nb .fresh-tok .lbl { font-family: var(--nebula-font-label); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--oc-ok); margin-bottom: 8px; }
+.nb .fresh-tok .lbl { font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--oc-ok); margin-bottom: 8px; }
 
 /* ---------- ações do detalhe do card ---------- */
 .nb .d-actions { border-top: 1px solid var(--nebula-plan-divider); padding-top: 16px; margin-top: 4px; }
@@ -2380,25 +2380,25 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .upd-toggle { display: flex; flex-direction: row; align-items: center; gap: 10px; font-size: 13px; cursor: pointer; margin-top: 16px; }
 .nb .upd-toggle input { flex: 0 0 auto; }
 .nb .upd-panel { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--nebula-plan-divider); }
-.nb .upd-version { font-family: var(--nebula-font-mono); font-size: 11.5px; color: var(--nebula-text-tertiary); margin: 0 0 10px; }
+.nb .upd-version { font-family: var(--nebula-font-mono); font-size: 12px; color: var(--nebula-text-tertiary); margin: 0 0 10px; }
 .nb .upd-state { font-size: 12.5px; color: var(--nebula-text-secondary); margin: 10px 0 0; line-height: 1.55; }
 .nb .upd-state.ok { color: var(--oc-ok); }
 .nb .upd-state.bad { color: var(--oc-danger); }
 .nb .upd-cmd-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
-.nb .upd-cmd-row code { font-family: var(--nebula-font-mono); font-size: 11.5px; color: var(--nebula-mist-light);
+.nb .upd-cmd-row code { font-family: var(--nebula-font-mono); font-size: 12px; color: var(--nebula-mist-light);
   background: rgb(var(--oc-scrim-rgb) / .6); border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-control); padding: 6px 10px; }
 .nb .upd-log { margin: 10px 0 0; padding: 10px 12px; max-height: 140px; overflow: auto;
-  font-family: var(--nebula-font-mono); font-size: 11px; color: var(--nebula-text-secondary);
+  font-family: var(--nebula-font-mono); font-size: 12px; color: var(--nebula-text-secondary);
   white-space: pre-wrap; border: 1px solid var(--nebula-plan-divider); border-radius: var(--oc-radius-control); }
-.nb .upd-mode-note { display: block; font-size: 11.5px; color: var(--nebula-text-tertiary); line-height: 1.5; margin-top: 2px; }
+.nb .upd-mode-note { display: block; font-size: 12px; color: var(--nebula-text-tertiary); line-height: 1.5; margin-top: 2px; }
 .nb .upd-toggle { align-items: flex-start; }
 .nb .upd-steps { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .nb .upd-step { font-size: 12.5px; color: var(--nebula-text-secondary); line-height: 1.5;
   border-left: 2px solid var(--nebula-plan-divider); padding-left: 10px; }
 .nb .upd-step.ok { border-left-color: var(--oc-ok); }
 .nb .upd-step.failed { border-left-color: var(--oc-danger); }
-.nb .upd-step-name { font-family: var(--nebula-font-label); font-size: 11.5px; color: var(--nebula-mist-light); }
-.nb .upd-step-status { font-family: var(--nebula-font-label); font-size: 11px; color: var(--nebula-text-tertiary); }
+.nb .upd-step-name { font-family: var(--nebula-font-label); font-size: 12px; color: var(--nebula-mist-light); }
+.nb .upd-step-status { font-family: var(--nebula-font-label); font-size: 12px; color: var(--nebula-text-tertiary); }
 .nb .upd-step.ok .upd-step-status { color: var(--oc-ok); }
 .nb .upd-step.failed .upd-step-status { color: var(--oc-danger); }
 
@@ -2970,7 +2970,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   text-align: left;
 }
 .nb-auth .brand {
-  font-family: var(--nebula-font-mono); font-size: 10px;
+  font-family: var(--nebula-font-mono); font-size: 12px;
   letter-spacing: .12em; text-transform: uppercase;
   color: var(--nebula-text-tertiary);
   margin: 0 0 22px;
@@ -3008,7 +3008,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   content: "!"; flex: none;
   width: 16px; height: 16px; margin-top: 1px;
   border: 1px solid rgb(var(--oc-danger-rgb) / .5); border-radius: var(--oc-radius-circle);
-  font-family: var(--nebula-font-label); font-size: 10px; line-height: 14px;
+  font-family: var(--nebula-font-label); font-size: 12px; line-height: 14px;
   text-align: center;
 }
 /* The rule a field has to satisfy, said under the field, before the submit
@@ -3016,7 +3016,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    an error, until somebody actually contradicts it. */
 .nb-auth .auth-rule {
   margin: 6px 0 0;
-  font-family: var(--nebula-font-label); font-size: 10px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: .04em; color: var(--nebula-text-tertiary);
 }
 .nb-auth .auth-rule.ok { color: rgb(var(--oc-ok-rgb) / .8); }
@@ -3028,7 +3028,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   align-self: center;
   margin: 12px 0 0; padding: 4px 6px;
   background: none; border: 0; border-radius: var(--oc-radius-box);
-  font-family: var(--nebula-font-label); font-size: 11px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: .03em; color: var(--nebula-text-secondary);
   text-decoration: underline; text-underline-offset: 3px;
   cursor: pointer;
@@ -3042,7 +3042,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 
 .nb-auth .foot {
   margin: 18px 0 0;
-  font-family: var(--nebula-font-label); font-size: 9.5px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: .03em; line-height: 1.6;
   color: var(--nebula-text-tertiary);
 }
@@ -3108,7 +3108,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .wizard { --wiz-pad: 20px; max-width: 100%; padding-top: 22px; }
   /* on a phone .nb pays 16px top and 48px bottom */
   .nb-center .stage { min-height: calc(100vh - 64px); padding: 12px 0; }
-  .nb .steps-ind { gap: 14px; margin-bottom: 28px; font-size: 10px; }
+  .nb .steps-ind { gap: 14px; margin-bottom: 28px; font-size: 12px; }
   /* the fixed floor was there to stop the footer jumping between steps; on a
      phone it only manufactures dead space above a footer that is already at
      the bottom of a scrolling page */
@@ -3293,7 +3293,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb-auth .auth-facts {
   margin: 0; padding: 0; list-style: none;
   display: flex; flex-direction: column; gap: 11px;
-  font-family: var(--nebula-font-label); font-size: 11px;
+  font-family: var(--nebula-font-label); font-size: 12px;
   letter-spacing: .04em; line-height: 1.5;
   color: var(--nebula-text-tertiary);
 }
@@ -3342,7 +3342,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   gap: 10px 16px; margin-top: 12px;
 }
 .nb .plug-state {
-  font-family: var(--nebula-font-label); font-size: 10.5px; letter-spacing: .04em;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .04em;
   line-height: 1.5; color: var(--nebula-text-tertiary);
 }
 .nb .plug-state b { color: var(--nebula-text-primary); font-weight: 500; }
@@ -3357,7 +3357,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .alt-path summary {
   width: max-content; cursor: pointer; color: var(--nebula-text-secondary);
-  font-family: var(--nebula-font-label); font-size: 11px; letter-spacing: .05em;
+  font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .05em;
   min-height: 34px; display: flex; align-items: center;
 }
 .nb .alt-path summary:hover { color: var(--nebula-text-primary); }
