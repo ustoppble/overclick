@@ -167,11 +167,13 @@ describe("countCardsByStatus: by scope and role, never by period or filters", ()
       })
       .where(eq(user.id, world.adminUserId));
     const remembered = await readReviewScope(world.db as unknown as Database, world.workspaceId, adminP);
-    // Only the organization/project pair is read: a single project is the
-    // board's default selection, the facets are not part of the scope.
+    // Only the organization/project pair (and the person, everyone here) is
+    // read: a single project is the board's default selection, the facets
+    // are not part of the scope.
     expect(remembered).toEqual({
       ...scope(),
       projectIds: [world.projectId],
+      personUserId: null,
       label: { organization: null, project: "OverClick" },
     });
 
