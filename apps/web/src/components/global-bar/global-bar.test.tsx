@@ -52,7 +52,7 @@ describe("the global bar (navigation plan E1)", () => {
     expect(onBoard).toMatch(/href="\/home"[^>]*aria-current="page"/);
 
     const onUsage = render({ current: "usage" });
-    expect(onUsage).toMatch(/href="\/insights"[^>]*aria-current="page"/);
+    expect(onUsage).toMatch(/href="\/usage"[^>]*aria-current="page"/);
     expect(onUsage).not.toMatch(/href="\/home"[^>]*aria-current="page"/);
 
     expect(render({ current: "settings" })).not.toContain('aria-current="page"');
@@ -97,17 +97,17 @@ describe("the avatar menu", () => {
   });
 
   it("offers Configurações to the admin and not to the member", () => {
-    expect(menu("admin")).toContain('href="/settings"');
+    expect(menu("admin")).toContain('href="/settings/organizations-projects"');
     expect(menu("admin")).toContain("Configurações");
-    expect(menu("member")).not.toContain('href="/settings"');
+    expect(menu("member")).not.toContain('href="/settings/organizations-projects"');
     expect(menu("member")).not.toContain("Configurações");
   });
 
-  it("carries My agent, Organizations, the theme and the way out", () => {
+  it("carries My agent, the theme and the way out", () => {
     const html = menu("admin");
     expect(html).toContain("Meu agente");
-    expect(html).toContain('href="/settings?tab=tokens"');
-    expect(html).toContain('href="/organizations"');
+    expect(html).toContain('href="/account/agent"');
+    expect(html).not.toContain('href="/organizations"');
     expect(html).toContain("Tema");
     expect(html).toContain("Sair");
     expect(menu("member", "en")).toContain("My agent");

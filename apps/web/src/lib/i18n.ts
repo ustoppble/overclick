@@ -729,7 +729,7 @@ const en = {
     awaitingAdmin: "Awaiting the admin's validation",
     adminOnly: "Only an admin can validate a card.",
   },
-  /** Settings in groups, "+ Project" and "My agent" (E5). */
+  /**
    * Settings in groups, "+ Projeto" and "Meu agente" (E5). Its own block, so
    * the navigation work running beside it does not collide on the old ones.
    */
