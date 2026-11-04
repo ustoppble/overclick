@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import { SETTINGS_GROUP_REDIRECTS } from "./src/app/settings/groups";
 import { CARD_ROUTE_REWRITES } from "./src/lib/redirects";
+import { SECURITY_HEADERS } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   // Docker image serves this process. No standalone trace — monorepo-friendly.
@@ -8,6 +9,9 @@ const nextConfig: NextConfig = {
   // Hard rule: no external fonts, analytics, images, or phone-home.
   images: { unoptimized: true },
   poweredByHeader: false,
+  // The headers that are the same on every response. The Content-Security-Policy
+  // is not here: its nonce changes per request, so src/proxy.ts sets it.
+  headers: async () => [{ source: "/:path*", headers: [...SECURITY_HEADERS] }],
   // A card's address (/cards/OCL-12) is read by the board page (E3).
   rewrites: async () => CARD_ROUTE_REWRITES,
   // A Settings group with sections opens on its first one, as a real 307 so
