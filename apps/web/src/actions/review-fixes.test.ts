@@ -1,4 +1,4 @@
-import { invitation, mission, pairingCode, task, user, type Database } from "@agent-board/db";
+import { invitation, mission, pairingCode, task, user, workspace, type Database } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadBoardTasks } from "../lib/board-tasks";
@@ -272,6 +272,21 @@ describe("web review fixes: a member session reaches nothing of the admin's", ()
     sessionUserId = memberId;
     expect(await unvalidateTaskAction(memberCardId)).toEqual(refused);
     expect(await statusOf()).toBe("validado");
+  });
+
+  it("R3: the refusal speaks the workspace language (navigation plan E1)", async () => {
+    await invokeTool(world.db, member, "task_claim", { task_id: memberCardId, executor: { cli: "claude", model: "sonnet-5" } });
+    const del = await invokeTool(world.db, member, "task_deliver", {
+      task_id: memberCardId,
+      summary: "s",
+      usage: { segments: [{ model: "sonnet-5", input: 1, output: 1, cache_read: 0, cache_write: 0 }], duration_ms: 1, turns: 1 },
+    });
+    expect(del.ok).toBe(true);
+    await world.db.update(workspace).set({ language: "pt-BR" }).where(eq(workspace.id, world.workspaceId));
+    expect(await validateTaskAction(memberCardId, { override: true })).toEqual({
+      ok: false,
+      error: "Só o admin valida um card. O seu fica aguardando validação.",
+    });
   });
 
   it("A3/A4: the member's board card carries no mission or continuation of the admin's", async () => {

@@ -20,9 +20,9 @@ describe("mission progress bar (OCL-138)", () => {
     expect(html).toContain("50%");
     // colour alone never carries the meaning: the numbers are in the
     // accessible name too, not only in segment widths.
-    expect(html).toContain("3 open");
+    expect(html).toContain("3 queued");
     expect(html).toContain("2 in progress");
-    expect(html).toContain("4 done");
+    expect(html).toContain("4 to review");
     expect(html).toContain("1 validated");
   });
 
@@ -60,9 +60,9 @@ describe("mission progress bar (OCL-138)", () => {
       }),
     );
 
-    expect(html).toContain("3 abertos");
-    expect(html).toContain("2 fazendo");
-    expect(html).toContain("5 prontos");
+    expect(html).toContain("3 na fila");
+    expect(html).toContain("2 em execução");
+    expect(html).toContain("5 para revisar");
     expect(html).toContain("1 validado");
     expect(html).toContain("concluído");
   });

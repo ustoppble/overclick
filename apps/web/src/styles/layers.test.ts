@@ -25,6 +25,7 @@ const read = (path: string) => readFileSync(join(here, path), "utf8");
 
 const COMPONENT_SHEETS = {
   "styles/nebula.css": read("nebula.css"),
+  "styles/global-bar.css": read("global-bar.css"),
   "app/insights/insights.css": read("../app/insights/insights.css"),
   "app/settings/project-context.module.css": read(
     "../app/settings/project-context.module.css",
@@ -99,7 +100,10 @@ describe("the ladder is a ladder", () => {
 });
 
 describe("the bar carries its rung at every width", () => {
-  const css = stripComments(COMPONENT_SHEETS["styles/nebula.css"]);
+  // The board's bars live in nebula.css, the global bar in its own sheet.
+  const css = stripComments(
+    COMPONENT_SHEETS["styles/nebula.css"] + "\n" + COMPONENT_SHEETS["styles/global-bar.css"],
+  );
 
   /** The body of a top-level rule for `selector`, or null if it only exists
    *  inside a media query. */
@@ -135,7 +139,9 @@ describe("the bar carries its rung at every width", () => {
   );
 
   it("hangs its menu and its panels on the rungs above the board", () => {
-    for (const selector of [".nb .am-panel", ".nb .bt-popover"]) {
+    // The avatar menu hangs off the global bar (navigation plan E1), which
+    // itself sits on the menu rung so the board's chrome never covers it.
+    for (const selector of [".global-bar", ".gb-menu", ".nb .bt-popover"]) {
       const body = baseRule(selector);
       expect(body, selector).not.toBeNull();
       expect(body, selector).toMatch(/z-index:\s*var\(--oc-z-menu\)/);

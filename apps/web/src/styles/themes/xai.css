@@ -39,6 +39,11 @@
   --oc-warn-rgb: var(--oc-white-rgb);
   --oc-warn-2-rgb: var(--oc-white-rgb);
   --oc-warn-3-rgb: var(--oc-white-rgb);
+  /* ...except where something waits for you (navigation plan E1, variant A
+     "one colour only"): the review count, the To review counter and a run
+     with no signal. The Mesa amber #f2b54a at 70% saturation, the same rule
+     that made the green and the red above; 10.18:1 on the canvas. */
+  --oc-attention-rgb: 217 174 99;
   /* the atmosphere is off in this theme; these stay defined so no token of
      the contract is missing, and they compose to nothing visible */
   --oc-mist-rgb: var(--oc-white-rgb);
@@ -104,6 +109,7 @@
   --oc-warn: var(--oc-text-2);
   --oc-warn-pip: var(--oc-text-2);
   --oc-warn-deep: var(--oc-border-strong);
+  --oc-attention: #d9ae63;
 
   /* ---------- type badges die as colour, survive as words ---------- */
   --oc-tag-bug-fg: var(--oc-text-2);

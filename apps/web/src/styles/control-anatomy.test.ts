@@ -25,7 +25,14 @@ import {
  * property; responsive folds are a separate concern). That is enough for
  * this codebase, where every trigger selector is class-based.
  */
-const TRIGGER_CLASSES = ["am-trigger", "pf-trigger", "mf-trigger", "ff-trigger", "period-trigger"];
+const TRIGGER_CLASSES = ["gb-avatar", "gb-chip", "pf-trigger", "mf-trigger", "ff-trigger", "period-trigger"];
+
+/**
+ * The avatar is the one round trigger (navigation plan E1): it is a person,
+ * not a command, and the circle is what tells the two apart. It keeps the
+ * border and the 32px box of every other trigger; only the radius differs.
+ */
+const ROUND_TRIGGERS: Record<string, string> = { "gb-avatar": "50%" };
 
 const STATEFUL_PSEUDO = /:hover|:focus|:active|:disabled/;
 
@@ -103,6 +110,10 @@ describe("every bar trigger keeps the Control anatomy (ux-v2 §3)", () => {
 
     it(`.${cls} keeps the --oc-radius-control radius`, () => {
       const radius = resolveEffectiveValue(allRulesInSourceOrder, cls, "border-radius");
+      if (ROUND_TRIGGERS[cls]) {
+        expect(radius).toBe(ROUND_TRIGGERS[cls]);
+        return;
+      }
       // The shared anatomy rule hardcodes 8px today rather than the token;
       // both resolve to the same doctrinal value, so both pass.
       expect(["8px", "var(--oc-radius-control)"]).toContain(radius);
@@ -154,7 +165,48 @@ describe("the running total sits on the row's centre line (level 1)", () => {
   });
 });
 
-describe("the desktop bar is one line, and what does not fit steps aside instead of wrapping", () => {
+describe("the global bar is one line of places, state and the avatar (navigation plan E1)", () => {
+  const rulesOf = (selector: string, inside: boolean) =>
+    allRulesInSourceOrder
+      .map(({ rule }) => rule)
+      .filter((rule) => rule.insideAtRule === inside && splitSelectorList(rule.selector).includes(selector));
+  const has = (rules: CssRule[], prop: string, value: string) =>
+    rules.some((rule) =>
+      parseDeclarations(rule.body).some((d) => d.prop === prop && d.value.trim() === value),
+    );
+
+  it("is a 48px row that never wraps", () => {
+    const row = rulesOf(".global-bar .gb-row", false);
+    expect(has(row, "display", "flex")).toBe(true);
+    expect(has(row, "flex-wrap", "nowrap")).toBe(true);
+    expect(has(row, "height", "48px")).toBe(true);
+  });
+
+  it("never hides the review chip on the desktop; on the phone it moves to the bottom bar", () => {
+    const hides = allRulesInSourceOrder.filter(
+      ({ rule }) =>
+        splitSelectorList(rule.selector).some((s) => /\.gb-chip-review(?![-\w])/.test(s)) &&
+        parseDeclarations(rule.body).some((d) => d.prop === "display" && d.value.trim().startsWith("none")),
+    );
+    // Exactly one place may hide it: the phone, where the tab bar carries it.
+    expect(hides.length).toBe(1);
+    expect(hides[0]!.rule.insideAtRule).toBe(true);
+    expect(has(rulesOf(".gb-tabbar", true), "display", "grid")).toBe(true);
+    expect(has(rulesOf(".gb-tabbar", false), "display", "none")).toBe(true);
+  });
+
+  it("drops the running chip's word before anything else", () => {
+    expect(has(rulesOf(".global-bar .gb-chip-run .gb-lbl", true), "display", "none")).toBe(true);
+  });
+
+  it("leaves the old level 1 out of the board: no state chip, no account menu", () => {
+    const text = Object.values(COMPONENT_SHEETS).join("\n");
+    expect(text).not.toContain(".am-trigger");
+    expect(text).not.toContain(".account-menu");
+  });
+});
+
+describe("the filter line is one line, and what does not fit steps aside instead of wrapping", () => {
   const inAtRules = (selector: string) =>
     allRulesInSourceOrder
       .map(({ rule }) => rule)

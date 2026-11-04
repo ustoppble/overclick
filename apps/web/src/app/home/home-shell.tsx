@@ -2,8 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { logoutAction } from "../../actions/auth";
-import { Wordmark } from "../../components/wordmark";
+import { publishGlobalCounts } from "../../components/global-bar/counts-channel";
 import {
   boardTotalsAction,
   setBoardFilterAction,
@@ -50,7 +49,6 @@ import { MissionFilter } from "./mission-filter";
 import { OrganizationFilter } from "./organization-filter";
 import { ProjectFilter } from "./project-filter";
 import { ReleaseHeader } from "./release-header";
-import { ThemePicker } from "./theme-picker";
 
 export type BoardProjectOption = {
   id: string;
@@ -146,92 +144,6 @@ function BulkMissionBar({
   );
 }
 
-/**
- * The account and navigation menu (OCL-20): one button on the hard right of
- * the bar holding what is not a filter and not work state — Insights,
- * Settings and the way out. Under 1100px it also carries the running
- * work-state line, which level 1 folds into it (ux-v2 §3). The
- * dropdown closes on the same gesture as every other panel here: click away,
- * Escape.
- */
-function AccountMenu({
-  running,
-  t,
-}: {
-  running: number;
-  t: Dict;
-}) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(event: PointerEvent) {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
-  return (
-    <div className="account-menu" ref={root}>
-      <button
-        type="button"
-        className="am-trigger"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={t.board.accountMenu}
-        onClick={() => setOpen((current) => !current)}
-      >
-        {/* The button is named, so the three dots stay silent. */}
-        <Icon name="more" label={null} size={16} />
-      </button>
-      {open ? (
-        <div className="am-panel nebula-glass" role="menu" aria-label={t.board.accountMenu}>
-          {/* The running state leaves level 1 only at the 1100px step. The
-              telemetry stat never leaves level 1. */}
-          <a className="am-opt am-state" role="menuitem" href="#board-col-em_execucao">
-            <span className={`dot${running === 0 ? " idle" : ""}`} />
-            <span className="sc-label">
-              {running > 0 ? t.board.running(running) : t.board.noAgentRunning}
-            </span>
-          </a>
-          {/* Where the businesses are read one by one, next to the two other
-              places this menu navigates to. */}
-          <a className="am-opt" role="menuitem" href="/organizations">
-            <Icon name="roles" label={null} size={14} />
-            {t.board.organizations}
-          </a>
-          <a className="am-opt" role="menuitem" href="/insights">
-            <Icon name="insights" label={null} size={14} />
-            Insights
-          </a>
-          <a className="am-opt" role="menuitem" href="/settings">
-            <Icon name="settings" label={null} size={14} />
-            {t.board.settings}
-          </a>
-          {/* The skin the board wears: under the two places this menu
-              navigates to, above the way out (OCL-56). */}
-          <ThemePicker t={t} />
-          <form action={logoutAction}>
-            <button className="am-opt" role="menuitem" type="submit">
-              <Icon name="logout" label={null} size={14} />
-              {t.board.logout}
-            </button>
-          </form>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function HomeShell({
   lang,
   organizations,
@@ -244,6 +156,7 @@ export function HomeShell({
   openCardId,
   windowSince,
   boardSignature,
+  viewerRole,
 }: {
   lang: string;
   organizations: BoardOrganizationOption[];
@@ -260,6 +173,8 @@ export function HomeShell({
   windowSince: string | null;
   /** The board's fingerprint when the page was built; the poll compares against it. */
   boardSignature: string;
+  /** Who is looking: Validate and the amber are the admin's (navigation plan E1). */
+  viewerRole: "admin" | "member";
 }) {
   const router = useRouter();
   const t = dict(lang);
@@ -382,7 +297,6 @@ export function HomeShell({
     () => new Set(visible.map((card) => card.projectId)).size > 1,
     [visible],
   );
-  const running = visible.filter((card) => card.status === "em_execucao").length;
   const selectedMission =
     filter.missionId && filter.missionId !== NO_MISSION
       ? missions.find((item) => item.id === filter.missionId) ?? null
@@ -421,7 +335,16 @@ export function HomeShell({
       subscribeToBoardRefresh({
         refresh: () => startRefresh(() => router.refresh()),
         isBusy: () => refreshingRef.current,
-        signature: boardSignatureAction,
+        // The answer carries the global bar's two numbers too: hand them
+        // over and give the poll the fingerprint it compares.
+        signature: async () => {
+          const answer = await boardSignatureAction();
+          if (answer && "signature" in answer) {
+            publishGlobalCounts(answer.counts);
+            return answer.signature;
+          }
+          return answer;
+        },
         held: () => signatureRef.current,
       }),
     [router],
@@ -506,28 +429,18 @@ export function HomeShell({
 
   return (
     <>
-      {/* OCL-35 (ux-v2 §3): two groups, identity and state (level 1) and
-          filtering (level 2). On the desktop they lay out as ONE line: the
-          wordmark, the filters, then state, cost and the menu on the right,
-          and what does not fit steps aside in order instead of wrapping
-          (nebula.css, "one line"). On the phone they stay two compact rows
-          and the filters live behind the Filtros button. */}
+      {/* Navigation plan E1: identity, places, work state and the account
+          moved up to the global bar (the route's layout). What stays here is
+          the board's filter line, still ONE line on the desktop with what
+          does not fit stepping aside in order (nebula.css, "one line"), and
+          the cost at its far end, as in A-board-1440. On the phone the
+          filters live behind the Filtros button. */}
       <header className="topbar-wrap">
         <div className="topbar topbar-l1">
-          <Wordmark label={t.board.homeLink} current />
           <div className="spacer" />
-          {/* Running state stays visible: it is not navigation, it is what the
-              board is doing. Under 1100px it folds into the account menu. */}
-          <a className="state-chip agent-status" href="#board-col-em_execucao">
-            <span className={`dot${running === 0 ? " idle" : ""}`} />
-            <span className="sc-label">
-              {running > 0 ? t.board.running(running) : t.board.noAgentRunning}
-            </span>
-          </a>
           {/* The figure that justifies the board stays readable at a glance;
               the reading of it moved into the popover it opens. */}
           <BoardTotal totals={totals} filter={filter} t={t} />
-          <AccountMenu running={running} t={t} />
         </div>
         <div className="topbar-l2">
           {/* On the desktop the wrapper is transparent to the level, the
@@ -744,6 +657,7 @@ export function HomeShell({
         onMissionSelect={(missionId) => apply({ ...filter, missionId })}
         initialOpen={openCard}
         detailVersion={boardSignature}
+        viewerRole={viewerRole}
       />
 
       {picking ? (

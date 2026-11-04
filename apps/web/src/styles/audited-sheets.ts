@@ -14,6 +14,9 @@ const read = (path: string) => readFileSync(join(here, path), "utf8");
  */
 export const COMPONENT_SHEETS: Record<string, string> = {
   "styles/nebula.css": read("nebula.css"),
+  // Navigation plan E1: the global bar, the status mark, the review list and
+  // the attention amber's closed list, in a sheet of their own.
+  "styles/global-bar.css": read("global-bar.css"),
   "app/insights/insights.css": read("../app/insights/insights.css"),
   "app/settings/project-context.module.css": read(
     "../app/settings/project-context.module.css",

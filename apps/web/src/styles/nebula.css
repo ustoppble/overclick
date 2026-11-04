@@ -340,7 +340,7 @@
 .nb .d-sec .lbl-name { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
 
 /* the way out, and the phone's menu: a glyph centred in its own circle */
-.nb .d-close, .nb .filters-btn, .nb .am-trigger { display: inline-flex; align-items: center; justify-content: center; }
+.nb .d-close, .nb .filters-btn { display: inline-flex; align-items: center; justify-content: center; }
 
 /* the copy chips: mark, then the word for what is being copied */
 .nb .d-copy { display: inline-flex; align-items: center; gap: 6px; }
@@ -815,19 +815,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .spacer { flex: 1; }
 /* o globals.css legado estiliza <form> como painel — na home ele é inline */
 .nb form { display: inline; background: none; border: none; padding: 0; gap: 0; }
-.nb .agent-status {
-  display: flex; align-items: center; gap: var(--nebula-space-2);
-  font-family: var(--nebula-font-label); font-size: 11px;
-  letter-spacing: 0.05em; color: var(--nebula-text-secondary);
-}
-/* One dot, wherever the running state is shown: on the chip in level 1 and
-   on its line inside the account menu. Flat, no halo —
-   ux-v2 §1 retires the glow, which was the only thing on the bar drawing a
-   coloured light around itself. */
-.nb .agent-status .dot, .nb .am-state .dot {
-  width: 7px; height: 7px; border-radius: var(--oc-radius-circle); background: var(--oc-ok);
-}
-.nb .agent-status .dot.idle, .nb .am-state .dot.idle { background: var(--nebula-star-far); }
 .nb .btn-ghost {
   background: var(--nebula-btn-account-bg); color: var(--nebula-text-secondary);
   border: 1px solid var(--nebula-glass-border);
@@ -839,100 +826,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .btn-ghost:hover { color: var(--nebula-text-primary); border-color: var(--oc-border-hover); }
 .nb .btn-ghost .badge { color: var(--oc-badge-fg); font-weight: 600; }
-
-/* ---------- the running-state chip (OCL-20) ----------
-   Running is not navigation: it is what the board is doing, so it stays on
-   the bar at every width. It jumps to the column it counts. */
-.nb .state-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--nebula-font-label); font-size: 11px; letter-spacing: 0.05em;
-  color: var(--nebula-text-secondary); text-decoration: none; cursor: pointer;
-  border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill);
-  padding: 5px 10px; background: var(--oc-surface-subtle);
-  white-space: nowrap;
-  transition: color 0.3s var(--nebula-ease-atmosphere), border-color 0.3s var(--nebula-ease-atmosphere);
-}
-.nb .state-chip:hover { color: var(--nebula-text-primary); border-color: var(--oc-border-hover); }
-
-/* ---------- the account menu (OCL-20) ----------
-   One button on the hard right of the bar for everything that is not a
-   filter and not work state: navigation and the way out. The panel hangs
-   off the button and closes on the gesture every other panel here uses. */
-.nb .account-menu { position: relative; display: inline-flex; }
-.nb .am-trigger {
-  appearance: none; background: var(--nebula-btn-account-bg); color: var(--nebula-text-secondary);
-  border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill);
-  padding: 6px 11px; cursor: pointer;
-  -webkit-backdrop-filter: blur(var(--nebula-btn-account-blur));
-  backdrop-filter: blur(var(--nebula-btn-account-blur));
-  transition: color 0.3s var(--nebula-ease-atmosphere), border-color 0.3s var(--nebula-ease-atmosphere);
-}
-.nb .am-trigger:hover { color: var(--nebula-text-primary); border-color: var(--oc-border-hover); }
-.nb .am-panel {
-  position: absolute; z-index: var(--oc-z-menu); top: calc(100% + 8px); right: 0;
-  min-width: 200px; max-width: min(300px, calc(100vw - 32px));
-  padding: 8px; background: var(--oc-panel-bg);
-  display: flex; flex-direction: column; gap: 2px;
-}
-.nb .am-panel form { display: block; }
-.nb .am-opt {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 7px 10px; border: 0; border-radius: var(--oc-radius-control); background: transparent;
-  color: var(--nebula-text-secondary); font-family: var(--nebula-font-label);
-  font-size: 11.5px; letter-spacing: 0.04em; text-align: left; cursor: pointer;
-  text-decoration: none;
-}
-.nb .am-opt:hover { background: var(--oc-surface-hover); color: var(--nebula-text-primary); }
-/* Under 1100px the running state leaves level 1 and lives here beside the
-   navigation entries. The entry remains separated from navigation by the
-   same rule the panel already uses. */
-.nb .am-state { display: none; }
-.nb .am-state .sc-label { flex: 1; min-width: 0; }
-.nb .am-state .dot { flex: none; }
-
-/* ---------- the theme selector (OCL-56) ----------
-   Three answers, so they sit side by side under one label instead of behind
-   a second menu. The row follows the menu's own anatomy: the option is the
-   same 8px-radius control every trigger on this board is, and the chosen
-   one is marked the way a chosen filter is marked — border and text, never
-   a colour of its own. */
-.nb .am-theme {
-  display: flex; flex-direction: column; gap: 8px;
-  margin-top: 4px; padding: 8px;
-  border-top: 1px solid var(--nebula-glass-border);
-}
-.nb .am-theme-lbl {
-  color: var(--nebula-text-tertiary); font-family: var(--nebula-font-sans);
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-}
-/* Three siblings form one group: equal columns, never an orphan stretched on
-   a second line. Each option follows the Control anatomy (32px, 8px radius,
-   13px UI face) so the picker reads as part of the same control family. */
-.nb .am-theme-opts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
-@media (pointer: coarse) {
-  .nb .am-theme-opts { gap: var(--oc-space-2); }
-}
-.nb .am-theme-opt {
-  display: flex; align-items: center; justify-content: center;
-  min-height: 32px; padding: 0 8px;
-  border: 1px solid var(--nebula-glass-border);
-  border-radius: var(--oc-radius-control);
-  background: transparent; color: var(--nebula-text-secondary);
-  font-family: var(--nebula-font-sans); font-size: 13px; font-weight: 500;
-  letter-spacing: 0; text-align: center; cursor: pointer;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  transition: color var(--oc-duration-micro) var(--nebula-ease-atmosphere),
-    border-color var(--oc-duration-micro) var(--nebula-ease-atmosphere);
-}
-.nb .am-theme-opt:hover {
-  color: var(--nebula-text-primary); border-color: var(--oc-border-hover);
-  background: var(--oc-surface-hover);
-}
-.nb .am-theme-opt.on {
-  color: var(--nebula-text-primary); border-color: var(--oc-border-strong);
-  background: var(--oc-surface-hover);
-}
-.nb .am-theme-opt:focus-visible { outline: none; box-shadow: var(--nebula-focus-ring-offset); }
 
 /* ---------- the one-line rule on the bar (AGB-71) ----------
    The rule the phone block already stated, now stated where it always
@@ -958,8 +851,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .topbar > *, .nb .topbar-l2 > *, .nb .topbar-more > * { flex: none; }
 .nb .topbar .spacer { flex: 1 1 0; min-width: 0; }
 .nb .logo,
-.nb .btn-ghost,
-.nb .agent-status { white-space: nowrap; }
+.nb .btn-ghost { white-space: nowrap; }
 /* a crumb is one line at every width, on the board and on the four screens
    that borrowed the bar; what does not fit is cut with an ellipsis */
 .nb .crumb {
@@ -1001,8 +893,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    to save itself one line is how a parallel round produces a conflict. When
    34 lands, this is one alias to retire. */
 .nb .topbar-l1, .nb .topbar-l2 { --control-hover-bg: var(--oc-surface-hover); }
-.nb .topbar-l1 .state-chip,
-.nb .topbar-l1 .am-trigger,
 .nb .topbar-l2 .pf-trigger,
 .nb .topbar-l2 .mf-trigger,
 .nb .topbar-l2 .period-trigger,
@@ -1022,8 +912,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
     background-color 0.2s var(--nebula-ease-atmosphere);
 }
 .nb .topbar-l2 .btn-ghost { display: inline-flex; }
-.nb .topbar-l1 .state-chip:hover,
-.nb .topbar-l1 .am-trigger:hover,
 .nb .topbar-l2 .pf-trigger:hover,
 .nb .topbar-l2 .mf-trigger:hover,
 .nb .topbar-l2 .period-trigger:hover,
@@ -1040,8 +928,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    being; without it the ring on "limpar"/"Mover para missão" is a capsule
    drawn around a square. The stat is in this list too: it is a button, and
    it was the one control on the bar a keyboard could reach silently. */
-.nb .topbar-l1 .state-chip:focus-visible,
-.nb .topbar-l1 .am-trigger:focus-visible,
 .nb .topbar-l1 .board-total:focus-visible,
 .nb .topbar-l2 .pf-trigger:focus-visible,
 .nb .topbar-l2 .mf-trigger:focus-visible,
@@ -2582,20 +2468,6 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .board-total .bt-sub { display: none; }
 }
 
-/* OCL-35 (ux-v2 §3): the running-state chip folds into the account menu
-   once the one-line bar runs short (under 1440px). The telemetry stat never
-   leaves the bar. */
-@media (max-width: 1439px) {
-  .nb .topbar-l1 .state-chip { display: none; }
-  .nb .am-state { display: flex; }
-  /* The state entry and navigation stay visibly separate. */
-  .nb .am-state + :not(.am-state) {
-    margin-top: 4px; padding-top: 6px;
-    border-top: 1px solid var(--nebula-glass-border);
-  }
-}
-
-
 /* ---------- one line (the owner, 2026-11-03: "esse menu em 2 linhas me
    incomoda muito") ----------
    On the desktop the two groups lay out as one line: the wordmark, the
@@ -3044,13 +2916,11 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .topbar-l2 > .filters-btn {
     order: 2; display: inline-flex; margin-right: auto;
   }
-  .nb .topbar-l1 > .state-chip { order: 3; }
   .nb .topbar-l1 > .board-total-wrap { order: 4; }
   /* on the one-row bar the figure sits straight between Filtros and the
      menu: the rule that set it off on the desktop has nothing to separate */
   .nb .topbar-wrap .board-total { padding: 0 2px; }
   .nb .topbar-wrap .board-total::before { display: none; }
-  .nb .topbar-l1 > .account-menu { order: 5; }
   /* closed it is display:none; open it is the panel, and it hangs off the
      wrap now that the level it used to hang off has no box of its own */
   .nb .topbar-l2 > .topbar-more { order: 6; }

@@ -97,6 +97,8 @@
   --oc-warn-rgb: 250 204 21;
   --oc-warn-2-rgb: 234 179 8;
   --oc-warn-3-rgb: 234 179 8;
+  /* navigation plan E1: what waits for you wears this theme's own warn */
+  --oc-attention-rgb: 250 204 21;
   --oc-mist-rgb: 107 114 128;
   --oc-mist-deep-rgb: 75 85 99;
   --oc-haze-rgb: 239 68 68;
@@ -157,6 +159,7 @@
   --oc-warn: #facc15;
   --oc-warn-pip: #eab308;
   --oc-warn-deep: #eab308;
+  --oc-attention: #facc15;
 
   /* ---------- type badges, from the app's agent spectrum ---------- */
   --oc-tag-bug-fg: var(--oc-danger);
