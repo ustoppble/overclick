@@ -250,6 +250,9 @@
    Whose cards the board shows, right after the scope: the same trigger and
    the same panel, one pick at a time (a round box). Picked, it reads as on —
    neutral, not amber: a filter is not something waiting for the person. */
+/* the first to give way when the row runs short: its name truncates (the
+   title keeps it) before the places are pushed into the search */
+.global-bar .gb-person-wrap { flex: 0 1000 auto; }
 .global-bar .gb-person { min-width: 0; max-width: 200px; }
 .global-bar .gb-person.on { background: var(--oc-surface-on); }
 .global-bar .gb-person-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -458,6 +461,9 @@
   .global-bar .gb-person .gb-person-name,
   .global-bar .gb-person .nb-icon:last-child { display: none; }
   .global-bar .gb-person { min-width: 32px; padding: 0 var(--oc-space-2); }
+  .global-bar .gb-person-wrap { flex: none; }
+  /* with the person beside it, the scope truncates its name (title keeps it) */
+  .global-bar .gb-scope { min-width: 48px; }
   .gb-tabbar {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
