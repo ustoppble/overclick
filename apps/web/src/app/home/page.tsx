@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { permanentRedirect } from "next/navigation";
+import { permanentRedirect, redirect } from "next/navigation";
 import { project } from "@agent-board/db";
 import { resolveCardRoute } from "../../lib/card-route";
 import { getSession } from "../../lib/cookies";
@@ -18,6 +18,9 @@ export const dynamic = "force-dynamic";
  * A link to a card whose id has since changed (it moved project) goes straight
  * to the card's current address, not to the old one and then on (E3 review):
  * the card is looked up here, through the reader's scope, before the redirect.
+ * That hop reads today's data — the card may move again, and another reader
+ * may not see it — so it is temporary (307) and never cached by the browser
+ * (E4 review h-ipv, item 3). Only the static mapping is permanent.
  */
 export default async function OldHomePage({
   searchParams,
@@ -28,7 +31,7 @@ export default async function OldHomePage({
   const card = homeCardAsked(query);
   if (card) {
     const moved = await currentCardAddress(card);
-    if (moved) permanentRedirect(withQuery(moved, query, ["card"]));
+    if (moved) redirect(withQuery(moved, query, ["card"]));
   }
   permanentRedirect(homeDestination(query));
 }

@@ -4,6 +4,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { project, workspace } from "@agent-board/db";
 import type { BoardCard, BoardCardDetail } from "../app/board/board";
 import { toBoardCardDetail, toBoardCards } from "../lib/board-card";
+import { scopeOverrideFromSearch } from "../lib/board-filter";
 import { loadBoardSignature } from "../lib/board-signature";
 import { loadGlobalCounts, type GlobalCounts } from "../lib/global-counts";
 import { boardSignatureLimiter } from "../lib/board-signature-guard";
@@ -147,7 +148,7 @@ export async function searchBoardCardsAction(
  * counted by scope and role, so the bar's chips move with the board's poll
  * instead of polling a second time.
  */
-export async function boardSignatureAction(): Promise<
+export async function boardSignatureAction(search?: string): Promise<
   { signature: string; counts: GlobalCounts } | { limited: true } | null
 > {
   const session = await getSession();
@@ -166,7 +167,15 @@ export async function boardSignatureAction(): Promise<
         reader.projects.map((item) => item.id),
         reader.principal,
       ),
-      loadGlobalCounts(db(), reader.ws.id, reader.principal, { projects: reader.projects }),
+      // The bar's numbers in the scope the board's address carries (E4
+      // review, item 1); the signature itself covers every visible project.
+      loadGlobalCounts(
+        db(),
+        reader.ws.id,
+        reader.principal,
+        { projects: reader.projects },
+        typeof search === "string" ? scopeOverrideFromSearch(search) : undefined,
+      ),
     ]);
     return { signature, counts };
   } finally {

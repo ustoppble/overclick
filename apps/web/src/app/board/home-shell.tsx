@@ -9,7 +9,7 @@ import {
 } from "../../components/global-bar/search-channel";
 import {
   boardTotalsAction,
-  setBoardFilterAction,
+  setBoardPeriodAction,
 } from "../../actions/board-filter";
 import {
   boardSignatureAction,
@@ -20,6 +20,7 @@ import {
   TASK_PRIORITIES,
   TASK_TYPES,
   activeFilterCount,
+  boardPeriodToRemember,
   clearBoardFilter,
   DEFAULT_BOARD_PERIOD,
   DEFAULT_BOARD_PERIOD_FIELD,
@@ -285,7 +286,9 @@ export function HomeShell({
         // The answer carries the global bar's two numbers too: hand them
         // over and give the poll the fingerprint it compares.
         signature: async () => {
-          const answer = await boardSignatureAction();
+          // The page's query rides along: the bar's numbers follow the
+          // scope the address carries (E4 review, item 1).
+          const answer = await boardSignatureAction(window.location.search);
           if (answer && "signature" in answer) {
             publishGlobalCounts(answer.counts);
             return answer.signature;
@@ -326,9 +329,11 @@ export function HomeShell({
   }, [debouncedSearchQuery]);
 
   function apply(next: BoardFilter) {
-    // Only the scope and the period are remembered (F2); the rest lives in
-    // the address, written here.
-    const saved = setBoardFilterAction(next);
+    // Only the scope and the period are remembered (F2), and the scope is the
+    // global bar's to write: this line remembers the period when it changes,
+    // nothing else (E4 review, item 5). The rest lives in the address.
+    const remember = boardPeriodToRemember(filter, next);
+    const saved = remember ? setBoardPeriodAction(remember) : Promise.resolve(null);
     setFilter(next);
     writeAddress(next, searchQuery);
     if (

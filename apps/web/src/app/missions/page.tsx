@@ -74,7 +74,7 @@ export default async function MissionsPage({
   );
   const [missions, usage] = await Promise.all([
     loadMissionList(db(), ws.id, principal, scope),
-    loadMissionUsage(db(), ws.id, ws.pricingEnabled, prices, principal),
+    loadMissionUsage(db(), ws.id, ws.pricingEnabled, prices, principal, scope),
   ]);
   const active = missions.filter((item) => item.status !== "concluida");
   const done = missions.filter((item) => item.status === "concluida");

@@ -10,7 +10,12 @@ import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 import { runRecord } from "./board-card";
 import { loadMissionBoardTasks, type BoardTaskRow } from "./board-tasks";
 import { toBoardTotals, type BoardTotals } from "./board-totals";
-import { computeInsights, loadInsightAttemptRows, loadMissionAttemptRows } from "./insights";
+import {
+  computeInsights,
+  filterMissionAttempts,
+  loadInsightAttemptRows,
+  loadMissionAttemptRows,
+} from "./insights";
 import { missionScope, projectScope, taskScope, type MaybePrincipal } from "./scope";
 
 export type MissionStatusTotals = {
@@ -249,11 +254,29 @@ export async function loadMissionUsage(
   pricingEnabled: boolean,
   prices: readonly ModelPrice[],
   principal: MaybePrincipal,
+  /**
+   * The scope of the global bar (E4 review h-ipv, item 2): the list counts a
+   * mission's cards in these projects, so its usage reads the same ones.
+   * Empty is every organization or every project.
+   */
+  scope: { organizationIds: string[]; projectIds: string[] } = { organizationIds: [], projectIds: [] },
 ): Promise<Map<string, BoardTotals>> {
-  const [rows, missionAttemptRows] = await Promise.all([
+  const [allRows, allMissionAttemptRows] = await Promise.all([
     loadInsightAttemptRows(database, workspaceId, principal),
     loadMissionAttemptRows(database, workspaceId, principal),
   ]);
+  const rows = allRows.filter(
+    (row) =>
+      (scope.organizationIds.length === 0 || scope.organizationIds.includes(row.organizationId)) &&
+      (scope.projectIds.length === 0 || scope.projectIds.includes(row.projectId)),
+  );
+  // Orchestration follows the rule Usage applies to it: under a project scope
+  // only the mission work that ran against one of those projects counts.
+  const missionAttemptRows = filterMissionAttempts(allMissionAttemptRows, {
+    organizationIds: scope.organizationIds,
+    projectIds: scope.projectIds,
+    missionId: null,
+  });
   const insights = computeInsights(rows, [], prices, missionAttemptRows);
   return new Map(
     // Card attempts and mission attempts together, as the board's total adds them.

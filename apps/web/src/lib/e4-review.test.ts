@@ -112,8 +112,9 @@ describe("1 · the address's scope reaches the chips, the review list and the po
     const scope = await readReviewScope(database(), world.workspaceId, memberP, undefined, {
       projects: unknown,
     });
+    // An id the reader cannot see resolves like no pick at all.
     expect(scope.projectIds).not.toContain(unknown);
-    expect(scope.projectIds).toEqual(remembered.projectIds.length === 0 ? [] : scope.projectIds);
+    expect(scope.projectIds).toEqual(remembered.projectIds);
   });
 });
 

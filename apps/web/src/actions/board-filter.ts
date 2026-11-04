@@ -10,6 +10,8 @@ import {
   isBoardPeriod,
   isBoardPeriodField,
   type BoardFilter,
+  type BoardPeriod,
+  type BoardPeriodField,
 } from "../lib/board-filter";
 import { EMPTY_BOARD_TOTALS, type BoardTotals } from "../lib/board-totals";
 import { loadBoardTotals } from "../lib/board-totals-query";
@@ -92,6 +94,29 @@ export async function setBoardFilterAction(
     })
     .where(eq(user.id, who.userId));
 
+  return { ok: true };
+}
+
+/**
+ * The period the board's filter line picked (E4 review h-ipv, item 5): only
+ * the period and its date are written. The line never writes the scope — the
+ * global bar does, with setBoardScopeAction — so a link's scope is not made
+ * the reader's own by a click on a type, a priority or a mission.
+ */
+export async function setBoardPeriodAction(input: {
+  period: BoardPeriod;
+  periodBy: BoardPeriodField;
+}): Promise<ActionResult> {
+  const who = await reader();
+  if (!who) return { ok: false, error: "Not signed in." };
+  if (!isBoardPeriod(input?.period)) return { ok: false, error: "Period not found." };
+  if (!isBoardPeriodField(input?.periodBy)) {
+    return { ok: false, error: "Period date not found." };
+  }
+  await db()
+    .update(user)
+    .set({ boardPeriod: input.period, boardPeriodBy: input.periodBy })
+    .where(eq(user.id, who.userId));
   return { ok: true };
 }
 
