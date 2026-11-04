@@ -1,3 +1,4 @@
+import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
 import { createHmac, hkdfSync } from "node:crypto";
 import { signupCode } from "@agent-board/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -38,7 +39,7 @@ describe("signup codes", () => {
   const SCOPE = setupScope(EMAIL);
 
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     world = await createTestWorld();
   });
 
@@ -53,7 +54,7 @@ describe("signup codes", () => {
 
     const [row] = await world.db.select().from(signupCode);
     expect(row?.codeHash).not.toContain(issued!.code);
-    const key = Buffer.from(hkdfSync("sha256", "s".repeat(32), "", "login-code", 32));
+    const key = Buffer.from(hkdfSync("sha256", TEST_AUTH_SECRET, "", "login-code", 32));
     expect(row?.codeHash).toBe(
       createHmac("sha256", key)
         .update(`ovk-signup-code:${SCOPE}:${EMAIL}:${issued!.code}`, "utf8")

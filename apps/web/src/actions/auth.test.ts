@@ -1,3 +1,4 @@
+import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
 import { user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -50,7 +51,7 @@ describe("signing in takes a code, never a password", () => {
   let offCode = "";
 
   beforeAll(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     world = await createTestWorld();
     await world.db.insert(user).values([
       { email: "active@local.test" },
