@@ -79,7 +79,7 @@
   /* ---------- text ---------- */
   --oc-text-1: #f7f7f8;
   --oc-text-2: rgb(var(--oc-white-rgb) / 0.64);
-  --oc-text-3: rgb(var(--oc-white-rgb) / 0.42);
+  --oc-text-3: rgb(var(--oc-white-rgb) / 0.5);
   --oc-text-glow: transparent;
   --oc-icon: var(--oc-text-3);
 

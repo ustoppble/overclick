@@ -1577,9 +1577,13 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 /* em execução: cantos vivos + borda com a cor de execução, bem de leve */
 .nb .card.exec { border-color: rgb(var(--oc-info-rgb) / 0.16); }
 .nb .card.exec:hover { border-color: rgb(var(--oc-info-rgb) / 0.34); }
-/* validado: apaga com calma, volta quase inteiro no hover */
-.nb .card.dim { opacity: 0.6; box-shadow: var(--nebula-glass-highlight); }
-.nb .card.dim:hover { opacity: 0.95; }
+/* validado: quieter by ink, never by fade (E0, A3). Opacity multiplied text
+   that was already translucent down to 2.2:1; the archive steps one rung down
+   the ink ladder instead, the title to text-2 and the meta to text-3. */
+.nb .card.dim { box-shadow: var(--nebula-glass-highlight); }
+.nb .card.dim h4 { color: var(--nebula-text-secondary); }
+.nb .card.dim .cid-prefix,
+.nb .card.dim .meta-harness { color: var(--nebula-text-tertiary); }
 
 /* ---------- focus, one ring for the board and its panel (AGB-68) ----------
    The card and the row are the board's own controls, so they answer the
@@ -2285,12 +2289,16 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .policy th:nth-child(3) { width: 39%; }
 .nb .policy th:nth-child(4) { width: 9%; }
 .nb .policy th:nth-child(5) { width: 11%; }
-/* the price table is one name and three numbers, so it splits differently */
+/* the price table is a name, four numbers and an origin, so it splits
+   differently. Every column needs its share: under fixed layout a column with
+   none gets what is left of 100%, which was nothing, and the origin broke one
+   letter per line (E0, A4). */
 .nb .policy.prices th:nth-child(1) { width: 28%; }
 .nb .policy.prices th:nth-child(2),
 .nb .policy.prices th:nth-child(3),
-.nb .policy.prices th:nth-child(4) { width: 15%; }
-.nb .policy.prices th:nth-child(5) { width: 27%; }
+.nb .policy.prices th:nth-child(4),
+.nb .policy.prices th:nth-child(5) { width: 14%; }
+.nb .policy.prices th:nth-child(6) { width: 16%; }
 .nb .policy th {
   font-family: var(--nebula-font-label); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
   color: var(--nebula-text-tertiary); text-align: left; padding: 0 10px 8px 0; font-weight: 400;
@@ -2381,8 +2389,9 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   /* a control under a thumb, not a control for a mouse */
   .nb .policy .sel { min-height: 40px; }
   .nb .policy td .input { max-width: none; min-height: 40px; }
-  /* a name, three numbers and an origin: the numbers share one line of the block */
-  .nb .policy.prices tr { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* a name, four numbers and an origin: the numbers pair up, two lines of two,
+     instead of three on a line and the fourth alone under them */
+  .nb .policy.prices tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nb .policy.prices td.act, .nb .policy.prices td.who { grid-column: 1 / -1; }
 }
 
@@ -2938,7 +2947,10 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .ml-row { border-bottom-color: rgb(var(--oc-white-rgb) / 0.08); }
   .nb .ml-row:nth-child(odd) { background: rgb(var(--oc-white-rgb) / 0.028); }
   .nb .ml-row:active { background: rgb(var(--oc-white-rgb) / 0.07); }
-  .nb .ml-row.dim { opacity: 0.55; }
+  /* validated: the same ink step as the card, no fade (E0, A3) */
+  .nb .ml-row.dim .ml-title { color: var(--nebula-text-secondary); }
+  .nb .ml-row.dim .cid-prefix,
+  .nb .ml-row.dim .ml-num { color: var(--nebula-text-tertiary); }
   /* running: the pulse becomes an edge, which costs no width at all */
   .nb .ml-row.exec { box-shadow: inset 2px 0 0 var(--oc-info); }
   .nb .ml-row.picked { background: rgb(var(--oc-info-rgb) / 0.10); }
