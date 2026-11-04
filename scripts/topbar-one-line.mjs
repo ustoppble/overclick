@@ -380,8 +380,9 @@ function fallOrderBreak(state) {
   if (!state.scope) return "the scope left the bar";
   if (!state.field && !state.icon) return "the search left the bar, field and icon both";
   if (state.field && state.icon) return "the search shows as a field and an icon at once";
-  if (state.runLabel && !state.field) return "the running word stayed after the search turned into its icon";
-  if (state.placeNames && !state.runLabel) return "the place names stayed after the running word went";
+  // A step may be gone only once every step before it is gone.
+  if (!state.runLabel && state.field) return "the running word went while the search was still a field";
+  if (!state.placeNames && state.runLabel) return "the place names went while the running word stayed";
   return null;
 }
 

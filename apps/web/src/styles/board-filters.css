@@ -76,6 +76,7 @@
   align-items: center;
   gap: var(--oc-space-2);
   padding: var(--oc-space-3) 0 0;
+  margin-bottom: var(--oc-space-3);
   font: 500 12px/16px var(--oc-font-ui);
   color: var(--oc-text-2);
 }
@@ -137,4 +138,14 @@
   .nb .topbar-more.open .period-filter,
   .nb .topbar-more.open .facet-filters { grid-column: 1 / -1; }
   .nb .filter-chips { padding-top: var(--oc-space-2); }
+  /* the phrase is the long one on a narrow sheet: it truncates, its whole
+     reading stays on the trigger's title */
+  .nb .topbar-more.open .period-trigger { min-width: 0; }
+  .nb .topbar-more.open .period-trigger .period-long {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }

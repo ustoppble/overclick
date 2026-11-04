@@ -139,6 +139,12 @@ describe("the scope and the search in the global bar (navigation plan E4)", () =
     ).toContain("Todas as organizações");
   });
 
+  it("names the organization a remembered project belongs to, even under all organizations", () => {
+    const html = render({ scope: { ...base.scope, remembered: { organizationIds: [], projectIds: ["p3"] } } });
+    expect(html).toContain("Sydra");
+    expect(html).not.toContain("Todas as organizações");
+  });
+
   it("shows the name as fixed text when there is nothing to choose: one organization, one project (F17)", () => {
     const html = render({
       scope: {

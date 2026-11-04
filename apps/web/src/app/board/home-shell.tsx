@@ -325,7 +325,7 @@ export function HomeShell({
   function writeAddress(next: BoardFilter, words: string) {
     if (window.location.pathname !== "/board") return;
     const query = boardAddressQuery(next, words, window.location.search);
-    window.history.replaceState(window.history.state, "", query ? `/board?${query}` : "/board");
+    window.history.replaceState(null, "", query ? `/board?${query}` : "/board");
   }
   const wroteWords = useRef(initialQuery);
   useEffect(() => {

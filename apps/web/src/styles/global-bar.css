@@ -250,8 +250,10 @@
    A field on the widest bars; under 1280 it is the first thing to step
    aside, into an icon that opens the field over the bar. */
 .global-bar .gb-search { position: relative; display: inline-flex; flex: none; }
+/* the legacy auth sheet styles every <form> as a stacked panel; this one is a row */
 .global-bar .gb-search-form {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: var(--oc-space-2);
   width: 240px;

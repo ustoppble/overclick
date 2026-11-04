@@ -21,15 +21,24 @@ export function scopeWords(
   value: ScopeValue,
   t: Dict,
 ): { organization: string; project: string } {
-  const organization =
-    value.organizationIds.length === 1
+  // Projects picked inside one business name it, even when the organization
+  // pick itself is "all" (a project remembered from before organizations).
+  const owners = new Set(
+    projects.filter((item) => value.projectIds.includes(item.id)).map((item) => item.organizationId),
+  );
+  const implied =
+    value.organizationIds.length === 0 && owners.size === 1
+      ? (organizations.find((item) => owners.has(item.id))?.name ?? null)
+      : null;
+  const organization = implied ??
+    (value.organizationIds.length === 1
       ? (organizations.find((item) => item.id === value.organizationIds[0])?.name ??
         t.board.allOrganizations)
       : value.organizationIds.length > 1
         ? t.board.organizationsPicked(value.organizationIds.length)
         : organizations.length === 1
           ? organizations[0]!.name
-          : t.board.allOrganizations;
+          : t.board.allOrganizations);
   const project =
     value.projectIds.length === 1
       ? (projects.find((item) => item.id === value.projectIds[0])?.name ?? t.board.allProjects)
