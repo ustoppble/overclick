@@ -7,13 +7,12 @@ import { getSession } from "../../../lib/cookies";
 import { db } from "../../../lib/db";
 import { dict } from "../../../lib/i18n";
 import { detectRuntime } from "../../../lib/runtime";
-import { APP_VERSION, type UpdaterState } from "../../../lib/updates";
+import { APP_VERSION } from "../../../lib/updates";
 import { pagePrincipal } from "../../../lib/web-scope";
 import { SettingsClient } from "../../settings/settings-client";
 
 export const dynamic = "force-dynamic";
 
-const EMPTY_UPDATER: UpdaterState = { running: false, lastSeenAt: null, status: null };
 
 /** The request origin, for the commands and links Settings prints. */
 async function requestOrigin(): Promise<{ host: string; origin: string }> {
@@ -81,8 +80,6 @@ async function MyAgent({
         updateLog={null}
         version={APP_VERSION}
         runtime={detectRuntime()}
-        updater={EMPTY_UPDATER}
-        enableCommand=""
         manualCommand=""
         sourceCommand=""
         prices={[]}

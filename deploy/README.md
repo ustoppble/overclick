@@ -8,7 +8,8 @@ volume and port.
 The root `docker-compose.yml` is a local quickstart only. On a hosted instance,
 always use `./deploy/deploy.sh`; it exports the deploy-only `COMPOSE_FILE`, takes
 a single-deploy lock, checks the existing project for accidental root compose
-files, and removes the known legacy Postgres orphan when it is safe to do so.
+files, and removes the known legacy Postgres orphan container once the backup and
+rollback tag exist (the legacy data volume is never deleted automatically).
 
 ## First deploy
 
@@ -36,6 +37,22 @@ to sign or verify a session** with an `AUTH_SECRET` that is only long but not
 random, such as a repeated character or a sentence, and says so in the log
 without printing the value. Replacing it signs everyone out. The app listens on `127.0.0.1:3100`
 by design: nothing reaches it except through the reverse proxy.
+
+## How the app container is locked down
+
+The image runs as a dedicated user (`overclick`, uid 10001, no shell, no home),
+never root, and the cloud compose file adds `read_only: true`,
+`cap_drop: [ALL]` and `no-new-privileges`. The application code in the image is
+owned by root, so the app user cannot rewrite it. What it may write:
+
+| Path | What | Kind |
+|------|------|------|
+| `/tmp` (also `HOME`) | pnpm and Node scratch | tmpfs, 64 MB |
+| `/app/apps/web/.next/cache` | Next's runtime cache | tmpfs, 256 MB |
+| `/run/emergency` | `pnpm emergency-login` link files (mode 700) | tmpfs, 1 MB |
+
+Migrations and the seed run at container start as that user and write nothing
+outside the database. A `docker exec overclick-app-1 id` should print uid 10001.
 
 ## Public address
 
@@ -150,9 +167,11 @@ single-use link from inside the app container:
 docker exec overclick-app-1 pnpm emergency-login <admin email>
 ```
 
-(`overclick-app-1` is the app container of the `overclick` compose project; `docker ps` shows the name if yours differs.) It prints **only the path** of a file inside the container (mode 600, under
-`/tmp`; set `OVERCLICK_EMERGENCY_DIR` to put it elsewhere), never the link or
-the token. The file holds the link: `https://<this board's address>/login/emergency#<token>`.
+(`overclick-app-1` is the app container of the `overclick` compose project; `docker ps` shows the name if yours differs.) It prints **only the path** of a file inside the container (mode 600), never the link or
+the token. The container's root filesystem is read-only, so the file is written
+to `/run/emergency` (`OVERCLICK_EMERGENCY_DIR`, set by the compose file): a
+memory-backed directory only the app user can enter, which is emptied by every
+restart. The file holds the link: `https://<this board's address>/login/emergency#<token>`.
 Open it in a browser within **10 minutes**; it works **once**. The token sits
 after the `#`, so it never reaches the proxy, Cloudflare or any access log, and
 the database keeps only its hash. Making a new link kills the previous one for
@@ -160,7 +179,7 @@ that admin.
 
 Read the file without putting it on a screen that is being shared, for
 example copy it to a file on your own machine and open it there, then delete
-it in the container:
+it in the container (use the path the command printed):
 
 ```
 docker exec overclick-app-1 sh -c 'cat <path>' > ~/overclick-emergency.txt && chmod 600 ~/overclick-emergency.txt
@@ -264,10 +283,26 @@ they work.
 ./deploy/deploy.sh
 ```
 
-That is `git pull`, rebuild, restart, and a health check, in one command. The
-data volume is never touched, so cards, tokens and settings survive every deploy.
-If another deploy is already running, the second invocation exits with a clear
-lock message and does not touch the compose project.
+That is a backup, `git pull`, rebuild, restart, and a health check, in one
+command. The data volume is never touched, so cards, tokens and settings
+survive every deploy. If another deploy is already running, the second
+invocation exits with a clear lock message and does not touch the compose
+project. In order, `deploy.sh`:
+
+1. runs `deploy/backup.sh pre-deploy` (below) and **stops if it fails**: it
+   copies `deploy/.env` first, then dumps the database, and any docker error
+   (or a database container that exists but is stopped) aborts instead of
+   being read as "nothing to back up";
+2. tags the image that is serving as `overclick-app:rollback-v<version>-<time>`;
+3. only then mutates: removes the known legacy orphan container
+   `overclick-postgres-1` (its volume `overclick_pgdata` is kept and the script
+   prints the `docker volume rm` to run by hand), pulls, builds and restarts,
+   then waits for the app to answer;
+4. only once the app is healthy, frees disk: `docker builder prune` for cache
+   older than 24 hours (`OVERCLICK_BUILD_CACHE_MAX_AGE`, any `docker` duration;
+   the cache is shared with every other build on the host, hence the age
+   filter) and removes every `overclick-app:rollback-*` image except the newest.
+   A failed deploy prunes nothing.
 
 After a deploy, `docker compose ls --all` should show the `overclick` project
 using only `deploy/docker-compose.cloud.yml` and, when the proxy overlay is
@@ -275,22 +310,29 @@ enabled, `deploy/docker-compose.traefik.yml`. If the listing contains a root
 compose file, stop and remove that legacy project before retrying; the deploy
 script refuses to guess which project is safe to change.
 
-## One-click update from the UI
+## There is no update button
 
-Off by default; a signed-in owner turns it on from Settings → Updates, or a
-human runs it directly:
+The board never updates itself. The one-click updater sidecar was removed: it
+mounted the docker socket (root on the host), a writable checkout and the
+host's `/tmp`, so whoever compromised it owned the machine. Settings → System
+→ Updates and the new-version banner only say which version this instance runs
+and, when a newer release exists, the command to run, in every runtime. Updating is always
+done on the server, with `./deploy/deploy.sh` (see "Deploying again").
+
+If you ran the sidecar before (`--profile updater`), do this once, on the
+host, not from the Update button:
 
 ```bash
-docker compose -p overclick -f deploy/docker-compose.cloud.yml --profile updater up -d
+cd /opt/overclick && ./deploy/deploy.sh
 ```
 
-It watches for the Update button in the board, then runs `./deploy/deploy.sh`
-itself, from inside the sidecar container, over the checkout and the docker
-socket. It takes the same `/tmp/overclick-deploy.lock` flock a human running
-`./deploy/deploy.sh` on the host takes, so the two can never interleave: one
-waits its turn. Progress and any failure detail land in the board's Settings
-page. It needs the docker socket, which is root on the host — that is the
-whole reason it stays behind the `updater` profile instead of running always.
+`deploy.sh` removes the old `updater` container itself (looked up by its
+compose labels, so the app and the database are never touched) and then, after
+the app is recreated without it (and after the pre-deploy backup and rollback tag), the `overclick_update-trigger` volume it left
+behind, when no container uses it any more. The app container is recreated on
+that deploy, as on every deploy; the data volume is not touched. Running the
+first deploy from the old button instead would remove the very container
+running it, halfway through, so use the host.
 
 ## Releasing a new version
 
@@ -306,11 +348,81 @@ that commit, and push the tag.
 
 ## Backups
 
-The whole instance is one Postgres volume:
+The whole instance is one Postgres volume plus `deploy/.env`.
+`deploy/backup.sh [label]` backs up both, and `deploy.sh` runs it as
+`pre-deploy` before every deploy:
+
+```bash
+./deploy/backup.sh            # label "daily"
+./deploy/backup.sh pre-deploy
+```
+
+- The directory is `backups/` in the checkout (`OVERCLICK_BACKUP_DIR` to move
+  it), created mode **700**; every file in it is **600**. The script repairs the
+  modes of files that were already there, so one run closes an older directory.
+- `<label>.<UTC time>.v<version>.dump` is `pg_dump -Fc`, checked with
+  `pg_restore --list` before it is kept; an empty or unreadable dump is an error.
+  `env-<label>.<UTC time>.v<version>.bak` is the copy of `deploy/.env`.
+- Retention: the newest 7 of each label (`OVERCLICK_BACKUP_KEEP`). Labels are
+  separate buckets, so a day of deploys does not push out the daily dumps.
+- Nothing is dumped, and the script says so, when the database container is not
+  running yet (the first deploy of a host).
+
+### Schedule a daily backup
+
+`deploy.sh` only backs up when you deploy. A daily copy is a systemd timer (or a
+cron line) you install yourself; nothing here installs it. systemd:
+
+```ini
+# /etc/systemd/system/overclick-backup.service
+[Unit]
+Description=OverClick backup
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/overclick
+ExecStart=/opt/overclick/deploy/backup.sh daily
+```
+
+```ini
+# /etc/systemd/system/overclick-backup.timer
+[Unit]
+Description=OverClick daily backup
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+systemctl daemon-reload && systemctl enable --now overclick-backup.timer
+```
+
+or, in root's crontab: `30 3 * * * cd /opt/overclick && ./deploy/backup.sh daily >>/var/log/overclick-backup.log 2>&1`.
+Copy `backups/` off the machine too; a backup on the same disk does not survive
+the disk.
+
+### Restoring
 
 ```bash
 docker compose -p overclick -f deploy/docker-compose.cloud.yml exec -T overclick-db \
-  pg_dump -U overclick overclick | gzip > overclick-$(date +%F).sql.gz
+  pg_restore -U overclick -d overclick --clean --if-exists --no-owner < backups/<file>.dump
 ```
 
-Put that in a cron and the instance is disposable, which is the point.
+Stop the app first (`docker compose -p overclick -f deploy/docker-compose.cloud.yml stop app`)
+so nothing writes while it runs, and start it again afterwards.
+
+### Rolling back a deploy
+
+The image that was serving before the last deploy is still on the host as
+`overclick-app:rollback-v<version>-<time>` (`docker image ls overclick-app`).
+To go back to it without rebuilding:
+
+```bash
+docker tag overclick-app:rollback-v<version>-<time> overclick-app:latest
+docker compose -p overclick -f deploy/docker-compose.cloud.yml up -d --no-build app
+```
+
+(add `-f deploy/docker-compose.traefik.yml` when the proxy overlay is on). If
+the deploy ran a migration the old code cannot read, restore the
+`pre-deploy` dump from the same moment too.

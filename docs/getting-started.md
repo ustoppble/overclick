@@ -124,8 +124,8 @@ when creating the card: it's the contract). Then:
 - **MCP tokens**: one per agent/machine, revocable, last-use tracked. The pairing-code
   button lives here too: pair a new agent without the token ever entering a chat.
 - **Updates**: off, check only or automatic, plus the update that applies to how this
-  instance actually runs: a real one-click update on a source checkout, the sidecar or a
-  command in a container. See below.
+  instance actually runs: a real one-click update on a source checkout, or the command to run on the
+  server for a container. See below.
 
 ## 8. Updating
 
@@ -221,35 +221,20 @@ Then restart the process the way you started it, and run `pnpm db:migrate` with
 There are two honest paths, and Settings › Updates shows whichever one applies to your
 instance.
 
-**By hand (default).** Nothing on the board can restart a container, so the panel gives
-you the command and you run it on the server:
+**On the server, by hand.** Nothing on the board can restart a container, so
+Settings › Updates and the new-version banner give you the command and you run it on
+the server, from the project folder:
 
 ```bash
-git pull && docker compose up -d --build
+git pull && docker compose up -d --build --remove-orphans
 ```
 
-**One click (opt-in).** The compose file ships an optional `updater` sidecar behind a
-profile. Turn it on once:
-
-```bash
-docker compose --profile updater up -d
-```
-
-It writes a heartbeat into the volume it shares with the app, so Settings can tell it
-apart from the volume simply being mounted, and the Update button becomes real: it asks
-the sidecar to pull the new image and recreate the app, and reports each phase
-(pulling → recreating → done, or failed with the tail of the docker output). The app is
-recreated mid-run, so the page loses its server for a few seconds and comes back on the
-new version; the progress lives in the shared volume, not in the app, which is why it
-survives that.
-
-**The tradeoff, plainly.** That sidecar mounts `/var/run/docker.sock`. The docker socket
-is root on the host: a container holding it can start, stop and replace any container on
-that machine, board included. Enable it only where you already trust everyone who can
-reach this board, and leave it off on a shared or exposed host. Your data is not at stake
-either way (it lives in the `pgdata` volume, untouched by a pull and recreate), but the
-host is. Nothing about either path calls out of your server, except the release check you
-turn on yourself.
+There is no update button for a container install. Earlier versions shipped an optional
+`updater` sidecar that mounted `/var/run/docker.sock`, which is root on the host, and
+it was removed. If you had turned it on, the command above (note `--remove-orphans`)
+also removes its leftover container; your data, in the `pgdata` volume, is untouched.
+Nothing about this calls out of your server, except the release check you turn on
+yourself.
 
 ## Troubleshooting
 

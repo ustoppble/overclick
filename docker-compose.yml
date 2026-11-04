@@ -33,7 +33,6 @@ services:
       AUTH_SECRET: "${AUTH_SECRET:?AUTH_SECRET is required; generate one per installation with openssl rand -base64 32}"
       NEXT_TELEMETRY_DISABLED: "1"
       NODE_ENV: production
-      UPDATE_TRIGGER_DIR: /update-trigger
       # OCL-73: tells the update banner/panel which command to show. Never
       # "hosted" here — that value is reserved for deploy/docker-compose.cloud.yml.
       OVERCLICK_DEPLOY_MODE: quickstart
@@ -57,60 +56,9 @@ services:
       # https://board.your-domain. Empty = those emails are not sent: the
       # request's Host is attacker-controlled and is never used for a link.
       OVERCLICK_PUBLIC_URL: "${OVERCLICK_PUBLIC_URL:-}"
-    volumes:
-      - update-trigger:/update-trigger
     ports:
       - "3000:3000"
     restart: unless-stopped
 
-  # Optional one-click updater. Enable with:
-  #   docker compose --profile updater up -d
-  # It watches for the trigger file the Update button writes, then pulls the
-  # new image and recreates the app, reporting each phase back into the shared
-  # volume. Settings reads the heartbeat to know it is here: the app mounts
-  # that volume either way, so only a fresh beat proves anybody is listening.
-  # It needs the docker socket, which is root on the host, which is why it
-  # stays behind an explicit profile. Without it Settings shows the command
-  # that enables it and the one that updates by hand.
-  updater:
-    image: docker:27-cli
-    profiles: ["updater"]
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - update-trigger:/trigger
-      - ./:/workspace
-    working_dir: /workspace
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        say() {
-          # The app is recreated mid-run and reads its progress from here, so
-          # the status has to live in the volume, not in this container's log.
-          printf '{"phase":"%s","at":"%s","detail":%s}' \
-            "$$1" "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$${2:-null}" \
-            > /trigger/update-status
-        }
-        while true; do
-          date -u +%Y-%m-%dT%H:%M:%SZ > /trigger/updater-alive
-          if [ -f /trigger/update-requested ]; then
-            rm -f /trigger/update-requested
-            say pulling
-            if docker compose pull app > /trigger/update-log 2>&1; then
-              say recreating
-              if docker compose up -d app >> /trigger/update-log 2>&1; then
-                say done
-              else
-                say failed "\"$$(tail -c 400 /trigger/update-log | tr -d '\"' | tr '\n' ' ')\""
-              fi
-            else
-              say failed "\"$$(tail -c 400 /trigger/update-log | tr -d '\"' | tr '\n' ' ')\""
-            fi
-          fi
-          sleep 5
-        done
-    restart: unless-stopped
-
 volumes:
   pgdata:
-  update-trigger:

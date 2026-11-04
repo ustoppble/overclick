@@ -613,11 +613,8 @@ const en = {
     modeNote: {
       off: "Nothing reaches the network. This instance never learns a newer version exists.",
       check: "Tells you when a newer release exists and leaves the decision to you.",
-      auto: "Applies the update by itself when a newer release is found, on the same interval, under the same rules as the button. It refuses a dirty tree too, and a container still has to be replaced by hand.",
+      auto: "Applies the update by itself when a newer release is found, on the same interval, and a container still has to be replaced by hand.",
     } as Record<string, string>,
-    forceBtn: "Force update",
-    forceNote:
-      "Runs the whole pipeline even when the version already matches, for an instance that is broken or ahead of its tag.",
     outcome: {
       updated: "updated",
       current: "already current",
@@ -630,64 +627,19 @@ const en = {
         : `Last update: ${outcome}, ${when}.`,
     newVersion: (v: string) => `Version ${v} is available.`,
     releaseNotes: "release notes",
-    updateBtn: "Update",
-    updateRequested:
-      "Update requested. The helper is pulling the new image and recreating the app.",
     runOnServer: "Run this on the server:",
     runningVersion: (v: string, runtime: string) =>
       `This instance is running version ${v}, ${runtime}.`,
     runtimeContainer: "in a container",
     runtimeSource: "from the source checkout",
     sourceDetected:
-      "This instance runs from the source checkout, not from a container: there is no image to pull and no sidecar to enable. The button below runs the update right here, in this process's own repository.",
+      "This instance runs from the source checkout, not from a container: there is no image to pull. Update it on the server, from the project folder.",
     sourceRestart:
       "Doing it by hand instead? After the pull, restart the process the way you started it, and run pnpm db:migrate with DATABASE_URL set if the pull brought new migrations.",
-    sourceUpdateBtn: "Update now",
     sourceManualPath: "Prefer to run it yourself? The same update, by hand:",
-    step: {
-      pull: "Pull",
-      install: "Dependencies",
-      build: "Build",
-      migrate: "Migrations",
-      restart: "Restart",
-    } as Record<string, string>,
-    stepStatus: {
-      ok: "done",
-      skipped: "skipped",
-      failed: "failed",
-    } as Record<string, string>,
-    stepNote: {
-      "pull-current": "Nothing new to pull.",
-      "install-unchanged": "No lockfile or manifest changed.",
-      "build-unchanged": "Nothing that ships from dist changed.",
-      "restart-dev": "The dev server reloads itself: the update is live.",
-      "restart-exit":
-        "Exiting now so the supervisor starts this instance again. The page comes back on its own.",
-      "restart-manual":
-        "Restart the process yourself to finish. Set AGENT_BOARD_RESTART_ON_UPDATE=1 to let the board exit for a supervisor instead.",
-    } as Record<string, string>,
-    resultUpdated: "Updated. Every step above ran here.",
-    resultCurrent: "Already up to date. Nothing was changed.",
-    resultFailed: "The update stopped at the step marked failed. Nothing after it ran.",
-    refusedDirty:
-      "This checkout has uncommitted changes, so nothing was pulled: a pull over them would put somebody's work at risk. Commit or stash these, then press Update again.",
-    refusedNoRepo:
-      "This install is not a git checkout, so there is nothing to pull. Update it the way you deployed it.",
-    updaterDetected:
-      "Updater sidecar running. The button below pulls the new image and recreates the app.",
-    updaterAbsent:
-      "No updater sidecar running, so nothing here can restart a container. Turn it on with:",
-    socketNote:
-      "The updater mounts the docker socket, which is root on the host: it can restart any container on this machine, so run it only where you already trust whoever can reach this board.",
-    manualPath: "Prefer to keep the socket to yourself? Update by hand instead:",
-    updating: "Updating…",
-    appRestarting: "The app is being recreated. This page comes back on its own.",
-    phase: {
-      pulling: "Pulling the new image…",
-      recreating: "Recreating the app…",
-      done: "Updated. The app is back on the new version.",
-      failed: "The update failed. Nothing was replaced.",
-    } as Record<string, string>,
+    serverOnly:
+      "This instance cannot be updated from the board. Run the update on the server, from the project folder:",
+    bannerSource: "This instance runs from the source checkout. Update it in Settings › System, or by hand:",
     dismiss: "Dismiss",
   },
   /**
@@ -1525,11 +1477,8 @@ const ptBR: Dict = {
     modeNote: {
       off: "Nada sai para a rede. Esta instância nunca fica sabendo que existe versão nova.",
       check: "Avisa quando existe release mais nova e deixa a decisão com você.",
-      auto: "Aplica a atualização sozinho quando encontra release mais nova, no mesmo intervalo, sob as mesmas regras do botão. Também recusa checkout sujo, e container continua sendo trocado na mão.",
+      auto: "Aplica a atualização sozinho quando encontra release mais nova, no mesmo intervalo, e container continua sendo trocado na mão.",
     } as Record<string, string>,
-    forceBtn: "Forçar atualização",
-    forceNote:
-      "Roda a esteira inteira mesmo quando a versão já bate, para uma instância quebrada ou à frente da própria tag.",
     outcome: {
       updated: "atualizou",
       current: "já estava na última",
@@ -1542,65 +1491,19 @@ const ptBR: Dict = {
         : `Última atualização: ${outcome}, ${when}.`,
     newVersion: (v: string) => `Versão ${v} disponível.`,
     releaseNotes: "notas da release",
-    updateBtn: "Atualizar",
-    updateRequested:
-      "Atualização solicitada. O helper está baixando a nova imagem e recriando o app.",
     runOnServer: "Rode isto no servidor:",
     runningVersion: (v: string, runtime: string) =>
       `Esta instância está na versão ${v}, ${runtime}.`,
     runtimeContainer: "rodando em container",
     runtimeSource: "rodando direto do código-fonte",
     sourceDetected:
-      "Esta instância roda direto do código-fonte, não de um container: não existe imagem para baixar nem sidecar para ligar. O botão abaixo roda a atualização aqui mesmo, no repositório deste processo.",
+      "Esta instância roda direto do código-fonte, não de um container: não existe imagem para baixar. Atualize no servidor, na pasta do projeto.",
     sourceRestart:
       "Prefere fazer na mão? Depois do pull, reinicie o processo do jeito que você subiu, e rode pnpm db:migrate com DATABASE_URL definido se o pull trouxe migrações novas.",
-    sourceUpdateBtn: "Atualizar agora",
     sourceManualPath: "Prefere rodar você mesmo? A mesma atualização, na mão:",
-    step: {
-      pull: "Pull",
-      install: "Dependências",
-      build: "Build",
-      migrate: "Migrações",
-      restart: "Reinício",
-    } as Record<string, string>,
-    stepStatus: {
-      ok: "feito",
-      skipped: "pulado",
-      failed: "falhou",
-    } as Record<string, string>,
-    stepNote: {
-      "pull-current": "Nada novo para baixar.",
-      "install-unchanged": "Nenhum lockfile ou manifest mudou.",
-      "build-unchanged": "Nada do que roda a partir do dist mudou.",
-      "restart-dev": "O servidor de dev recarrega sozinho: a atualização já está no ar.",
-      "restart-exit":
-        "Saindo agora para o supervisor subir esta instância de novo. A página volta sozinha.",
-      "restart-manual":
-        "Reinicie o processo na mão para concluir. Defina AGENT_BOARD_RESTART_ON_UPDATE=1 para o board sair sozinho e deixar um supervisor subir de volta.",
-    } as Record<string, string>,
-    resultUpdated: "Atualizado. Todos os passos acima rodaram aqui.",
-    resultCurrent: "Já está na última versão. Nada foi alterado.",
-    resultFailed:
-      "A atualização parou no passo marcado como falhou. Nada depois dele rodou.",
-    refusedDirty:
-      "Este checkout tem alterações não commitadas, então nada foi baixado: um pull por cima delas colocaria o trabalho de alguém em risco. Commite ou dê stash e aperte Atualizar de novo.",
-    refusedNoRepo:
-      "Esta instalação não é um checkout do git, então não há o que baixar. Atualize do jeito que você fez o deploy.",
-    updaterDetected:
-      "Sidecar de atualização rodando. O botão abaixo baixa a nova imagem e recria o app.",
-    updaterAbsent:
-      "Nenhum sidecar de atualização rodando, então nada aqui consegue reiniciar um container. Ligue com:",
-    socketNote:
-      "O updater monta o socket do docker, que é root no host: ele consegue reiniciar qualquer container desta máquina, então só ligue onde você já confia em quem alcança este board.",
-    manualPath: "Prefere não entregar o socket? Atualize na mão:",
-    updating: "Atualizando…",
-    appRestarting: "O app está sendo recriado. Esta página volta sozinha.",
-    phase: {
-      pulling: "Baixando a nova imagem…",
-      recreating: "Recriando o app…",
-      done: "Atualizado. O app voltou na versão nova.",
-      failed: "A atualização falhou. Nada foi substituído.",
-    } as Record<string, string>,
+    serverOnly:
+      "Esta instância não é atualizada pelo board. Rode a atualização no servidor, na pasta do projeto:",
+    bannerSource: "Esta instância roda direto do código-fonte. Atualize em Configurações › Sistema, ou na mão:",
     dismiss: "Fechar",
   },
   record: {

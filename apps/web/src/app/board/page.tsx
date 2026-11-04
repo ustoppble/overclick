@@ -39,11 +39,9 @@ import { detectDeployMode } from "../../lib/deploy-mode";
 import {
   SOURCE_UPDATE_COMMAND,
   updateCommand,
-  updaterEnableCommand,
 } from "../../lib/update-commands";
 import { scheduledUpdateCheck } from "../../lib/update-scheduler";
 import { scheduledProjectContextRefresh } from "../../lib/project-context-scheduler";
-import { readUpdaterState } from "../../lib/updates";
 import { BoardLoading } from "./board-loading";
 import { HomeShell } from "./home-shell";
 import { ReviewQueueView } from "./review-queue-view";
@@ -345,9 +343,6 @@ async function BoardContent({
       ? await loadInstallNotices(db(), { workspaceId: ws.id, adminUserId: principal.userId })
       : [];
   scheduledProjectContextRefresh(db(), ws.id);
-  // Only a live sidecar makes the banner's button do anything. Read it just
-  // when there is a banner to draw.
-  const updater = release ? await readUpdaterState() : null;
   const projectIds = projects.map((item) => item.id);
   // The URL wins over the memory, and the memory only fills what the URL
   // does not say (E4, F2): a link with ?period=30d shows 30 days to whoever
@@ -466,11 +461,9 @@ async function BoardContent({
           version={release.version}
           changelog={release.changelog}
           url={release.url}
-          helper={updater?.running ?? false}
           runtime={detectRuntime()}
           lang={ws.language}
           manualCommand={updateCommand(detectDeployMode())}
-          enableCommand={updaterEnableCommand(detectDeployMode())}
           sourceCommand={SOURCE_UPDATE_COMMAND}
         />
       ) : null}
