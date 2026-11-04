@@ -13,12 +13,9 @@ import {
 } from "@agent-board/db";
 import { getSession } from "../../lib/cookies";
 import { db } from "../../lib/db";
-import {
-  EXECUTOR_CATALOG,
-  selectionFromConfig,
-} from "../../lib/executors";
+import { EXECUTOR_CATALOG } from "../../lib/executors";
 import { loadModelPrices } from "../../lib/prices";
-import { loadUsageRecipes } from "../../lib/recipes";
+import { loadRanClis, loadUsageRecipes } from "../../lib/recipes";
 import { detectRuntime } from "../../lib/runtime";
 import { detectDeployMode } from "../../lib/deploy-mode";
 import {
@@ -33,26 +30,9 @@ const EMPTY_UPDATER: UpdaterState = { running: false, lastSeenAt: null, status: 
 import { SettingsClient } from "./settings-client";
 import { loadPendingInvitations, loadTeam } from "../../lib/invitations";
 import { pagePrincipal } from "../../lib/web-scope";
-import {
-  isExecutorPairConfigured,
-  normalizeObservedExecutor,
-} from "../../mcp/executor-identity";
+import { settingsInitialTab } from "./tabs";
 
 export const dynamic = "force-dynamic";
-
-/** The tabs the client knows, so a link can land on one (OCL-20). */
-const SETTINGS_TABS = new Set([
-  "team",
-  "exec",
-  "organizations",
-  "projects",
-  "prices",
-  "recipes",
-  "tokens",
-  "claims",
-  "language",
-  "updates",
-]);
 
 export default async function SettingsPage({
   searchParams,
@@ -67,12 +47,7 @@ export default async function SettingsPage({
   const tabParam = (await searchParams).tab;
   const principal = await pagePrincipal(session);
   const admin = principal.role === "admin";
-  // A member has one tab: their own tokens and pairing (OCL-222).
-  const initialTab = !admin
-    ? "tokens"
-    : typeof tabParam === "string" && SETTINGS_TABS.has(tabParam)
-      ? tabParam
-      : "exec";
+  const initialTab = settingsInitialTab(tabParam, admin);
 
   const ws = await db().query.workspace.findFirst();
   if (!ws) redirect("/setup");
@@ -135,27 +110,15 @@ export default async function SettingsPage({
 
   const prices = await loadModelPrices(db(), ws.id);
   const recipes = await loadUsageRecipes(db(), ws.id);
-  const selection = selectionFromConfig(ws.executors);
   // Coverage is computed here and not in the client component: importing
   // the helper there would pull the db package's postgres client into the
-  // browser bundle. Executors learned from real connections carry their
-  // own label, catalog ones take the catalog's.
-  const coverage = recipeCoverage(
-    recipes,
-    ws.executors
-      .filter((row) => row.enabled)
-      .map((row) => ({
-        id: row.id,
-        label:
-          row.label ||
-          EXECUTOR_CATALOG.find((d) => d.id === row.id)?.label ||
-          row.id,
-      })),
-  );
+  // browser bundle. The CLIs are the ones the attempts recorded (E2): the
+  // board no longer keeps a list of enabled executors.
+  const coverage = recipeCoverage(recipes, await loadRanClis(db(), ws.id));
 
-  // Models this board has actually run, and all models shown by the
-  // executor catalog. If one lacks a price yet, Settings shows it with a
-  // warning so nobody has to guess which name to type.
+  // Models this board has actually run, and the models the built-in catalog
+  // suggests. If one lacks a price yet, Settings shows it with a warning so
+  // nobody has to guess which name to type.
   // Both the model recorded at claim and every model the run actually
   // switched to: a segment nobody priced spends just as much as the first one.
   const attemptModels = await db()
@@ -171,11 +134,7 @@ export default async function SettingsPage({
     row.model,
     ...(row.segments ?? []).map((segment) => segment.model),
   ]);
-  const catalogModels = Object.values(selection.models).flatMap((list) => list);
-  const normalizedSeen = ws.seenExecutors.flatMap((row) => {
-    const identity = normalizeObservedExecutor(row);
-    return identity ? [{ ...row, ...identity }] : [];
-  });
+  const catalogModels = EXECUTOR_CATALOG.flatMap((def) => def.models);
   const clean = (models: (string | null)[]) =>
     models
       .map((model) => model?.trim())
@@ -185,14 +144,10 @@ export default async function SettingsPage({
 
   // Two lists, because they carry different weight. A model that already ran
   // cards here is spending money nobody can count; a model that is merely
-  // configured has not cost anything yet.
+  // suggested has not cost anything yet.
   const unpricedRanModels = unpriced(clean(ranModels));
   const unpricedModels = unpriced(
-    clean([
-      ...ranModels,
-      ...catalogModels,
-      ...normalizedSeen.map((row) => row.model),
-    ]),
+    clean([...ranModels, ...catalogModels]),
   );
 
   const h = await headers();
@@ -215,16 +170,6 @@ export default async function SettingsPage({
   // project this instance actually runs under, so a hosted instance is never
   // shown the quickstart's raw docker compose command.
   const deployMode = detectDeployMode();
-
-  // Pairs observed on real connections that the config still does not cover.
-  const seenSuggestions = normalizedSeen
-    .filter((s) => !isExecutorPairConfigured(ws.executors, s.cli, s.model))
-    .map((s) => ({
-      cli: s.cli,
-      model: s.model,
-      count: s.count,
-      lastSeenAt: s.lastSeenAt,
-    }));
 
   const [members, invitations] = await Promise.all([
     loadTeam(db(), ws.id),
@@ -266,7 +211,6 @@ export default async function SettingsPage({
               }
             : null,
         }))}
-        executors={selection}
         lang={ws.language}
         updateMode={ws.updateMode}
         updateLog={ws.updateLog}
@@ -276,7 +220,6 @@ export default async function SettingsPage({
         enableCommand={updaterEnableCommand(deployMode)}
         manualCommand={updateCommand(deployMode)}
         sourceCommand={SOURCE_UPDATE_COMMAND}
-        seenSuggestions={seenSuggestions}
         prices={prices}
         unpricedModels={unpricedModels}
         unpricedRanModels={unpricedRanModels}
@@ -356,7 +299,6 @@ async function MemberSettings({
         projectName={proj?.name ?? ws.name}
         organizations={[]}
         projects={[]}
-        executors={selectionFromConfig([])}
         lang={ws.language}
         updateMode={ws.updateMode}
         updateLog={null}
@@ -366,7 +308,6 @@ async function MemberSettings({
         enableCommand=""
         manualCommand=""
         sourceCommand=""
-        seenSuggestions={[]}
         prices={[]}
         unpricedModels={[]}
         unpricedRanModels={[]}

@@ -335,8 +335,7 @@ const en = {
   },
   wizard: {
     stepProject: "01 · project",
-    stepExecutors: "02 · executors",
-    stepAgent: "03 · agent",
+    stepAgent: "02 · agent",
     t1Title: "First, which project are you working on?",
     t1Sub: "One project ↔ one repository. You can create more later.",
     organizationName: "Organization",
@@ -348,11 +347,6 @@ const en = {
     previewCap: "this project's convention",
     previewCards: "Your cards will be named",
     previewBranches: "and branches,",
-    t2Title: "Who runs the cards?",
-    t2Sub: "Check the CLIs your team already uses. You can change this later in Settings.",
-    t2HintStrong: "With no executor checked, the board is just a pretty wall.",
-    t2Hint: "A connected agent is what moves cards.",
-    t2Error: "Check at least one CLI. Without an executor the board goes nowhere.",
     t3Title: "Now connect your agent.",
     t3Sub: "One command in your terminal and the board stops being a wall and becomes a work contract.",
     tokenName: "Token name",
@@ -397,9 +391,8 @@ const en = {
   },
   settings: {
     title: "Settings",
-    sub: "Executors and MCP access for this instance.",
+    sub: "Projects, MCP access and usage for this instance.",
     backToBoard: "← Board",
-    tabExecutors: "Executors",
     tabOrganizations: "Organizations",
     tabProjects: "Projects",
     tabTokens: "MCP tokens",
@@ -524,23 +517,13 @@ const en = {
     recipeCoverageTitle: "The CLIs this board runs",
     recipeCoverageOwn: "own recipe",
     recipeCoverageFallback: "falls back to the generic recipe",
-    recipeCoverageAllCovered: "Every CLI configured here has a recipe of its own.",
+    recipeCoverageAllCovered: "Every CLI that ran a card here has a recipe of its own.",
     recipeCoverageNote:
       "A CLI with no recipe of its own still gets an answer, the generic one, which asks the agent to go looking and estimate. Write its command here and every agent on it reports measured numbers instead.",
     saveRecipes: "Save recipes",
     recipesSaved: "Recipes saved. New claims get them in the briefing.",
-    seenCap: "seen in real connections",
-    seenNote:
-      "An agent claimed or delivered with this cli and model, but the config does not list it yet. Add puts it in the grid, so the next claim with it is accepted.",
-    connections: (n: number) => (n === 1 ? "1 connection" : `${n} connections`),
     add: "add",
-    addedMsg: (cli: string, model: string) =>
-      `${cli} · ${model} added to the executors.`,
-    execSaved: "Executors saved.",
-    saveExecutors: "Save executors",
     saving: "Saving…",
-    execHintStrong: "The models checked here are the ones a task_claim may declare.",
-    execHint: "The board records what ran each card; which harness runs is decided in the Overclock app.",
     tokensEmpty: "No tokens yet. Generate one to connect your first agent.",
     tokensCap: "tokens on this instance",
     newTokenCap: "new token",
@@ -558,7 +541,7 @@ const en = {
     manageBadge: MANAGE_BADGE_EN,
     manageLabel: MANAGE_LABEL_EN,
     manageNote:
-      "off by default · a token created by pairing starts without it · tick it on a token's row to grant it later · only for a token you trust to rewrite the executors over MCP · a worker token gets a permission error instead",
+      "off by default · a token created by pairing starts without it · tick it on a token's row to grant it later · only for a token you trust to change the board's configuration over MCP · a worker token gets a permission error instead",
     manageGranted: "Token can now change the workspace configuration.",
     manageRevoked: "Token can no longer change the workspace configuration.",
     generateTokenBtn: "+ Generate token",
@@ -668,6 +651,23 @@ const en = {
       failed: "The update failed. Nothing was replaced.",
     } as Record<string, string>,
     dismiss: "Dismiss",
+  },
+  /**
+   * The record of what ran (E2): the board registers the CLI, the model and
+   * the effort of every attempt and never chooses them. Its own block, so the
+   * navigation work running beside it does not collide on the old ones.
+   */
+  record: {
+    attempts: "Attempts",
+    result: {
+      success: "delivered",
+      failure: "failed",
+      abandoned: "abandoned",
+      running: "open",
+    },
+    decidedInOverclock:
+      "Who runs each card is decided in the Overclock app. The board records what ran: the CLI, the model and the effort, on the card and in each attempt.",
+    ranFromAttempts: "Read from the attempts: every CLI that ran a card here.",
   },
   auth: {
     brand: "self-hosted · open source · mit",
@@ -992,8 +992,7 @@ const ptBR: Dict = {
   },
   wizard: {
     stepProject: "01 · projeto",
-    stepExecutors: "02 · executores",
-    stepAgent: "03 · agente",
+    stepAgent: "02 · agente",
     t1Title: "Primeiro, em qual projeto você está trabalhando?",
     t1Sub: "Um projeto ↔ um repositório. Você pode criar mais depois.",
     organizationName: "Organização",
@@ -1005,11 +1004,6 @@ const ptBR: Dict = {
     previewCap: "convenção deste projeto",
     previewCards: "Seus cards vão se chamar",
     previewBranches: "e as branches,",
-    t2Title: "Quem executa os cards?",
-    t2Sub: "Marque as CLIs que seu time já usa. Dá para mudar depois em Configurações.",
-    t2HintStrong: "Sem executor marcado, o board é só uma parede bonita.",
-    t2Hint: "Um agente conectado é o que move os cards.",
-    t2Error: "Marque pelo menos uma CLI. Sem executor o board não anda.",
     t3Title: "Agora conecte seu agente.",
     t3Sub: "Um comando no seu terminal e o board deixa de ser parede e vira contrato de trabalho.",
     tokenName: "Nome do token",
@@ -1054,9 +1048,8 @@ const ptBR: Dict = {
   },
   settings: {
     title: "Configurações",
-    sub: "Executores e acesso MCP desta instância.",
+    sub: "Projetos, acesso MCP e uso desta instância.",
     backToBoard: "← Board",
-    tabExecutors: "Executores",
     tabOrganizations: "Organizações",
     tabProjects: "Projetos",
     tabTokens: "Tokens MCP",
@@ -1174,23 +1167,13 @@ const ptBR: Dict = {
     recipeCoverageTitle: "Os CLIs que este board roda",
     recipeCoverageOwn: "receita própria",
     recipeCoverageFallback: "cai na receita genérica",
-    recipeCoverageAllCovered: "Todo CLI configurado aqui tem receita própria.",
+    recipeCoverageAllCovered: "Todo CLI que rodou um card aqui tem receita própria.",
     recipeCoverageNote:
       "Um CLI sem receita própria ainda recebe uma resposta, a genérica, que pede ao agente procurar e estimar. Escreva o comando dele aqui e todo agente nesse CLI passa a reportar números medidos.",
     saveRecipes: "Salvar receitas",
     recipesSaved: "Receitas salvas. Novos claims recebem no briefing.",
-    seenCap: "vistos em conexões reais",
-    seenNote:
-      "Um agente fez claim ou deliver com essa CLI e modelo, mas a config ainda não lista o par. Adicionar coloca na grade, e o próximo claim com ele passa.",
-    connections: (n: number) => (n === 1 ? "1 conexão" : `${n} conexões`),
     add: "adicionar",
-    addedMsg: (cli: string, model: string) =>
-      `${cli} · ${model} adicionado aos executores.`,
-    execSaved: "Executores salvos.",
-    saveExecutors: "Salvar executores",
     saving: "Salvando…",
-    execHintStrong: "Os modelos marcados aqui são os que um task_claim pode declarar.",
-    execHint: "O board registra o que executou cada card; qual harness roda é decidido no app Overclock.",
     tokensEmpty: "Nenhum token ainda. Gere um para conectar seu primeiro agente.",
     tokensCap: "tokens desta instância",
     newTokenCap: "novo token",
@@ -1206,7 +1189,7 @@ const ptBR: Dict = {
     manageBadge: "gerência",
     manageLabel: "Este token pode mudar a configuração do workspace",
     manageNote:
-      "desligado por padrão · um token criado por pareamento nasce sem ele · marque na linha do token para conceder depois · só para um token em que você confia para reescrever os executores via MCP · um token de worker recebe um erro de permissão",
+      "desligado por padrão · um token criado por pareamento nasce sem ele · marque na linha do token para conceder depois · só para um token em que você confia para mudar a configuração do board via MCP · um token de worker recebe um erro de permissão",
     manageGranted: "O token já pode mudar a configuração do workspace.",
     manageRevoked: "O token não pode mais mudar a configuração do workspace.",
     generateTokenBtn: "+ Gerar token",
@@ -1317,6 +1300,18 @@ const ptBR: Dict = {
       failed: "A atualização falhou. Nada foi substituído.",
     } as Record<string, string>,
     dismiss: "Fechar",
+  },
+  record: {
+    attempts: "Tentativas",
+    result: {
+      success: "entregue",
+      failure: "falhou",
+      abandoned: "abandonada",
+      running: "em aberto",
+    },
+    decidedInOverclock:
+      "Quem executa cada card é decidido no app Overclock. O board registra o que rodou: a CLI, o modelo e o esforço, no card e em cada tentativa.",
+    ranFromAttempts: "Lido das tentativas: toda CLI que rodou um card aqui.",
   },
   auth: {
     brand: "self-hosted · open source · mit",

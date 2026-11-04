@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { saveExecutorsAction } from "../../actions/executors";
 import { saveProjectAction } from "../../actions/onboarding";
 import {
   createPairingCodeAction,
@@ -14,15 +13,12 @@ import {
 import { Icon } from "../../components/icon";
 import { NebulaAtmosphere } from "../../components/nebula-atmosphere";
 import {
-  ExecutorsGrid,
-  type ExecutorSelection,
-} from "../../components/executors-grid";
-import {
   PluginInstall,
   type PluginPairing,
 } from "../../components/plugin-install";
 import { dict } from "../../lib/i18n";
 import { commandFor } from "./commands";
+import { CONNECT_STEP, onboardingSteps } from "./steps";
 
 type ProjectData = {
   organizationName: string;
@@ -44,7 +40,6 @@ export function Wizard({
   origin,
   initialStep,
   project,
-  executors,
   lang,
   installOnly = false,
 }: {
@@ -52,12 +47,11 @@ export function Wizard({
   origin: string;
   initialStep: number;
   /**
-   * A member's wizard (OCL-222): only the install step, since the project and
-   * the executors are the admin's. The pairing it offers mints their token.
+   * A member's wizard (OCL-222): only the install step, since the project is
+   * the admin's. The pairing it offers mints their token.
    */
   installOnly?: boolean;
   project: ProjectData | null;
-  executors: ExecutorSelection;
   lang: string;
 }) {
   const t = dict(lang);
@@ -86,11 +80,8 @@ export function Wizard({
     return p;
   };
 
-  // ---- T2
-  const [sel, setSel] = useState<ExecutorSelection>(executors);
-  const execCount = Object.keys(sel.enabled).length + (sel.customEnabled ? 1 : 0);
-
-  // ---- T3
+  // ---- connect (the agent). "Who runs the cards?" left with E2: the
+  // Overclock app decides what runs, the board records it.
   const [label, setLabel] = useState("Claude Code on this machine");
   const [tab, setTab] = useState<string>("claude-code");
   const [token, setToken] = useState<{ id: string; secret: string } | null>(null);
@@ -172,14 +163,7 @@ export function Wizard({
           prefix,
         });
         if (!r.ok) return setErr(r.error);
-        setStep(2);
-      } else if (step === 2) {
-        if (execCount === 0) {
-          return setErr(t.wizard.t2Error);
-        }
-        const r = await saveExecutorsAction(sel);
-        if (!r.ok) return setErr(r.error);
-        setStep(3);
+        setStep(CONNECT_STEP);
       } else {
         router.push("/home");
       }
@@ -231,12 +215,11 @@ export function Wizard({
               single column it always was. */}
           <div className="wiz-body">
             <ol className="steps-ind">
-              {(installOnly
-                ? [t.wizard.stepAgent]
-                : [t.wizard.stepProject, t.wizard.stepExecutors, t.wizard.stepAgent]
-              ).map(
-                (stepLabel, i) => {
-                  const n = installOnly ? 3 : i + 1;
+              {onboardingSteps(installOnly).map(
+                (id, i) => {
+                  const stepLabel =
+                    id === "project" ? t.wizard.stepProject : t.wizard.stepAgent;
+                  const n = installOnly ? CONNECT_STEP : i + 1;
                   return (
                     <li
                       key={stepLabel}
@@ -316,20 +299,10 @@ export function Wizard({
                 <b>{(prefix || "…").toLowerCase()}-{nextNumber}-card-name</b>.
               </div>
             </div>
-
-            {/* T2: executors */}
-            <div className={`wstep${step === 2 ? " active" : ""}`}>
-              <h2>{t.wizard.t2Title}</h2>
-              <p className="sub">{t.wizard.t2Sub}</p>
-              <ExecutorsGrid value={sel} onChange={setSel} />
-              <div className="hint">
-                <b>{t.wizard.t2HintStrong}</b> {t.wizard.t2Hint}
-              </div>
-            </div>
             </>)}
 
             {/* T3: connect the agent */}
-            <div className={`wstep${step === 3 ? " active" : ""}`}>
+            <div className={`wstep${step === CONNECT_STEP ? " active" : ""}`}>
               <h2>{t.wizard.t3Title}</h2>
               <p className="sub">{t.wizard.t3Sub}</p>
 
@@ -435,11 +408,11 @@ export function Wizard({
               role="progressbar"
               aria-valuenow={installOnly ? 1 : step}
               aria-valuemin={1}
-              aria-valuemax={installOnly ? 1 : 3}
+              aria-valuemax={installOnly ? 1 : CONNECT_STEP}
             >
-              {/* three of three is the whole bar; step * 33 stopped at 99% and
-                  left a sliver of the last step forever unfinished */}
-              <i style={{ width: `${installOnly ? 100 : (step / 3) * 100}%` }} />
+              {/* the last step is the whole bar; step * 33 once stopped at 99%
+                  and left a sliver of the last step forever unfinished */}
+              <i style={{ width: `${installOnly ? 100 : (step / CONNECT_STEP) * 100}%` }} />
             </div>
             <div className="wbtns">
               {/* The two directions of the wizard were punctuation inside the
@@ -453,7 +426,7 @@ export function Wizard({
               </button>
               )}
               <div className="wbtns-end">
-                {step === 3 ? (
+                {step === CONNECT_STEP ? (
                   <button
                     type="button"
                     className="skip"
@@ -464,13 +437,13 @@ export function Wizard({
                 ) : null}
                 <button
                   className={`btn-next${connected ? " go" : ""}`}
-                  disabled={pending || (step === 3 && !connected)}
+                  disabled={pending || (step === CONNECT_STEP && !connected)}
                   onClick={goNext}
                 >
-                  {step === 3 ? (connected ? t.wizard.seeMyBoard : t.wizard.finish) : t.wizard.next}
+                  {step === CONNECT_STEP ? (connected ? t.wizard.seeMyBoard : t.wizard.finish) : t.wizard.next}
                   {/* the last step with nothing connected yet leads nowhere,
                       so it does not carry the glyph that says it does */}
-                  {step === 3 && !connected ? null : (
+                  {step === CONNECT_STEP && !connected ? null : (
                     <Icon name="chevronRight" label={null} size={13} />
                   )}
                 </button>
