@@ -74,13 +74,23 @@ export function formatElapsed(ms: number): string {
 /**
  * The zone a workspace's dates are read in. The board has no zone setting of
  * its own (and E7 adds no migration), so the zone follows the workspace's
- * language: São Paulo for pt-BR, UTC for English. What matters is that it is
+ * language: São Paulo for pt-BR, UTC for English. This is a known limitation,
+ * not a setting: an English workspace run from Brazil reads UTC days (after
+ * 21:00 in São Paulo it is already tomorrow). The real fix is a zone column on
+ * the workspace and a migration, which E7 does not carry; every date the app
+ * prints goes through this file so that column is one change when it lands.
+ * What matters here is that it is
  * one fixed answer: the server renders the card and the browser hydrates it
  * with the same day, instead of each using its own clock's zone and a card
  * created at 22:30 in São Paulo reading "04/11" on a UTC server and "03/11" in
  * the browser.
  */
 const TIME_ZONES: Record<Lang, string> = { en: "UTC", "pt-BR": "America/Sao_Paulo" };
+
+/** The workspace language as the two the app speaks; anything else reads as English. */
+export function asLang(value: string | null | undefined): Lang {
+  return value === "pt-BR" ? "pt-BR" : "en";
+}
 
 export function workspaceTimeZone(lang: Lang): string {
   return TIME_ZONES[lang];
@@ -127,6 +137,36 @@ export function formatShortDateTime(
     minute: "2-digit",
     timeZone,
   });
+}
+
+/** A day with its month spelled, and the year: `03 de nov. de 2026` / `Nov 03, 2026`. */
+export function formatMediumDate(date: Date | string, lang: Lang): string {
+  return new Date(date).toLocaleDateString(LOCALES[lang], {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: workspaceTimeZone(lang),
+  });
+}
+
+/** Date and time, seconds included, for an event log line (the updater's last run). */
+export function formatDateTime(date: Date | string, lang: Lang): string {
+  return new Date(date).toLocaleString(LOCALES[lang], { timeZone: workspaceTimeZone(lang) });
+}
+
+/** The calendar day an instant falls on in the workspace's zone (the chart's day buckets). */
+export function workspaceDay(
+  date: Date | string,
+  lang: Lang,
+): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    timeZone: workspaceTimeZone(lang),
+  }).formatToParts(new Date(date));
+  const pick = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  return { year: pick("year"), month: pick("month"), day: pick("day") };
 }
 
 /**

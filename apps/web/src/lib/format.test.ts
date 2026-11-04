@@ -6,6 +6,9 @@ import {
   formatMoney,
   formatMoneyOrNone,
   formatCalendarDate,
+  formatDateTime,
+  formatMediumDate,
+  workspaceDay,
   formatShortDate,
   formatShortDateTime,
   formatTokens,
@@ -134,5 +137,47 @@ describe("formatCalendarDate", () => {
 
   it("leaves a value it cannot read as it came", () => {
     expect(formatCalendarDate("sometime", "pt-BR")).toBe("sometime");
+  });
+});
+
+describe("formatMediumDate (a token's or an invitation's day, E7 review)", () => {
+  it("spells the month, with the year, in the reader's language", () => {
+    const d = new Date("2026-11-03T17:05:00Z");
+    expect(flat(formatMediumDate(d, "pt-BR"))).toMatch(/^03 de nov\.? de 2026$/);
+    expect(flat(formatMediumDate(d, "en"))).toBe("Nov 03, 2026");
+  });
+
+  it("decides the day in the workspace's zone, whatever the process zone", () => {
+    const lateNight = new Date("2026-11-04T01:30:00Z"); // 22:30 on the 3rd in São Paulo
+    expect(flat(formatMediumDate(lateNight, "pt-BR"))).toMatch(/^03 de nov/);
+    expect(flat(formatMediumDate(lateNight, "en"))).toBe("Nov 04, 2026");
+  });
+
+  it("takes an ISO string, which is how a row reaches the browser", () => {
+    expect(flat(formatMediumDate("2026-11-04T01:30:00.000Z", "pt-BR"))).toMatch(/^03 de nov/);
+  });
+});
+
+describe("formatDateTime (the updater's last run, E7 review)", () => {
+  it("shows date and time in the workspace's zone", () => {
+    const lateNight = new Date("2026-11-04T01:30:00Z");
+    expect(flat(formatDateTime(lateNight, "pt-BR"))).toMatch(/^03\/11\/2026,? 22:30:00$/);
+    expect(flat(formatDateTime(lateNight, "en"))).toBe("11/4/2026, 1:30:00 AM");
+  });
+});
+
+describe("workspaceDay (the chart's day buckets, E7 review)", () => {
+  it("is the calendar day in the workspace's zone, not the process's", () => {
+    const lateNight = new Date("2026-11-04T01:30:00Z");
+    expect(workspaceDay(lateNight, "pt-BR")).toEqual({ year: 2026, month: 11, day: 3 });
+    expect(workspaceDay(lateNight, "en")).toEqual({ year: 2026, month: 11, day: 4 });
+  });
+
+  it("turns the year over in that zone", () => {
+    expect(workspaceDay(new Date("2027-01-01T01:00:00Z"), "pt-BR")).toEqual({
+      year: 2026,
+      month: 12,
+      day: 31,
+    });
   });
 });

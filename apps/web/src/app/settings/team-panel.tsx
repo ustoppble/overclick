@@ -7,7 +7,8 @@ import {
   revokeInvitationAction,
   setMemberActiveAction,
 } from "../../actions/team";
-import type { Dict } from "../../lib/i18n";
+import { formatMediumDate } from "../../lib/format";
+import type { Dict, Lang } from "../../lib/i18n";
 import type { PendingInvitation, TeamMember } from "../../lib/invitations";
 
 /** What the server hands the Team tab. Only an admin ever receives it. */
@@ -17,14 +18,6 @@ export type TeamData = {
   members: TeamMember[];
   invitations: PendingInvitation[];
 };
-
-function fmtDate(iso: string, locale: string): string {
-  return new Date(iso).toLocaleDateString(locale, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 /**
  * Invitations and the people on the board (OCL-222). The same token-row
@@ -38,8 +31,8 @@ export function TeamPanel({
   invitations,
   origin,
   t,
-  dateLocale,
-}: TeamData & { origin: string; t: Dict; dateLocale: string }) {
+  lang,
+}: TeamData & { origin: string; t: Dict; lang: Lang }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [email, setEmail] = useState("");
@@ -147,7 +140,7 @@ export function TeamPanel({
             </button>
           </div>
           <div className="policy-note" style={{ borderTop: 0, paddingTop: 8 }}>
-            {t.settings.teamInviteExpires(fmtDate(fresh.expiresAt, dateLocale))}
+            {t.settings.teamInviteExpires(formatMediumDate(fresh.expiresAt, lang))}
           </div>
         </div>
       ) : null}
@@ -163,7 +156,7 @@ export function TeamPanel({
                 <div className="label">{inv.email}</div>
                 <div className="sub">
                   {inv.organizationName} ·{" "}
-                  {t.settings.teamInviteExpires(fmtDate(inv.expiresAt, dateLocale))}
+                  {t.settings.teamInviteExpires(formatMediumDate(inv.expiresAt, lang))}
                 </div>
               </div>
               <button className="btn-rev" disabled={pending} onClick={() => withdraw(inv.id)}>
@@ -188,7 +181,7 @@ export function TeamPanel({
                 {person.active ? t.settings.teamActive : t.settings.teamInactive} ·{" "}
                 {person.role === "member"
                   ? person.installedAt
-                    ? `${t.settings.teamInstalled(fmtDate(person.installedAt, dateLocale))} · `
+                    ? `${t.settings.teamInstalled(formatMediumDate(person.installedAt, lang))} · `
                     : `${t.settings.teamRegistered} · `
                   : ""}
                 {t.settings.teamTokens(person.tokens)}

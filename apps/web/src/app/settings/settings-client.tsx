@@ -24,7 +24,7 @@ import {
   type PluginPairing,
 } from "../../components/plugin-install";
 import { UpdatePanel } from "../../components/update-panel";
-import { formatCalendarDate } from "../../lib/format";
+import { asLang, formatCalendarDate, formatMediumDate } from "../../lib/format";
 import { LANGUAGES, dict, type Dict } from "../../lib/i18n";
 import type { Runtime } from "../../lib/runtime";
 import type { UpdaterState } from "../../lib/updates";
@@ -83,9 +83,6 @@ type TokenRow = {
   lastUsedAt: string | null;
 };
 
-function fmtDate(iso: string, locale: string): string {
-  return new Date(iso).toLocaleDateString(locale, { day: "2-digit", month: "short", year: "numeric" });
-}
 function fmtLastUse(iso: string | null, t: Dict): string {
   if (!iso) return t.settings.neverUsed;
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -177,7 +174,6 @@ export function SettingsClient({
   sourceCommand: string;
 }) {
   const t = dict(lang);
-  const dateLocale = lang === "pt-BR" ? "pt-BR" : "en-US";
   const router = useRouter();
   // The panel a pane belongs to is on screen when its group is the view; the
   // tokens pane is also the whole of "Meu agente".
@@ -724,7 +720,7 @@ export function SettingsClient({
                   <div className="meta">
                     <div className="label">{tok.label}</div>
                     <div className="sub">
-                      {t.settings.created} {fmtDate(tok.createdAt, dateLocale)} ·{" "}
+                      {t.settings.created} {formatMediumDate(tok.createdAt, asLang(lang))} ·{" "}
                       {tok.revoked ? t.settings.revoked : fmtLastUse(tok.lastUsedAt, t)}
                     </div>
                   </div>
@@ -838,7 +834,7 @@ export function SettingsClient({
             className={`tabpane${shown("team") ? " active" : ""}`}
             id="setpane-team"
           >
-            <TeamPanel {...team} origin={origin} t={t} dateLocale={dateLocale} />
+            <TeamPanel {...team} origin={origin} t={t} lang={asLang(lang)} />
           </div>
         ) : null}
 

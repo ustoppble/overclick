@@ -7,6 +7,7 @@ import {
   runSourceUpdateAction,
   triggerUpdateAction,
 } from "../actions/updates";
+import { asLang, formatDateTime } from "../lib/format";
 import { dict } from "../lib/i18n";
 import type { Runtime } from "../lib/runtime";
 import type { SourceUpdateReport } from "../lib/source-update";
@@ -188,9 +189,7 @@ export function UpdatePanel({
           {report ? null : lastUpdate ? (
             <p className="upd-state">
               {t.updates.lastRun(
-                new Date(lastUpdate.at).toLocaleString(
-                  lang === "pt-BR" ? "pt-BR" : "en-US",
-                ),
+                formatDateTime(lastUpdate.at, asLang(lang)),
                 t.updates.outcome[lastUpdate.outcome],
                 lastUpdate.version,
               )}
