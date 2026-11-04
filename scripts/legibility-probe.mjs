@@ -344,8 +344,16 @@ async function main() {
     }
   } finally {
     cdp?.close();
+    // Chrome still writes into its profile while it shuts down; remove the
+    // directory once it has exited, and never fail the run over a temp dir.
+    const exited = new Promise((resolve) => chrome.once("exit", resolve));
     chrome.kill();
-    fs.rmSync(profile, { recursive: true, force: true });
+    await Promise.race([exited, sleep(3000)]);
+    try {
+      fs.rmSync(profile, { recursive: true, force: true });
+    } catch {
+      // left for the OS to clean up with the rest of tmpdir
+    }
   }
   process.exit(failed && !reportOnly ? 1 : 0);
 }
