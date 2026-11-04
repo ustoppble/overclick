@@ -21,7 +21,11 @@ import {
   tickValidationStepAction,
   validateTaskAction,
 } from "../../actions/review";
-import { COLUMN_STATUSES, type ColumnStatus } from "../../lib/board-columns";
+import {
+  COLUMN_STATUSES,
+  type ColumnCounts,
+  type ColumnStatus,
+} from "../../lib/board-columns";
 import { cardIdFromPath, cardPath } from "../../lib/card-path";
 import { pickRowNumber, typeInitial } from "../../lib/board-row";
 import { formatShortDateTime } from "../../lib/format";
@@ -1688,6 +1692,67 @@ function DetailError({
   );
 }
 
+/**
+ * What a board loaded by page draws past its cards (OCL board lazy): the
+ * exact count of every column, and where a column still has cards to bring.
+ * Without it the board holds every card and counts what it holds.
+ */
+export type BoardColumnsView = {
+  counts: ColumnCounts;
+  /** The column's next page; null when the column has no more. */
+  next: Record<ColumnStatus, string | null>;
+  loading: Partial<Record<ColumnStatus, boolean>>;
+  /** The column was scrolled near its end. */
+  onNearEnd: (status: ColumnStatus) => void;
+};
+
+/** The element that scrolls the column, or null for the page itself. */
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const { overflowY } = window.getComputedStyle(node);
+    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") return node;
+  }
+  return null;
+}
+
+/**
+ * The end of a column that has more to bring: when it comes within a screen
+ * of view, the next page is asked for. No button and no "older" line — the
+ * filter decides what a column holds, the scroll only how much of it is
+ * drawn. Keyed by the cursor, so each page landing watches afresh, and a
+ * column still short of the screen asks again on its own.
+ */
+export function ColumnMore({
+  loading,
+  onNearEnd,
+  label,
+}: {
+  loading: boolean;
+  onNearEnd: () => void;
+  label: string;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const near = useRef(onNearEnd);
+  near.current = onNearEnd;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) near.current();
+      },
+      { root: scrollParent(el), rootMargin: "0px 0px 600px 0px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="col-tail" aria-hidden={loading ? undefined : true}>
+      {loading ? <span className="col-tail-dot" role="status" aria-label={label} /> : null}
+    </div>
+  );
+}
+
 export function Board({
   cards,
   lang,
@@ -1701,6 +1766,7 @@ export function Board({
   openedByAddress = false,
   detailVersion,
   viewerRole = "admin",
+  columns,
 }: {
   cards: BoardCard[];
   lang: string;
@@ -1724,9 +1790,24 @@ export function Board({
   detailVersion?: string;
   /** Who is looking: the amber and the Validate button are the admin's. */
   viewerRole?: ViewerRole;
+  /** The columns come by page: their exact counts and the next page to bring. */
+  columns?: BoardColumnsView;
 }) {
   const t = dict(lang);
   const colLabel = columnLabels(t);
+  // The end of a column that still has cards to bring, in either layout.
+  const renderMore = (status: ColumnStatus) => {
+    const next = columns?.next[status];
+    if (!columns || !next) return null;
+    return (
+      <ColumnMore
+        key={next}
+        loading={Boolean(columns.loading[status])}
+        onNearEnd={() => columns.onNearEnd(status)}
+        label={t.board.columnLoading}
+      />
+    );
+  };
   const [open, setOpen] = useState<BoardCard | null>(initialOpen);
   // The line of the open card as the latest refresh drew it; the one it was
   // opened with when the filter no longer shows it.
@@ -1839,14 +1920,17 @@ export function Board({
                 <span className="col-title" title={colLabel[status]}>
                   {colLabel[status]}
                 </span>
-                <span className={countClass(status, viewerRole)}>{list.length}</span>
+                <span className={countClass(status, viewerRole)}>
+                  {columns ? columns.counts[status] : list.length}
+                </span>
               </div>
               <div className="col">
-                {list.length === 0 ? (
+                {list.length === 0 && !columns?.next[status] ? (
                   <EmptyState status={status} t={t} />
                 ) : (
                   list.map(renderCard)
                 )}
+                {renderMore(status)}
               </div>
             </div>
           );
@@ -1859,6 +1943,8 @@ export function Board({
         labels={colLabel}
         renderRow={renderRow}
         renderEmpty={(status) => <EmptyState status={status} t={t} />}
+        renderMore={renderMore}
+        counts={columns?.counts}
         countClass={(status) => countClass(status, viewerRole)}
         t={t}
       />

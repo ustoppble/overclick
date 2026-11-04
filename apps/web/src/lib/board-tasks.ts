@@ -1,12 +1,28 @@
-import { executionAttempt, handoff, mission, project, task, type Database } from "@agent-board/db";
-import { and, asc, desc, eq, gte, inArray, or, sql, type SQL } from "drizzle-orm";
+import {
+  executionAttempt,
+  handoff,
+  mission,
+  project,
+  task,
+  type Database,
+  type TaskPriority,
+  type TaskType,
+} from "@agent-board/db";
+import { and, asc, count, desc, eq, gte, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   DEFAULT_BOARD_PERIOD,
   DEFAULT_BOARD_PERIOD_FIELD,
+  NO_MISSION,
   periodDays,
   type BoardPeriod,
   type BoardPeriodField,
 } from "./board-filter";
+import {
+  BOARD_COLUMN_PAGE,
+  COLUMN_STATUSES,
+  type ColumnCounts,
+  type ColumnStatus,
+} from "./board-columns";
 import { personCondition } from "./person-filter";
 import {
   isAdmin,
@@ -242,6 +258,286 @@ export async function loadBoardTasks(
       options.personUserId ? personCondition(options.personUserId) : undefined,
     ),
   );
+}
+
+export { BOARD_COLUMN_PAGE };
+
+/** What the board shows, read on the server: the bar's scope, the person, the period and the filters. */
+export type BoardQuery = {
+  now?: Date;
+  period?: BoardPeriod;
+  periodBy?: BoardPeriodField;
+  /** Only the cards linked to this person (person-filter.ts); null is everyone. */
+  personUserId?: string | null;
+  /** A mission's id, NO_MISSION for the loose cards, null for any. */
+  missionId?: string | null;
+  types?: readonly TaskType[];
+  priorities?: readonly TaskPriority[];
+  /** Undefined is every release; null only the cards without one. */
+  resolvedIn?: string | null;
+};
+
+/**
+ * Where the next page of a column starts: the last card handed over, by the
+ * exact date the column is ordered on (as the database writes it, so no
+ * precision is lost on the way) and its id, which breaks the ties.
+ */
+export type BoardCursor = { at: string; id: string };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TIMESTAMP = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:?\d{2})?|Z)?$/;
+
+export function encodeBoardCursor(cursor: BoardCursor): string {
+  return `${cursor.at}|${cursor.id}`;
+}
+
+/** Null for anything that is not a cursor this board wrote. */
+export function decodeBoardCursor(value: unknown): BoardCursor | null {
+  if (typeof value !== "string" || value.length > 100) return null;
+  const [at, id, ...rest] = value.split("|");
+  if (rest.length > 0 || !at || !id || !TIMESTAMP.test(at) || !UUID.test(id)) return null;
+  return { at, id };
+}
+
+/** The date a column is ordered on: the one the period reads. */
+function boardSortColumn(periodBy: BoardPeriodField | undefined) {
+  return (periodBy ?? DEFAULT_BOARD_PERIOD_FIELD) === "created" ? task.createdAt : task.updatedAt;
+}
+
+/**
+ * The cards the board may show for a query, in SQL: the reader's scope
+ * (taskScope), the projects of the bar, the period and every filter. `omit`
+ * leaves one filter out, for the counts that answer "what would picking this
+ * show": the mission menu does not read the mission, the release menu the
+ * release.
+ */
+function boardCondition(
+  projectIds: string[],
+  principal: MaybePrincipal,
+  query: BoardQuery,
+  omit: { mission?: boolean; release?: boolean } = {},
+): SQL | undefined {
+  const since = boardWindowStart(query.now ?? new Date(), query.period);
+  const types = query.types ?? [];
+  const priorities = query.priorities ?? [];
+  return and(
+    inArray(task.projectId, projectIds),
+    taskScope(principal),
+    since ? gte(boardSortColumn(query.periodBy), since) : undefined,
+    query.personUserId ? personCondition(query.personUserId) : undefined,
+    omit.mission ? undefined : missionCondition(principal, query.missionId ?? null),
+    types.length > 0 ? inArray(task.tipo, [...types]) : undefined,
+    priorities.length > 0 ? inArray(task.priority, [...priorities]) : undefined,
+    omit.release || query.resolvedIn === undefined
+      ? undefined
+      : query.resolvedIn === null
+        ? isNull(task.resolvedIn)
+        : eq(task.resolvedIn, query.resolvedIn),
+  );
+}
+
+/**
+ * The mission filter as the card line reads it: a card whose mission the
+ * reader may not see carries no mission (OCL-227), so for them it is a loose
+ * card, and the loose bucket must find it.
+ */
+function missionCondition(principal: MaybePrincipal, missionId: string | null): SQL | undefined {
+  if (missionId === null) return undefined;
+  if (missionId !== NO_MISSION) return eq(task.missionId, missionId);
+  const visible = missionScope(principal);
+  if (visible === undefined) return isNull(task.missionId);
+  return or(
+    isNull(task.missionId),
+    sql`not exists (select 1 from ${mission} where ${mission.id} = ${task.missionId} and ${visible})`,
+  );
+}
+
+/**
+ * One column's next page of ids, newest first by the period's date, the id
+ * breaking ties, so a page starts exactly where the last one ended: nothing
+ * twice, nothing skipped, even among cards written in the same instant.
+ */
+async function boardColumnIds(
+  database: Database,
+  projectIds: string[],
+  principal: MaybePrincipal,
+  query: BoardQuery,
+  status: ColumnStatus,
+  after: BoardCursor | null,
+  limit: number,
+): Promise<{ ids: string[]; next: string | null }> {
+  const column = boardSortColumn(query.periodBy);
+  const rows = await database
+    .select({ id: task.id, at: sql<string>`${column}::text` })
+    .from(task)
+    .where(
+      and(
+        boardCondition(projectIds, principal, query),
+        eq(task.status, status),
+        after
+          ? sql`(${column}, ${task.id}) < (${after.at}::timestamptz, ${after.id}::uuid)`
+          : undefined,
+      ),
+    )
+    .orderBy(desc(column), desc(task.id))
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  return {
+    ids: page.map((row) => row.id),
+    next: rows.length > limit && last ? encodeBoardCursor({ at: last.at, id: last.id }) : null,
+  };
+}
+
+export type BoardColumnRows = { rows: BoardTaskRow[]; next: string | null };
+
+/** The rows of the ids, in the ids' order. */
+function inOrder(ids: string[], rows: BoardTaskRow[]): BoardTaskRow[] {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [row] : [];
+  });
+}
+
+/**
+ * Every column's newest cards: a page each, or as many as `depth` says when
+ * the board already holds more of a column (the poll re-reads what is on
+ * screen, not just the first page).
+ */
+export async function loadBoardColumns(
+  database: Database,
+  projectIds: string[],
+  principal: MaybePrincipal,
+  query: BoardQuery,
+  depth: Partial<Record<ColumnStatus, number>> = {},
+): Promise<Record<ColumnStatus, BoardColumnRows>> {
+  const pages = await Promise.all(
+    COLUMN_STATUSES.map((status) =>
+      projectIds.length === 0
+        ? { ids: [], next: null }
+        : boardColumnIds(
+            database,
+            projectIds,
+            principal,
+            query,
+            status,
+            null,
+            Math.max(BOARD_COLUMN_PAGE, Math.min(depth[status] ?? 0, BOARD_COLUMN_MAX_DEPTH)),
+          ),
+    ),
+  );
+  const ids = pages.flatMap((page) => page.ids);
+  const rows =
+    ids.length === 0 ? [] : await queryBoardTasks(database, principal, inArray(task.id, ids));
+  return Object.fromEntries(
+    COLUMN_STATUSES.map((status, index) => {
+      const page = pages[index]!;
+      return [status, { rows: inOrder(page.ids, rows), next: page.next }];
+    }),
+  ) as Record<ColumnStatus, BoardColumnRows>;
+}
+
+/** The deepest a re-read goes: past it the reader scrolls the rest in again. */
+const BOARD_COLUMN_MAX_DEPTH = 2_000;
+
+/** One column's page after a cursor, for the reader scrolling it to its end. */
+export async function loadBoardColumnPage(
+  database: Database,
+  projectIds: string[],
+  principal: MaybePrincipal,
+  query: BoardQuery,
+  status: ColumnStatus,
+  after: BoardCursor,
+): Promise<BoardColumnRows> {
+  if (projectIds.length === 0) return { rows: [], next: null };
+  const page = await boardColumnIds(
+    database,
+    projectIds,
+    principal,
+    query,
+    status,
+    after,
+    BOARD_COLUMN_PAGE,
+  );
+  if (page.ids.length === 0) return { rows: [], next: null };
+  const rows = await queryBoardTasks(database, principal, inArray(task.id, page.ids));
+  return { rows: inOrder(page.ids, rows), next: page.next };
+}
+
+/**
+ * The board's numbers, counted in SQL so they stay exact while the columns
+ * hold only their first pages: each column's cards, and what the mission and
+ * release menus offer (each counted without its own filter, as picking one
+ * would show). A mission the reader may not see counts as loose, as its cards
+ * read.
+ */
+export type BoardCounts = {
+  columns: ColumnCounts;
+  /** Cards per mission the reader sees. */
+  missions: Record<string, number>;
+  /** Cards with no mission (or one the reader may not see). */
+  loose: number;
+  /** Every card the mission menu reads: its "all missions". */
+  scope: number;
+  /** Cards per release; the empty key is the cards without one. */
+  releases: Record<string, number>;
+};
+
+export async function loadBoardCounts(
+  database: Database,
+  projectIds: string[],
+  principal: MaybePrincipal,
+  query: BoardQuery,
+): Promise<BoardCounts> {
+  const counts: BoardCounts = {
+    columns: { aberto: 0, em_execucao: 0, feito: 0, validado: 0, descartado: 0 },
+    missions: {},
+    loose: 0,
+    scope: 0,
+    releases: {},
+  };
+  if (projectIds.length === 0) return counts;
+  const [byStatus, byMission, byRelease] = await Promise.all([
+    database
+      .select({ status: task.status, n: count() })
+      .from(task)
+      .where(boardCondition(projectIds, principal, query))
+      .groupBy(task.status),
+    database
+      .select({ missionId: task.missionId, n: count() })
+      .from(task)
+      .where(boardCondition(projectIds, principal, query, { mission: true }))
+      .groupBy(task.missionId),
+    database
+      .select({ resolvedIn: task.resolvedIn, n: count() })
+      .from(task)
+      .where(boardCondition(projectIds, principal, query, { release: true }))
+      .groupBy(task.resolvedIn),
+  ]);
+  for (const row of byStatus) counts.columns[row.status] += Number(row.n);
+  const missionIds = byMission.flatMap((row) => (row.missionId ? [row.missionId] : []));
+  const seen = isAdmin(principal) || missionIds.length === 0
+    ? null
+    : new Set(
+        (
+          await database
+            .select({ id: mission.id })
+            .from(mission)
+            .where(and(inArray(mission.id, missionIds), missionScope(principal)))
+        ).map((row) => row.id),
+      );
+  for (const row of byMission) {
+    const n = Number(row.n);
+    counts.scope += n;
+    if (row.missionId && (seen === null || seen.has(row.missionId))) {
+      counts.missions[row.missionId] = (counts.missions[row.missionId] ?? 0) + n;
+    } else {
+      counts.loose += n;
+    }
+  }
+  for (const row of byRelease) counts.releases[row.resolvedIn ?? ""] = Number(row.n);
+  return counts;
 }
 
 /** Cards by id, for the ones a search or a link brings in from outside the window. */

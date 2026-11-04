@@ -764,6 +764,35 @@ export function missionFilterOptions<T extends FilterableCard>(
     }));
 }
 
+/**
+ * The mission menu from the server's counts (OCL board lazy): the same rule as
+ * missionFilterOptions, counted in SQL, since the columns hold only their
+ * first pages and the cards on hand no longer add up to the board.
+ */
+export function missionOptionsFromCounts(
+  missions: { id: string; title: string }[],
+  counts: Readonly<Record<string, number>>,
+  missionId: string | null,
+): MissionCount[] {
+  return missions
+    .filter((miss) => (counts[miss.id] ?? 0) > 0 || miss.id === missionId)
+    .map((miss) => ({ id: miss.id, title: miss.title, count: counts[miss.id] ?? 0 }));
+}
+
+/** The release menu from the server's counts; the empty key is "no release". */
+export function releaseOptionsFromCounts(
+  releases: { value: string }[],
+  counts: Readonly<Record<string, number>>,
+): ReleaseCount[] {
+  return [
+    ...releaseValueOptions(releases).map((release) => ({
+      value: release.value,
+      count: counts[release.value] ?? 0,
+    })),
+    { value: null, count: counts[""] ?? 0 },
+  ];
+}
+
 /** A release the filter can offer, with the count left by every other dimension. */
 export type ReleaseCount = { value: string | null; count: number };
 

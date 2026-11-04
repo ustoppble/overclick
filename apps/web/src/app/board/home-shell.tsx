@@ -13,8 +13,16 @@ import {
 } from "../../actions/board-filter";
 import {
   boardSignatureAction,
+  loadBoardColumnPageAction,
+  loadBoardColumnsAction,
   searchBoardCardsAction,
 } from "../../actions/board-cards";
+import {
+  BOARD_COLUMN_PAGE,
+  COLUMN_STATUSES,
+  type ColumnStatus,
+} from "../../lib/board-columns";
+import type { BoardColumnsData } from "../../lib/board-page";
 import {
   NO_MISSION,
   TASK_PRIORITIES,
@@ -24,10 +32,9 @@ import {
   clearBoardFilter,
   DEFAULT_BOARD_PERIOD,
   DEFAULT_BOARD_PERIOD_FIELD,
-  countLooseCards,
   filterBoardCards,
-  missionFilterOptions,
-  releaseFilterOptions,
+  missionOptionsFromCounts,
+  releaseOptionsFromCounts,
   removeFilterChip,
   resetBoardPeriod,
   type BoardFilter,
@@ -37,8 +44,10 @@ import { subscribeToBoardRefresh } from "../../lib/board-refresh";
 import { createBoardSearchRunner } from "../../lib/board-search-runner";
 import {
   addExtraCards,
-  cardsInPeriod,
+  appendColumnPage,
+  columnsAfterRefresh,
   mergeBoardCards,
+  newestFirst,
   searchWithServerHits,
 } from "../../lib/board-window";
 import type { BoardTotals } from "../../lib/board-totals";
@@ -50,7 +59,7 @@ import {
   SelectToggle,
   type SelectionNotice,
 } from "../../components/board/selection-bar";
-import { Board, type BoardCard, type BoardMissionOption } from "./board";
+import { Board, type BoardCard, type BoardColumnsView, type BoardMissionOption } from "./board";
 import { BoardTotal } from "./board-total";
 import { FacetMenu, MoreFilters } from "./facet-filters";
 import { FilterChips } from "./filter-chips";
@@ -78,12 +87,11 @@ export function HomeShell({
   lang,
   missions,
   releases,
-  cards: windowCards,
+  initialColumns,
+  linkedCard = null,
   initialFilter,
   initialTotals,
-  openCardId,
   openedByAddress = false,
-  windowSince,
   boardSignature,
   viewerRole,
   initialQuery = "",
@@ -91,16 +99,15 @@ export function HomeShell({
   lang: string;
   missions: BoardMissionOption[];
   releases: { value: string }[];
-  cards: BoardCard[];
+  /** Each column's newest page and the exact counts, read on the server (OCL board lazy). */
+  initialColumns: BoardColumnsData;
+  /** The card a link asked to open, whether or not a page holds it. */
+  linkedCard?: BoardCard | null;
   initialFilter: BoardFilter;
   /** What the initial filter consumed, already aggregated on the server. */
   initialTotals: BoardTotals;
-  /** The card a link asked to open, already among the cards. */
-  openCardId: string | null;
   /** The page is the open card's own address (/cards/OCL-12, E3). */
   openedByAddress?: boolean;
-  /** Where the window starts, by the date the period reads; null for all time. */
-  windowSince: string | null;
   /** The board's fingerprint when the page was built; the poll compares against it. */
   boardSignature: string;
   /** Who is looking: Validate and the amber are the admin's (navigation plan E1). */
@@ -135,12 +142,29 @@ export function HomeShell({
   // one button. On the desktop the panel never opens because the button is
   // hidden and the wrapper is transparent to the bar.
   const [filtersOpen, setFiltersOpen] = useState(false);
-  // What the search pulled in past the window. The refresh replaces the
-  // window and leaves these alone (OCL board window).
-  const [extraCards, setExtraCards] = useState<BoardCard[]>([]);
+  // The columns as the reader holds them (OCL board lazy): the pages read so
+  // far and where each column's next one starts. The server's are the first
+  // pages; scrolling a column to its end adds the next, and a refresh re-reads
+  // them as deep as they go, so the poll never takes away what was scrolled.
+  const [columns, setColumns] = useState<BoardColumnsData>(initialColumns);
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
+  const [loadingMore, setLoadingMore] = useState<Partial<Record<ColumnStatus, boolean>>>({});
+  const loadingMoreRef = useRef<Partial<Record<ColumnStatus, boolean>>>({});
+  // The newest whole-columns read; an older one landing late is dropped.
+  const columnsRequest = useRef(0);
+  const loadedCards = useMemo(
+    () => COLUMN_STATUSES.flatMap((status) => columns.columns[status].cards),
+    [columns],
+  );
+  // What the search or a link pulled in from outside the pages. A refresh
+  // re-reads the pages and leaves these alone (OCL board window).
+  const [extraCards, setExtraCards] = useState<BoardCard[]>(() =>
+    linkedCard ? [linkedCard] : [],
+  );
   const cards = useMemo(
-    () => mergeBoardCards(windowCards, extraCards),
-    [windowCards, extraCards],
+    () => mergeBoardCards(loadedCards, extraCards),
+    [loadedCards, extraCards],
   );
   const period = filter.period ?? DEFAULT_BOARD_PERIOD;
   const periodBy = filter.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD;
@@ -159,15 +183,17 @@ export function HomeShell({
     });
   }
   const searchActive = debouncedSearchQuery.trim().length > 0;
-  // The period alone decides what every column holds; the search is the one
-  // way past it, so while words are typed every card held can answer them.
+  // The columns are the server's pages, already through the period, the scope
+  // and the filters; the filter runs here too so a new choice narrows at once
+  // while its pages are on their way. The search is the one way past the
+  // pages: while words are typed every card held can answer them, and the
+  // server search brings the ones no page holds.
   const inFilter = useMemo(
     () =>
-      filterBoardCards(
-        searchActive ? cards : cardsInPeriod(cards, windowSince, periodBy),
-        filter,
-      ),
-    [cards, filter, searchActive, windowSince, periodBy],
+      searchActive
+        ? newestFirst(filterBoardCards(cards, filter), periodBy)
+        : filterBoardCards(loadedCards, filter),
+    [cards, loadedCards, filter, searchActive, periodBy],
   );
   const visible = useMemo(
     () =>
@@ -179,45 +205,18 @@ export function HomeShell({
     [inFilter, debouncedSearchQuery, serverHits],
   );
   // Only the first render opens it: the link is an arrival, not a pin.
-  const [openCard] = useState(() =>
-    openCardId ? (windowCards.find((card) => card.id === openCardId) ?? null) : null,
-  );
-  // What the mission filter may offer: the scope is the projects on screen, so
-  // the options and their counts follow the selection, not the mission.
-  const scope = useMemo(
-    () => ({
-      organizationIds: filter.organizationIds,
-      projectIds: filter.projectIds,
-      missionId: null,
-      types: filter.types,
-      priorities: filter.priorities,
-      ...(filter.resolvedIn !== undefined
-        ? { resolvedIn: filter.resolvedIn }
-        : {}),
-    }),
-    [
-      filter.organizationIds,
-      filter.projectIds,
-      filter.types,
-      filter.priorities,
-      filter.resolvedIn,
-    ],
-  );
+  const [openCard] = useState(() => linkedCard);
+  // What the mission and release menus offer, counted in SQL with the columns
+  // (each without its own filter), since the pages on hand are not the board.
   const missionOptions = useMemo(
-    () => missionFilterOptions(cards, missions, filter),
-    [cards, missions, filter],
+    () => missionOptionsFromCounts(missions, columns.counts.missions, filter.missionId),
+    [missions, columns.counts.missions, filter.missionId],
   );
-  const looseCount = useMemo(
-    () => countLooseCards(cards, scope),
-    [cards, scope],
-  );
-  const scopeCount = useMemo(
-    () => filterBoardCards(cards, scope).length,
-    [cards, scope],
-  );
+  const looseCount = columns.counts.loose;
+  const scopeCount = columns.counts.scope;
   const releaseOptions = useMemo(
-    () => releaseFilterOptions(cards, releases, filter),
-    [cards, releases, filter],
+    () => releaseOptionsFromCounts(releases, columns.counts.releases),
+    [releases, columns.counts.releases],
   );
   // The prefix earns its place on the card only when more than one project is
   // on screen. Under a single project it would repeat itself 44 times.
@@ -301,6 +300,58 @@ export function HomeShell({
     [router],
   );
 
+  // Every column again, for a filter: its newest page, or as deep as `depth`
+  // says. Only the newest read lands; one a later choice overtook is dropped.
+  const reloadColumns = useCallback(
+    (next: BoardFilter, depth?: Partial<Record<ColumnStatus, number>>) => {
+      const request = ++columnsRequest.current;
+      return loadBoardColumnsAction(next, window.location.search, depth)
+        .then((data) => {
+          if (data && request === columnsRequest.current) setColumns(data);
+        })
+        .catch(() => null);
+    },
+    [],
+  );
+
+  // A column scrolled to its end asks for its next page, once per cursor:
+  // the page lands only on the columns it was asked from, and a card already
+  // held (it moved columns since) is not drawn twice.
+  const loadMore = useCallback((status: ColumnStatus) => {
+    const cursor = columnsRef.current.columns[status].next;
+    if (!cursor || loadingMoreRef.current[status]) return;
+    loadingMoreRef.current = { ...loadingMoreRef.current, [status]: true };
+    setLoadingMore(loadingMoreRef.current);
+    void loadBoardColumnPageAction(filterRef.current, window.location.search, status, cursor)
+      .then((page) => {
+        if (page) setColumns((data) => appendColumnPage(data, status, cursor, page));
+      })
+      .catch(() => null)
+      .finally(() => {
+        loadingMoreRef.current = { ...loadingMoreRef.current, [status]: false };
+        setLoadingMore(loadingMoreRef.current);
+      });
+  }, []);
+
+  // A refresh (the poll, a write from the panel or the selection bar) brings
+  // the server's first pages. They replace the columns when they answer the
+  // same filter and the reader has not scrolled past them; otherwise the
+  // columns are re-read under the filter on screen, as deep as they were, so
+  // neither the pages scrolled in nor the place on screen are lost.
+  const adoptedColumns = useRef(initialColumns);
+  useEffect(() => {
+    if (initialColumns === adoptedColumns.current) return;
+    adoptedColumns.current = initialColumns;
+    const next = columnsAfterRefresh(columnsRef.current, initialColumns, BOARD_COLUMN_PAGE);
+    if (next.adopt) {
+      // Whatever whole-columns read was on its way is older than this.
+      columnsRequest.current += 1;
+      setColumns(initialColumns);
+      return;
+    }
+    void reloadColumns(filterRef.current, next.depth);
+  }, [initialColumns, reloadColumns]);
+
   // The search also asks the server, so a card the window left out still
   // answers its words. Whatever it finds is held for as long as the words are.
   useEffect(() => {
@@ -329,28 +380,43 @@ export function HomeShell({
     });
   }, [debouncedSearchQuery]);
 
+  // What the columns draw past their cards: the exact counts, and where a
+  // column still has a page to bring when it is scrolled to its end.
+  const columnsView = useMemo<BoardColumnsView>(
+    () => ({
+      counts: columns.counts.columns,
+      next: Object.fromEntries(
+        COLUMN_STATUSES.map((status) => [status, columns.columns[status].next]),
+      ) as Record<ColumnStatus, string | null>,
+      loading: loadingMore,
+      onNearEnd: loadMore,
+    }),
+    [columns, loadingMore, loadMore],
+  );
+  const boardShown = COLUMN_STATUSES.reduce(
+    (sum, status) => sum + columns.counts.columns[status],
+    0,
+  );
   function apply(next: BoardFilter) {
     // Only the scope and the period are remembered (F2), and the scope is the
     // global bar's to write: this line remembers the period when it changes,
     // nothing else (E4 review, item 5). The rest lives in the address.
     const remember = boardPeriodToRemember(filter, next);
-    const saved = remember ? setBoardPeriodAction(remember) : Promise.resolve(null);
+    if (remember) void setBoardPeriodAction(remember);
     setFilter(next);
     writeAddress(next, searchQuery);
+    // A new period, or a new date for it, is a new window: what the search
+    // pulled in past the old one goes with it.
     if (
       (next.period ?? DEFAULT_BOARD_PERIOD) !== period ||
       (next.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD) !== periodBy
     ) {
-      // A new period, or a new date for it, is a new window, and the window is
-      // the server's: save the choice, then ask for the page again right away
-      // (this is the reader's own action, not the poll). What the search
-      // pulled in past the old window goes with it.
       setExtraCards([]);
-      void saved.then(() => startRefresh(() => router.refresh()));
-      return;
     }
-    // The total is aggregated where Insights aggregates it, so a new filter
-    // asks the server for its numbers instead of adding cards up here.
+    // The columns are the server's (OCL board lazy): a new filter asks for
+    // their first pages and exact counts, and narrows the pages held at once
+    // while they come. The total is aggregated where Insights aggregates it.
+    void reloadColumns(next);
     void boardTotalsAction(next).then(setTotals);
   }
 
@@ -502,7 +568,7 @@ export function HomeShell({
         filter={filter}
         missions={missions}
         query={searchQuery}
-        shown={visible.length}
+        shown={searchActive ? visible.length : boardShown}
         searching={searching}
         searchLimited={searchLimited}
         onRemove={(key) => apply(removeFilterChip(filter, key))}
@@ -521,6 +587,7 @@ export function HomeShell({
         <ReleaseHeader
           release={filter.resolvedIn}
           cards={visible}
+          counts={searchActive ? undefined : columns.counts.columns}
           missions={missions}
           totals={totals}
           filter={filter}
@@ -542,6 +609,7 @@ export function HomeShell({
         openedByAddress={openedByAddress}
         detailVersion={boardSignature}
         viewerRole={viewerRole}
+        columns={searchActive ? undefined : columnsView}
       />
 
       {picking ? (

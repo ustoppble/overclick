@@ -39,3 +39,11 @@ export function countByStatus(cards: { status: ColumnStatus }[]): ColumnCounts {
 export function firstStatusWithCards(counts: ColumnCounts): ColumnStatus {
   return COLUMN_STATUSES.find((status) => counts[status] > 0) ?? "aberto";
 }
+
+/**
+ * How many cards a column hands over at a time (OCL board lazy): its newest,
+ * and the next ones when the reader scrolls it to its end. Enough to fill a
+ * tall screen twice, so the next page is on its way long before the column
+ * runs out.
+ */
+export const BOARD_COLUMN_PAGE = 40;

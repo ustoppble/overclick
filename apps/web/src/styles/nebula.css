@@ -1300,6 +1300,17 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .col-head .col-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb .col-head .count { flex: none; color: var(--nebula-text-tertiary); white-space: nowrap; }
 .nb .col { display: flex; flex-direction: column; gap: var(--nebula-space-3); min-height: 300px; padding-bottom: 48px; }
+/* The end of a column with more to bring (OCL board lazy): no button, no
+   line of text, just the place the next page lands, and while it is on its
+   way one quiet dot in the column's own tertiary ink. */
+.nb .col-tail { display: flex; justify-content: center; min-height: 24px; padding: 6px 0; }
+.nb .col-tail-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--nebula-text-tertiary);
+  animation: col-tail-pulse 1.1s ease-in-out infinite;
+}
+@keyframes col-tail-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.9; } }
+@media (prefers-reduced-motion: reduce) { .nb .col-tail-dot { animation: none; opacity: 0.6; } }
 
 .nb .empty-col {
   border: 1px dashed var(--oc-border-dashed); border-radius: var(--nebula-glass-radius);
