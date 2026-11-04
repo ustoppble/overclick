@@ -150,6 +150,63 @@ probe() {
     2>/dev/null || echo "000"
 }
 
+# The image compose builds for the app service. Everything below that tags or
+# removes images only ever names this repository.
+APP_IMAGE="${COMPOSE_PROJECT_NAME}-app"
+ROLLBACK_PREFIX="rollback-"
+
+# Keep the image that is serving right now under a rollback tag before the build
+# replaces `latest`. Rolling back is then `docker tag` + `up -d --no-build`,
+# with no rebuild (README, "Rolling back").
+tag_rollback() {
+  local container image_id version tag
+  container="$("${COMPOSE[@]}" ps -q app 2>/dev/null | head -n 1)"
+  if [ -z "$container" ]; then
+    echo "==> no running app container; nothing to keep for rollback"
+    return 0
+  fi
+  image_id="$(docker inspect --format '{{.Image}}' "$container")"
+  version="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' apps/web/package.json | head -n 1)"
+  tag="${APP_IMAGE}:${ROLLBACK_PREFIX}v${version:-unknown}-$(date -u +%Y%m%dT%H%M%SZ)"
+  docker tag "$image_id" "$tag"
+  echo "==> rollback image: ${tag}"
+}
+
+# Disk: every deploy leaves its build cache (about 4 GB) and the previous image
+# behind. Once the new app is healthy, drop build cache older than
+# OVERCLICK_BUILD_CACHE_MAX_AGE (default 24h; the cache is shared by every build
+# on the host, so this is an age filter and never a full prune) and keep, of the
+# rollback images, only the most recently tagged one. The running image is
+# `latest`; nothing is removed while a container still uses it.
+cleanup_disk() {
+  local max_age="${OVERCLICK_BUILD_CACHE_MAX_AGE:-24h}" newest="" newest_time="" ref tagged
+  echo "==> pruning build cache older than ${max_age}"
+  docker builder prune --force --filter "until=${max_age}" || echo "==> build cache prune failed; continuing"
+
+  while IFS= read -r ref; do
+    tagged="$(docker image inspect --format '{{.Metadata.LastTagTime}}' "$ref" 2>/dev/null || true)"
+    if [ -z "$newest" ] || [[ "$tagged" > "$newest_time" ]]; then
+      newest="$ref"
+      newest_time="$tagged"
+    fi
+  done < <(docker image ls "$APP_IMAGE" --format '{{.Repository}}:{{.Tag}}' | grep -F ":${ROLLBACK_PREFIX}" || true)
+
+  [ -n "$newest" ] || return 0
+  echo "==> keeping rollback image ${newest}"
+  while IFS= read -r ref; do
+    [ "$ref" = "$newest" ] && continue
+    echo "==> removing old rollback image ${ref}"
+    docker rmi "$ref" >/dev/null || echo "==> could not remove ${ref}; continuing"
+  done < <(docker image ls "$APP_IMAGE" --format '{{.Repository}}:{{.Tag}}' | grep -F ":${ROLLBACK_PREFIX}" || true)
+}
+
+# Before anything changes: a restorable copy of the database and of deploy/.env
+# (mode 600, in a 700 directory, newest 7 kept; see deploy/backup.sh). A failed
+# backup stops the deploy, since the whole point is being able to go back.
+echo "==> backing up"
+"$(dirname "$0")/backup.sh" pre-deploy
+tag_rollback
+
 echo "==> pulling"
 git pull --ff-only
 
@@ -165,6 +222,9 @@ for _ in $(seq 1 60); do
     200 | 30?)
       echo "==> up (HTTP ${code}) on ${WHERE}"
       "${COMPOSE[@]}" ps --format '{{.Service}} {{.Status}}'
+      # Only after the app is proven healthy: a failed deploy keeps the old
+      # images and cache it may need to be rolled back.
+      cleanup_disk
       exit 0
       ;;
   esac

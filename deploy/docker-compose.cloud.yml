@@ -14,6 +14,8 @@ services:
       POSTGRES_DB: overclick
     volumes:
       - overclick_pgdata:/var/lib/postgresql/data
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U overclick -d overclick"]
       interval: 5s
@@ -66,8 +68,25 @@ services:
       # https://board.your-domain. Empty = those emails are not sent: the
       # request's Host is attacker-controlled and is never used for a link.
       OVERCLICK_PUBLIC_URL: "${OVERCLICK_PUBLIC_URL:-}"
+      # Where `pnpm emergency-login` writes its single-use link file: the
+      # tmpfs below, since the root filesystem is read-only. It is mode 0700
+      # and in memory, so a link never survives a restart.
+      OVERCLICK_EMERGENCY_DIR: /run/emergency
     volumes:
       - update-trigger:/update-trigger
+    # Hardening: the image runs as an unprivileged user (uid 10001), so this
+    # locks the rest. Nothing in the container can be rewritten, gain a
+    # capability or escalate through a setuid binary; only the tmpfs mounts
+    # and the update-trigger volume are writable. /tmp is also HOME (pnpm,
+    # corepack); Next writes its runtime cache under .next/cache.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=1777
+      - /app/apps/web/.next/cache:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001,mode=0755
+      - /run/emergency:rw,noexec,nosuid,nodev,size=1m,uid=10001,gid=10001,mode=0700
     # Bound to loopback: the reverse proxy is the only way in from outside.
     ports:
       - "127.0.0.1:${OVERCLICK_PORT:-3100}:3000"
