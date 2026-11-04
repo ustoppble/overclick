@@ -3,6 +3,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import {
+  hardenedGitConfig,
+  parseHttpsRemote,
+  resolvePublicRemote,
+  type PinnedRemote,
+} from "./remote-guard";
 
 const execFile = promisify(execFileCallback);
 
@@ -24,6 +30,8 @@ type JsonRecord = Record<string, unknown>;
 type VerifyDependencies = {
   fetch?: typeof fetch;
   git?: (args: string[]) => Promise<string>;
+  /** Host name to addresses; replaced in tests. */
+  lookup?: (host: string) => Promise<string[]>;
   githubToken?: string | null;
 };
 
@@ -86,6 +94,11 @@ function githubRepository(repoUrl: string): { owner: string; repo: string } | nu
   } catch {
     return null;
   }
+}
+
+/** A path on this machine or a file:// url: a local checkout, never a remote. */
+function isLocalCheckout(value: string): boolean {
+  return /^file:/i.test(value) || /^(\/|\.{1,2}\/|~|\\|[a-z]:[\\/])/i.test(value);
 }
 
 function githubHeaders(workspaceToken?: string | null): HeadersInit {
@@ -170,6 +183,16 @@ async function defaultGit(args: string[]): Promise<string> {
     timeout: 15_000,
     maxBuffer: 512 * 1024,
     windowsHide: true,
+    // Nothing of the server's environment (tokens, askpass, ssh agent) reaches
+    // a git that talks to an address a person typed; https and no prompt only.
+    env: {
+      PATH: process.env.PATH ?? "",
+      HOME: tmpdir(),
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_ALLOW_PROTOCOL: "https",
+    },
   });
   return result.stdout;
 }
@@ -184,12 +207,15 @@ function outputLines(raw: string): Array<{ sha: string; ref: string }> {
 
 async function verifyGeneric(
   repoUrl: string,
+  pin: PinnedRemote,
   commit: string,
   branch: string,
-  git: (args: string[]) => Promise<string>,
+  run: (args: string[]) => Promise<string>,
 ): Promise<DeliveryVerificationResult> {
   const branchName = normalizedBranch(branch);
   if (!branchName) return unverified();
+  const config = hardenedGitConfig(pin);
+  const git = (args: string[]) => run([...config, ...args]);
 
   try {
     const advertised = outputLines(
@@ -272,5 +298,15 @@ export async function verifyDelivery(
   if (github) {
     return verifyGithub(github, commit, branch, dependencies.fetch ?? fetch, dependencies.githubToken);
   }
-  return verifyGeneric(repoUrl, commit, branch, dependencies.git ?? defaultGit);
+  // A checkout registered by path or file:// is not a remote: nothing to prove,
+  // and git is never pointed at the server's own disk.
+  if (isLocalCheckout(repoUrl)) return NOT_CHECKED;
+
+  // Anything else is a network request the server makes on a typed address:
+  // https only, and only to a public address (see remote-guard).
+  const remote = parseHttpsRemote(repoUrl);
+  if (!remote) return unverified(CHECK_UNAVAILABLE_WARNING);
+  const pin = await resolvePublicRemote(remote, dependencies.lookup);
+  if (!pin) return unverified(CHECK_UNAVAILABLE_WARNING);
+  return verifyGeneric(remote.href, pin, commit, branch, dependencies.git ?? defaultGit);
 }

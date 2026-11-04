@@ -441,6 +441,28 @@ export const MissionReportUsageOutputSchema = z.object({
   attempt: MissionAttemptSchema,
 });
 
+/**
+ * A project's repository address. The board later reaches it (delivery
+ * verification) and matches the working path against it (card routing), so
+ * only an https or ssh remote, or a file:// checkout kept for routing, is
+ * stored. ext::, git:, ftp:, http: and the like never enter, and neither does a
+ * credential in the URL. Existing rows are not rewritten; verification applies
+ * its own allowlist again.
+ */
+export const RepoUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      if (!["https:", "ssh:", "file:"].includes(url.protocol)) return false;
+      if (url.protocol !== "file:" && !url.hostname) return false;
+      return !url.password && !(url.protocol === "https:" && url.username);
+    } catch {
+      return false;
+    }
+  }, "repo_url must be an https or ssh remote (or a file:// checkout) without credentials");
+
 const ProjectRefSchema = z
   .string()
   .min(1)
@@ -511,7 +533,7 @@ export const ProjectGetOutputSchema = z.object({
 export const ProjectCreateInputSchema = z.object({
   name: z.string().min(1).max(200),
   organization: OrganizationChoiceSchema,
-  repo_url: z.string().url().optional(),
+  repo_url: RepoUrlSchema.optional(),
   context: ProjectContextSchema.optional(),
   current_version: ProjectVersionSchema.optional(),
   context_source: ProjectContextSourceSchema.optional(),
@@ -553,7 +575,7 @@ export const ProjectUpdateInputSchema = z
     organization: OrganizationRefSchema.optional().describe(
       "Moves the project to this organization. Its cards follow it.",
     ),
-    repo_url: z.string().url().nullable().optional(),
+    repo_url: RepoUrlSchema.nullable().optional(),
     context: ProjectContextSchema.nullable().optional(),
     context_ops: ContextOpsSchema.describe(
       "Granular markdown operations applied to the current project context.",
