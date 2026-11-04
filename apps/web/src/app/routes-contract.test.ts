@@ -97,3 +97,37 @@ describe("the old addresses become permanent redirects (E4)", () => {
     expect(source).not.toContain("permanentRedirect");
   });
 });
+
+/**
+ * Every item of the Settings menu is a page of its own. The group pages that
+ * stacked their sections now only send to the first one (a 307, after the
+ * member check, like `/settings?tab=`), and each section answers at
+ * `/settings/<group>/<section>`.
+ */
+describe("each Settings item has its own page", () => {
+  it("app/settings/[group]/[section]/page.tsx exists", () => {
+    expect(existsSync(page("settings/[group]/[section]"))).toBe(true);
+  });
+
+  it("next.config answers /settings/<group> before the page streams", () => {
+    const source = readFileSync(join(app, "..", "..", "next.config.ts"), "utf8");
+    expect(source).toMatch(/redirects: async \(\) => SETTINGS_GROUP_REDIRECTS/);
+  });
+
+  it("app/settings/[group]/page.tsx sends a group with sections to its first one", () => {
+    const source = readFileSync(page("settings/[group]"), "utf8");
+    expect(source).toContain("settingsGroupDestination");
+    expect(source).not.toContain("permanentRedirect");
+  });
+
+  it("the links that leave Settings name a page, not an anchor", () => {
+    const sources = [
+      readFileSync(page("account/agent"), "utf8"),
+      readFileSync(join(app, "..", "components", "install-notice.tsx"), "utf8"),
+    ];
+    // The menu's own links are checked where it renders (settings-groups-nav.test.tsx).
+    for (const source of sources) expect(source).not.toMatch(/\/settings\/[a-z-]+#/);
+    expect(sources[0]).toContain("/settings/agents/connections");
+    expect(sources[1]).toContain("/settings/team/people");
+  });
+});

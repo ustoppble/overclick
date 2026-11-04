@@ -22,9 +22,11 @@ export type TeamData = {
 /**
  * Invitations and the people on the board (OCL-222). The same token-row
  * vocabulary as the MCP tokens tab, so a person reads as one more thing the
- * admin can switch off, next to the agents.
+ * admin can switch off, next to the agents. Each is a Settings page of its
+ * own: `section` says which one this is.
  */
 export function TeamPanel({
+  section,
   currentUserId,
   organizations,
   members,
@@ -32,7 +34,12 @@ export function TeamPanel({
   origin,
   t,
   lang,
-}: TeamData & { origin: string; t: Dict; lang: Lang }) {
+}: TeamData & {
+  section: "people" | "invitations";
+  origin: string;
+  t: Dict;
+  lang: Lang;
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [email, setEmail] = useState("");
@@ -85,6 +92,7 @@ export function TeamPanel({
       {err ? <p className="werr" role="alert">{err}</p> : null}
       {msg ? <p className="wok" role="status">{msg}</p> : null}
 
+      {section === "invitations" ? (<>
       <div className="set-card">
         <div className="sec-cap" id="invitations">{t.settings.teamInviteCap}</div>
         {canInvite ? (
@@ -167,6 +175,9 @@ export function TeamPanel({
         )}
       </div>
 
+      </>) : null}
+
+      {section === "people" ? (<>
       <div className="sec-cap" id="people">{t.settings.teamPeopleCap}</div>
       <div className="tok-list">
         {members.map((person) => (
@@ -199,6 +210,7 @@ export function TeamPanel({
           </div>
         ))}
       </div>
+      </>) : null}
     </>
   );
 }

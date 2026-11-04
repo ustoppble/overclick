@@ -109,7 +109,7 @@ async function MyAgent({
               <>
                 {" · "}
                 {t.account.allConnections}{" "}
-                <a href="/settings/agents#connections">{t.account.allConnectionsLink}</a>
+                <a href="/settings/agents/connections">{t.account.allConnectionsLink}</a>
               </>
             ) : null}
           </div>
