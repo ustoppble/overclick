@@ -106,9 +106,9 @@ for row in rows:
         "docker-compose.traefik.yml",
     }
     # Compare lexically, not through realpath: the label holds the path the
-    # project was created from. The host records /opt/overclick/deploy/...,
-    # while the OCL-73 sidecar sees the same checkout as /workspace/deploy/...,
-    # so "under this checkouts deploy/" is the wrong test there. What tells the
+    # project was created from. A project last recreated by the retired updater
+    # sidecar carries /workspace/deploy/..., not the host path /opt/overclick/deploy/...,
+    # so "under this checkouts deploy/" is the wrong test. What tells the
     # hosted project from the legacy root-compose one is the file itself: an
     # allowed basename inside a directory named deploy.
     for item in files:
@@ -126,14 +126,48 @@ for row in rows:
   fi
 }
 
+# The one-click updater sidecar (OCL-73) is retired: it held the docker socket,
+# which is root on the host, and the update is now only this script, run on the
+# host. A host that had turned it on still has the container, so remove exactly
+# that one, found by its compose labels. The app and the database are never
+# named here. `up --remove-orphans` below would also catch it; this makes it
+# explicit and does it before anything is pulled or built. A mutation, so it
+# runs after the backup and the rollback tag.
+remove_updater_sidecar() {
+  local ids
+  if ! ids="$(docker ps -a -q \
+      --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" \
+      --filter "label=com.docker.compose.service=updater")"; then
+    echo "==> could not look for the retired updater sidecar; --remove-orphans below still covers it"
+    return 0
+  fi
+  if [ -n "$ids" ]; then
+    echo "==> removing the retired updater sidecar"
+    # shellcheck disable=SC2086
+    docker rm -f $ids >/dev/null
+  fi
+}
+
+# The sidecar's trigger volume (status and log files of the retired updater, no
+# user data) is left behind once the app is recreated without it. Removed only
+# when no container references it, and only after the backup and the rebuild.
+remove_updater_volume() {
+  local referencing_containers
+  docker volume inspect overclick_update-trigger >/dev/null 2>&1 || return 0
+  if ! referencing_containers="$(docker ps -a --filter volume=overclick_update-trigger --format '{{.ID}}')"; then
+    echo "==> retaining overclick_update-trigger because its references could not be inspected"
+  elif [ -n "$referencing_containers" ]; then
+    echo "==> retaining overclick_update-trigger because a container still references it"
+  else
+    echo "==> removing the retired updater volume overclick_update-trigger"
+    docker volume rm overclick_update-trigger >/dev/null
+  fi
+}
+
 assert_deploy_project_files
 
-# Always probe by exec'ing into the app container over the docker socket,
-# never the host's published loopback port. The overlay case already needed
-# this (the port is dropped on purpose there); OCL-73's sidecar runs this same
-# script from inside its own container, where 127.0.0.1 is the sidecar, not
-# the app, so the host-loopback probe would time out on every sidecar-driven
-# update even though the deploy itself succeeded.
+# Always probe by exec'ing into the app container, never the host's published
+# loopback port: the proxy overlay drops that port on purpose.
 WHERE="inside the container"
 
 probe() {
@@ -194,19 +228,21 @@ cleanup_disk() {
 
 # Before anything changes: a restorable copy of the database and of deploy/.env
 # (mode 600, in a 700 directory, newest 7 kept; see deploy/backup.sh), then the
-# rollback tag. Both come before EVERY mutation below (orphan removal, pull,
-# build, restart). A failed backup stops the deploy, since the whole point is
+# rollback tag. Both come before EVERY mutation below (orphan and sidecar
+# removal, pull, build, restart). A failed backup stops the deploy, since the whole point is
 # being able to go back.
 echo "==> backing up"
 deploy/backup.sh pre-deploy
 tag_rollback
 remove_legacy_orphans
+remove_updater_sidecar
 
 echo "==> pulling"
 git pull --ff-only
 
 echo "==> building and restarting"
 "${COMPOSE[@]}" up -d --build --remove-orphans
+remove_updater_volume
 
 echo "==> waiting for the app (${WHERE})"
 for _ in $(seq 1 60); do

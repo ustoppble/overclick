@@ -630,9 +630,6 @@ const en = {
         : `Last update: ${outcome}, ${when}.`,
     newVersion: (v: string) => `Version ${v} is available.`,
     releaseNotes: "release notes",
-    updateBtn: "Update",
-    updateRequested:
-      "Update requested. The helper is pulling the new image and recreating the app.",
     runOnServer: "Run this on the server:",
     runningVersion: (v: string, runtime: string) =>
       `This instance is running version ${v}, ${runtime}.`,
@@ -673,21 +670,11 @@ const en = {
       "This checkout has uncommitted changes, so nothing was pulled: a pull over them would put somebody's work at risk. Commit or stash these, then press Update again.",
     refusedNoRepo:
       "This install is not a git checkout, so there is nothing to pull. Update it the way you deployed it.",
-    updaterDetected:
-      "Updater sidecar running. The button below pulls the new image and recreates the app.",
-    updaterAbsent:
-      "No updater sidecar running, so nothing here can restart a container. Turn it on with:",
-    socketNote:
-      "The updater mounts the docker socket, which is root on the host: it can restart any container on this machine, so run it only where you already trust whoever can reach this board.",
-    manualPath: "Prefer to keep the socket to yourself? Update by hand instead:",
     updating: "Updating…",
-    appRestarting: "The app is being recreated. This page comes back on its own.",
-    phase: {
-      pulling: "Pulling the new image…",
-      recreating: "Recreating the app…",
-      done: "Updated. The app is back on the new version.",
-      failed: "The update failed. Nothing was replaced.",
-    } as Record<string, string>,
+    appRestarting: "The app is restarting. This page comes back on its own.",
+    serverOnly:
+      "This instance cannot be updated from the board. Run the update on the server, from the project folder:",
+    bannerSource: "This instance runs from the source checkout. Update it in Settings › System, or by hand:",
     dismiss: "Dismiss",
   },
   /**
@@ -1542,9 +1529,6 @@ const ptBR: Dict = {
         : `Última atualização: ${outcome}, ${when}.`,
     newVersion: (v: string) => `Versão ${v} disponível.`,
     releaseNotes: "notas da release",
-    updateBtn: "Atualizar",
-    updateRequested:
-      "Atualização solicitada. O helper está baixando a nova imagem e recriando o app.",
     runOnServer: "Rode isto no servidor:",
     runningVersion: (v: string, runtime: string) =>
       `Esta instância está na versão ${v}, ${runtime}.`,
@@ -1586,21 +1570,11 @@ const ptBR: Dict = {
       "Este checkout tem alterações não commitadas, então nada foi baixado: um pull por cima delas colocaria o trabalho de alguém em risco. Commite ou dê stash e aperte Atualizar de novo.",
     refusedNoRepo:
       "Esta instalação não é um checkout do git, então não há o que baixar. Atualize do jeito que você fez o deploy.",
-    updaterDetected:
-      "Sidecar de atualização rodando. O botão abaixo baixa a nova imagem e recria o app.",
-    updaterAbsent:
-      "Nenhum sidecar de atualização rodando, então nada aqui consegue reiniciar um container. Ligue com:",
-    socketNote:
-      "O updater monta o socket do docker, que é root no host: ele consegue reiniciar qualquer container desta máquina, então só ligue onde você já confia em quem alcança este board.",
-    manualPath: "Prefere não entregar o socket? Atualize na mão:",
     updating: "Atualizando…",
-    appRestarting: "O app está sendo recriado. Esta página volta sozinha.",
-    phase: {
-      pulling: "Baixando a nova imagem…",
-      recreating: "Recriando o app…",
-      done: "Atualizado. O app voltou na versão nova.",
-      failed: "A atualização falhou. Nada foi substituído.",
-    } as Record<string, string>,
+    appRestarting: "O app está reiniciando. Esta página volta sozinha.",
+    serverOnly:
+      "Esta instância não é atualizada pelo board. Rode a atualização no servidor, na pasta do projeto:",
+    bannerSource: "Esta instância roda direto do código-fonte. Atualize em Configurações › Sistema, ou na mão:",
     dismiss: "Fechar",
   },
   record: {

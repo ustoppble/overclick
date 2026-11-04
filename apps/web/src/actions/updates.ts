@@ -1,7 +1,5 @@
 "use server";
 
-import { rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { workspace, type UpdateMode } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -17,13 +15,6 @@ import {
   runHostSourceUpdate,
   scheduleExit,
 } from "../lib/source-update-host";
-import {
-  readUpdaterState,
-  STATUS_FILE,
-  TRIGGER_FILE,
-  updateHelperDir,
-  type UpdaterState,
-} from "../lib/updates";
 
 const MODES: readonly UpdateMode[] = ["off", "check", "auto"];
 
@@ -49,51 +40,6 @@ export async function saveUpdateModeAction(
   revalidatePath("/board");
   revalidatePath("/settings");
   return { ok: true };
-}
-
-export type TriggerUpdateResult =
-  | { ok: true; triggered: boolean }
-  | { ok: false; error: string };
-
-/**
- * Asks the optional compose updater profile to pull the new image and
- * recreate the app. Reports triggered: false when no sidecar is running, so
- * the UI shows the command that enables it instead of pretending to work.
- */
-export async function triggerUpdateAction(): Promise<TriggerUpdateResult> {
-  const session = await getSession();
-  if (!session) return { ok: false, error: "Session expired. Sign in again." };
-  if (!(await sessionCanManageWorkspace(session))) return { ok: false, error: ADMIN_ONLY };
-
-  const dir = updateHelperDir();
-  if (!dir) return { ok: true, triggered: false };
-  const state = await readUpdaterState();
-  if (!state.running) return { ok: true, triggered: false };
-  try {
-    // The stale status of the previous run goes first: the UI polls this file
-    // and must not read the last update's "done" as this one's result.
-    await rm(join(dir, STATUS_FILE), { force: true });
-    await writeFile(join(dir, TRIGGER_FILE), new Date().toISOString());
-    return { ok: true, triggered: true };
-  } catch {
-    return { ok: false, error: "Could not write the update trigger." };
-  }
-}
-
-export type UpdaterStateResult =
-  | { ok: true; state: UpdaterState }
-  | { ok: false; error: string };
-
-/**
- * What the sidecar is doing right now. The Settings panel polls this while an
- * update runs: the app itself is recreated halfway through, so the progress
- * lives in the shared volume and survives its own restart.
- */
-export async function readUpdaterStateAction(): Promise<UpdaterStateResult> {
-  const session = await getSession();
-  if (!session) return { ok: false, error: "Session expired. Sign in again." };
-  if (!(await sessionCanManageWorkspace(session))) return { ok: false, error: ADMIN_ONLY };
-  return { ok: true, state: await readUpdaterState() };
 }
 
 export type SourceUpdateResult =
