@@ -15,6 +15,8 @@ import {
   adminPrincipal,
   closeTestWorld,
   createTestWorld,
+  insertSideProject,
+  linkProjects,
   type TestWorld,
 } from "../mcp/test-db";
 
@@ -43,6 +45,7 @@ const NOT_FOUND = { ok: false, error: "Card not found." };
  */
 describe("board card line and detail", () => {
   let memberId = "";
+  let sideProjectId = "";
 
   beforeEach(async () => {
     world = await createTestWorld();
@@ -56,6 +59,9 @@ describe("board card line and detail", () => {
       })
       .returning({ id: user.id });
     memberId = member!.id;
+    // The member works on OC; LT, same organization, is not linked to them.
+    await linkProjects(world.db, memberId, [world.projectId]);
+    sideProjectId = await insertSideProject(world.db, world);
     sessionUserId = "";
   });
 
@@ -69,11 +75,11 @@ describe("board card line and detail", () => {
   }
 
   /** A delivered card with two runs, a handoff with evidences and comments. */
-  async function deliveredCard(shortId: string, createdByUserId: string) {
+  async function deliveredCard(shortId: string, createdByUserId: string, projectId = world.projectId) {
     const [row] = await world.db
       .insert(task)
       .values({
-        projectId: world.projectId,
+        projectId,
         shortId,
         title: `delivered ${shortId}`,
         oQue: "WHAT-BODY",
@@ -197,21 +203,25 @@ describe("board card line and detail", () => {
     expect(JSON.stringify(detail)).not.toContain("EVIDENCE-VALUE");
   });
 
-  it("a member opens their own card and gets 'Card not found.' for anyone else's", async () => {
+  it("a member opens any card of a linked project, whoever wrote it, and gets 'Card not found.' elsewhere", async () => {
     const adminCard = await deliveredCard("OC-3", world.adminUserId);
     const memberCard = await deliveredCard("OC-4", memberId);
+    const sideCard = await deliveredCard("LT-1", world.adminUserId, sideProjectId);
     sessionUserId = memberId;
 
-    const own = await loadBoardCardDetailAction(memberCard);
-    expect(own.ok).toBe(true);
-    const other = await loadBoardCardDetailAction(adminCard);
+    expect((await loadBoardCardDetailAction(memberCard)).ok).toBe(true);
+    const colleague = await loadBoardCardDetailAction(adminCard);
+    expect(colleague.ok).toBe(true);
+    expect(JSON.stringify(colleague)).toContain("HANDOFF-SUMMARY");
+    const other = await loadBoardCardDetailAction(sideCard);
     expect(other).toEqual(NOT_FOUND);
     expect(JSON.stringify(other)).not.toContain("HANDOFF-SUMMARY");
 
-    // The admin reads both.
+    // The admin reads all three.
     sessionUserId = world.adminUserId;
     expect((await loadBoardCardDetailAction(memberCard)).ok).toBe(true);
     expect((await loadBoardCardDetailAction(adminCard)).ok).toBe(true);
+    expect((await loadBoardCardDetailAction(sideCard)).ok).toBe(true);
   });
 
   it("answers 'Card not found.' without a session, for an unknown id and for input that is not an id", async () => {
@@ -228,12 +238,14 @@ describe("board card line and detail", () => {
 
   it("a member's detail is scoped by the same rule as their board", async () => {
     const memberCard = await deliveredCard("OC-6", memberId);
+    const adminCard = await deliveredCard("OC-7", world.adminUserId);
+    await deliveredCard("LT-2", world.adminUserId, sideProjectId);
     const member: Principal = {
       userId: memberId,
       role: "member",
       organizationId: world.organizationId,
     };
-    const rows = await loadBoardTasks(database(), [world.projectId], member, { period: "all" });
-    expect(rows.map((row) => row.id)).toEqual([memberCard]);
+    const rows = await loadBoardTasks(database(), [world.projectId, sideProjectId], member, { period: "all" });
+    expect(rows.map((row) => row.id).sort()).toEqual([memberCard, adminCard].sort());
   });
 });

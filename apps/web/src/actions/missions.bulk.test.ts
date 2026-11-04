@@ -1,7 +1,13 @@
 import { mission, task, user } from "@agent-board/db";
 import { eq, inArray } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
+import {
+  closeTestWorld,
+  createTestWorld,
+  insertSideProject,
+  linkProjects,
+  type TestWorld,
+} from "../mcp/test-db";
 import { invokeToolForTests as invokeTool } from "../mcp/test-tools";
 import type { AuthContext } from "../mcp/types";
 
@@ -94,11 +100,15 @@ describe("bulk move and its undo", () => {
       if (!r.ok) throw new Error("fixture card failed");
       return (r.value as { task: { id: string } }).task.id;
     };
+    // The member works on OC; the admin's cards are in a project of the same
+    // organization they are not linked to.
+    await linkProjects(world.db, memberId, [world.projectId]);
+    const side = await insertSideProject(world.db, world);
     // Three cards from three places: the fixture mission, another one, none.
     ids = [
-      idOf(await invokeTool(world.db, admin, "task_create", card("a"))),
-      idOf(await invokeTool(world.db, admin, "task_create", card("b"))),
-      idOf(await invokeTool(world.db, admin, "task_create", card("c"))),
+      idOf(await invokeTool(world.db, admin, "task_create", { ...card("a"), project_id: side })),
+      idOf(await invokeTool(world.db, admin, "task_create", { ...card("b"), project_id: side })),
+      idOf(await invokeTool(world.db, admin, "task_create", { ...card("c"), project_id: side })),
     ];
     memberCards = [
       idOf(await invokeTool(world.db, member, "task_create", card("m1"))),
@@ -144,7 +154,7 @@ describe("bulk move and its undo", () => {
     expect(await missionsOf(ids)).toEqual(before);
   });
 
-  it("member: moving another person's card is refused and nothing moves", async () => {
+  it("member: moving a card of a project not linked to them is refused and nothing moves", async () => {
     sessionUserId = memberId;
     expect(await assignCardsToMissionAction([memberCards[0]!, ids[2]!], memberMission)).toEqual({
       ok: false,

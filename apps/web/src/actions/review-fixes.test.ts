@@ -16,7 +16,13 @@ import {
   MAX_PAIRING_FAILURES,
 } from "../lib/pairing";
 import { principalFromUserId } from "../lib/scope";
-import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
+import {
+  closeTestWorld,
+  createTestWorld,
+  insertSideProject,
+  linkProjects,
+  type TestWorld,
+} from "../mcp/test-db";
 import { invokeToolForTests as invokeTool } from "../mcp/test-tools";
 import type { AuthContext } from "../mcp/types";
 
@@ -84,6 +90,7 @@ describe("web review fixes: a member session reaches nothing of the admin's", ()
   let member: AuthContext;
   let memberId: string;
   let adminCardId: string;
+  let sideProjectId: string;
   let memberCardId: string;
   let memberMissionId: string;
 
@@ -122,7 +129,11 @@ describe("web review fixes: a member session reaches nothing of the admin's", ()
       organizationId: world.organizationId,
       canManage: false,
     };
-    adminCardId = idOf(await invokeTool(world.db, admin, "task_create", card("do admin", { project_id: world.projectId })));
+    // The member works on OC; the admin's card sits in a project of the same
+    // organization they are not linked to.
+    await linkProjects(world.db, memberId, [world.projectId]);
+    sideProjectId = await insertSideProject(world.db, world);
+    adminCardId = idOf(await invokeTool(world.db, admin, "task_create", card("do admin", { project_id: sideProjectId })));
     memberCardId = idOf(await invokeTool(world.db, member, "task_create", card("do member", { project_id: world.projectId })));
     await world.db
       .update(mission)
@@ -289,12 +300,12 @@ describe("web review fixes: a member session reaches nothing of the admin's", ()
     });
   });
 
-  it("A3/A4: the member's board card carries no mission or continuation of the admin's", async () => {
+  it("A3/A4: the member's board card carries its mission, and no continuation in a project not linked to them", async () => {
     await invokeTool(world.db, admin, "task_update", { task_id: memberCardId, mission_id: world.missionId });
     // Only a card in execution is continued this way.
     await invokeTool(world.db, member, "task_claim", { task_id: memberCardId, executor: { cli: "claude", model: "sonnet-5" } });
     const continuation = await invokeTool(world.db, admin, "task_create", card("continuacao do admin", {
-      project_id: world.projectId,
+      project_id: sideProjectId,
       supersedes: memberCardId,
     }));
     const continuationId = idOf(continuation);
@@ -304,12 +315,11 @@ describe("web review fixes: a member session reaches nothing of the admin's", ()
     const rows = await loadBoardTasks(world.db as unknown as Database, [world.projectId], memberP);
     expect(rows.map((r) => r.id)).toEqual([memberCardId]);
     const mine = rows[0]!;
-    expect(mine.mission).toBeNull();
-    expect(mine.missionId).toBeNull();
+    // The mission holds a card of a linked project: it is the member's to read.
+    expect(mine.mission?.title).toBe("ADMIN-TITULO-SECRETO");
     expect(mine.supersededBy).toBeNull();
     expect(mine.supersededById).toBeNull();
     const text = JSON.stringify(rows);
-    expect(text).not.toContain("ADMIN-TITULO-SECRETO");
     expect(text).not.toContain(continuationId);
     expect(text).not.toContain(cont!.shortId);
 
@@ -322,22 +332,24 @@ describe("web review fixes: a member session reaches nothing of the admin's", ()
     expect(forAdmin?.supersededBy?.id).toBe(continuationId);
   });
 
-  it("A3: insights rows of the member's card carry no mission of the admin's", async () => {
-    await invokeTool(world.db, admin, "task_update", { task_id: memberCardId, mission_id: world.missionId });
-    await invokeTool(world.db, member, "task_claim", { task_id: memberCardId, executor: { cli: "claude", model: "sonnet-5" } });
-    await invokeTool(world.db, member, "task_deliver", {
-      task_id: memberCardId,
-      summary: "s",
-      usage: { segments: [{ model: "sonnet-5", input: 1, output: 1, cache_read: 0, cache_write: 0 }], duration_ms: 1, turns: 1 },
-    });
+  it("A3: insights rows carry only the cards and missions of the member's linked projects", async () => {
+    // The admin's mission holds only a card of a project not linked to the member.
+    await invokeTool(world.db, admin, "task_update", { task_id: adminCardId, mission_id: world.missionId });
+    for (const [ctx, id] of [[admin, adminCardId], [member, memberCardId]] as const) {
+      await invokeTool(world.db, ctx, "task_claim", { task_id: id, executor: { cli: "claude", model: "sonnet-5" } });
+      await invokeTool(world.db, ctx, "task_deliver", {
+        task_id: id,
+        summary: "s",
+        usage: { segments: [{ model: "sonnet-5", input: 1, output: 1, cache_read: 0, cache_write: 0 }], duration_ms: 1, turns: 1 },
+      });
+    }
     const memberP = await principalFromUserId(world.db, memberId);
     const rows = await loadInsightAttemptRows(world.db, world.workspaceId, memberP);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.missionId).toBeNull();
-    expect(rows[0]!.missionTitle).toBeNull();
+    expect(rows.map((r) => r.taskId)).toEqual([memberCardId]);
+    expect(JSON.stringify(rows)).not.toContain("ADMIN-TITULO-SECRETO");
     const adminP = await principalFromUserId(world.db, world.adminUserId);
     const forAdmin = await loadInsightAttemptRows(world.db, world.workspaceId, adminP);
-    expect(forAdmin.find((r) => r.taskId === memberCardId)?.missionTitle).toBe("ADMIN-TITULO-SECRETO");
+    expect(forAdmin.find((r) => r.taskId === adminCardId)?.missionTitle).toBe("ADMIN-TITULO-SECRETO");
   });
 
   it("R7: insights and the organizations overview hand nothing to a missing principal", async () => {

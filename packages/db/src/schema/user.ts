@@ -22,8 +22,8 @@ export const user = pgTable("user", {
    */
   passwordHash: text("password_hash"),
   /**
-   * `admin` sees and changes everything; `member` only what they authored,
-   * inside `organizationId`. The column default is the restrictive one: a
+   * `admin` sees and changes everything; `member` only the projects linked
+   * to them (`project_member`) inside `organizationId`, and their cards. The column default is the restrictive one: a
    * user row nobody labelled is a member, never an admin.
    */
   role: text("role").$type<"admin" | "member">().notNull().default("member"),

@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   adminPrincipal,
   closeTestWorld,
+  linkProjects,
   createTestWorld,
   type TestWorld,
 } from "../mcp/test-db";
@@ -56,6 +57,8 @@ describe("the mission page", () => {
       .returning({ id: user.id });
     memberId = row!.id;
     member = { userId: memberId, role: "member", organizationId: world.organizationId };
+    // The member works on OverClick only; Site is not linked to them.
+    await linkProjects(world.db, memberId, [world.projectId]);
   });
 
   afterEach(async () => {
@@ -147,7 +150,7 @@ describe("the mission page", () => {
     expect(await loadMissionPage(database(), world.workspaceId, member, "not-a-uuid")).toBeNull();
   });
 
-  it("opens a member's own mission with only their own cards in it", async () => {
+  it("opens a member's own mission with only the cards of their linked projects in it", async () => {
     const [own] = await world.db
       .insert(mission)
       .values({
@@ -160,10 +163,11 @@ describe("the mission page", () => {
       .returning({ id: mission.id });
     await card(world.projectId, "OC-5", "aberto", memberId, own!.id);
     await card(world.projectId, "OC-6", "aberto", world.adminUserId, own!.id);
+    await card(siteProjectId, "OVW-6", "aberto", world.adminUserId, own!.id);
 
     const page = await loadMissionPage(database(), world.workspaceId, member, own!.id);
-    expect(page!.rows.map((row) => row.shortId)).toEqual(["OC-5"]);
-    expect(page!.counts.total).toBe(1);
+    expect(page!.rows.map((row) => row.shortId).sort()).toEqual(["OC-5", "OC-6"]);
+    expect(page!.counts.total).toBe(2);
   });
 
   it("lists the missions the reader may see, with their counts and projects", async () => {
@@ -179,7 +183,11 @@ describe("the mission page", () => {
     });
     expect(list[0]!.projectNames.sort()).toEqual(["OverClick", "Site"]);
 
-    expect(await loadMissionList(database(), world.workspaceId, member)).toEqual([]);
+    // The member reaches the mission through OC-1, and counts only it.
+    const forMember = await loadMissionList(database(), world.workspaceId, member);
+    expect(forMember.map((m) => m.id)).toEqual([world.missionId]);
+    expect(forMember[0]).toMatchObject({ counts: { total: 1, validado: 1 } });
+    expect(forMember[0]!.projectNames).toEqual(["OverClick"]);
   });
   it("follows the scope of the bar: the organization, then the projects (E4)", async () => {
     await card(world.projectId, "OC-1", "validado");

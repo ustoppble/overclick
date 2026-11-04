@@ -1,7 +1,13 @@
 import { executionAttempt, mission, project, task, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { closeTestWorld, createTestWorld, type TestWorld } from "./test-db";
+import {
+  closeTestWorld,
+  createTestWorld,
+  insertSideProject,
+  linkProjects,
+  type TestWorld,
+} from "./test-db";
 import { invokeToolForTests as invokeTool } from "./test-tools";
 import type { AuthContext } from "./types";
 
@@ -21,7 +27,7 @@ const card = (title: string, extra: Record<string, unknown> = {}) => ({
  * from a member's token to the admin's data, each one closed, and the admin
  * still able to do everything.
  */
-describe("MCP review fixes: a member token reaches nothing of the admin's", () => {
+describe("MCP review fixes: a member token reaches nothing outside their linked projects", () => {
   let world: TestWorld;
   let admin: AuthContext;
   let member: AuthContext;
@@ -29,6 +35,8 @@ describe("MCP review fixes: a member token reaches nothing of the admin's", () =
   let memberCard: { id: string; short_id: string };
   let memberMissionId: string;
   let sisterProjectId: string;
+  /** Same organization, not linked to the member: what they must not reach. */
+  let sideProjectId: string;
 
   const call = (ctx: AuthContext, tool: string, input: Record<string, unknown>) =>
     invokeTool(world.db, ctx, tool as never, input);
@@ -63,6 +71,8 @@ describe("MCP review fixes: a member token reaches nothing of the admin's", () =
       })
       .returning({ id: project.id });
     sisterProjectId = sister!.id;
+    await linkProjects(world.db, memberId, [world.projectId, sisterProjectId]);
+    sideProjectId = await insertSideProject(world.db, world);
     // The admin's mission carries content the member must never read.
     await world.db
       .update(mission)
@@ -111,25 +121,21 @@ describe("MCP review fixes: a member token reaches nothing of the admin's", () =
     if (world) await closeTestWorld(world);
   });
 
-  it("L1: task_get and the briefing leave out a mission of the admin's", async () => {
-    value(await call(admin, "task_update", { task_id: memberCard.id, mission_id: world.missionId }));
+  it("L1: the admin's mission reaches the member only through a card in a linked project", async () => {
+    // A mission whose cards are all in a project the member is not linked to.
+    value(await call(admin, "task_create", card("do admin no lateral", { project_id: sideProjectId, mission: world.missionId })));
+    const hidden = await call(member, "mission_get", { mission_id: world.missionId });
+    expect(hidden.ok).toBe(false);
+    const listed = JSON.stringify(value(await call(member, "mission_list", {})));
+    expect(listed).not.toContain("ADMIN-TITULO-SECRETO");
 
-    const withMission = value<{ mission: unknown }>(
+    // Once it holds a card of a project linked to them, it is the mission of a
+    // card they see, and they read it like the card.
+    value(await call(admin, "task_update", { task_id: memberCard.id, mission_id: world.missionId }));
+    const withMission = value<{ mission: { title: string } | null }>(
       await call(member, "task_get", { task_id: memberCard.id, include: ["mission"] }),
     );
-    expect(withMission.mission ?? null).toBeNull();
-    const briefing = value<Record<string, unknown>>(
-      await call(member, "task_get", { task_id: memberCard.id, view: "briefing" }),
-    );
-    const claimed = value<Record<string, unknown>>(
-      await call(member, "task_claim", { task_id: memberCard.id, executor: { cli: "claude", model: "sonnet-5" } }),
-    );
-    for (const text of [JSON.stringify(withMission), JSON.stringify(briefing), JSON.stringify(claimed)]) {
-      expect(text).not.toContain("ADMIN-TITULO-SECRETO");
-      expect(text).not.toContain("ADMIN-OBJETIVO-SECRETO");
-      expect(text).not.toContain("ADMIN-CONTEXTO-SECRETO");
-    }
-
+    expect(withMission.mission?.title).toBe("ADMIN-TITULO-SECRETO");
     // The admin still reads it whole.
     const forAdmin = value<{ mission: { objective: string } | null }>(
       await call(admin, "task_get", { task_id: memberCard.id, include: ["mission"] }),
@@ -137,45 +143,38 @@ describe("MCP review fixes: a member token reaches nothing of the admin's", () =
     expect(forAdmin.mission?.objective).toBe("ADMIN-OBJETIVO-SECRETO");
   });
 
-  it("L2/L3: moving or deleting the member's card never drags, names or deletes the admin's subtask", async () => {
+  it("L2/L3: the admin's subtask follows the member's card between linked projects, and survives its delete", async () => {
     const sub = created(
       await call(admin, "task_create", card("subtask do admin", { project_id: world.projectId, parent: memberCard.id })),
     );
     const subRow = async () =>
       (await world.db.select().from(task).where(eq(task.id, sub.id)))[0];
-    const before = await subRow();
 
-    // Mission move.
+    // Mission move: the subtask is in a linked project, so it is the member's
+    // to see and travels with its parent.
     const toMission = await call(member, "task_update", {
       task_id: memberCard.id,
       mission_id: memberMissionId,
       return: "full",
     });
-    expect(JSON.stringify(value(toMission))).not.toContain(sub.short_id);
-    expect(value<{ subtasks_moved?: number }>(toMission).subtasks_moved).toBe(0);
-    expect((await subRow())?.missionId).toBe(before?.missionId);
+    expect(value<{ subtasks_moved?: number }>(toMission).subtasks_moved).toBe(1);
+    expect((await subRow())?.missionId).toBe(memberMissionId);
 
-    // Project move.
+    // Project move: restamped with its parent, as the rule for subtasks wants.
     const toProject = await call(member, "task_update", {
       task_id: memberCard.id,
       project_id: sisterProjectId,
       return: "full",
     });
     const moved = value<{ project_move: { short_ids: Array<{ from: string }> } }>(toProject);
-    expect(JSON.stringify(moved)).not.toContain(sub.short_id);
-    expect(moved.project_move.short_ids.map((c) => c.from)).toEqual([memberCard.short_id]);
-    const afterMove = await subRow();
-    expect(afterMove?.projectId).toBe(world.projectId);
-    expect(afterMove?.shortId).toBe(sub.short_id);
+    expect(moved.project_move.short_ids.map((c) => c.from)).toEqual([memberCard.short_id, sub.short_id]);
+    expect((await subRow())?.projectId).toBe(sisterProjectId);
 
-    // Delete.
-    const deleted = value<Record<string, unknown>>(
-      await call(member, "task_delete", { task_id: memberCard.id }),
-    );
-    expect(JSON.stringify(deleted)).not.toContain(sub.short_id);
+    // Delete: the member's card goes, the admin's subtask is detached and stays.
+    value<Record<string, unknown>>(await call(member, "task_delete", { task_id: memberCard.id }));
     const survivor = await subRow();
     expect(survivor).toBeDefined();
-    expect(survivor?.projectId).toBe(world.projectId);
+    expect(survivor?.parentId).toBeNull();
     expect((await call(admin, "task_get", { task_id: sub.id })).ok).toBe(true);
   });
 
@@ -188,7 +187,7 @@ describe("MCP review fixes: a member token reaches nothing of the admin's", () =
   it("L4: mission_delete neither mentions nor counts a card of the admin's", async () => {
     const adminCard = created(
       await call(admin, "task_create", card("do admin na missao do member", {
-        project_id: world.projectId,
+        project_id: sideProjectId,
         mission: memberMissionId,
       })),
     );
@@ -204,7 +203,7 @@ describe("MCP review fixes: a member token reaches nothing of the admin's", () =
 
   it("L4: with their own cards in it, the count the member reads is only theirs", async () => {
     value(await call(member, "task_update", { task_id: memberCard.id, mission_id: memberMissionId }));
-    value(await call(admin, "task_create", card("do admin", { project_id: world.projectId, mission: memberMissionId })));
+    value(await call(admin, "task_create", card("do admin", { project_id: sideProjectId, mission: memberMissionId })));
     const refused = await call(member, "mission_delete", { mission_id: memberMissionId });
     expect(refused.ok).toBe(false);
     if (!refused.ok) expect(refused.error.message).toContain("holds 1 card.");
@@ -257,8 +256,16 @@ describe("MCP review fixes: a member token reaches nothing of the admin's", () =
     expect(byAdmin.ok).toBe(true);
   });
 
-  it("A3: insights_query leaves out the title of an admin's mission holding the member's card", async () => {
-    value(await call(admin, "task_update", { task_id: memberCard.id, mission_id: world.missionId }));
+  it("A3: insights_query leaves out a mission whose cards are all in a project not linked to the member", async () => {
+    const side = created(
+      await call(admin, "task_create", card("do admin no lateral", { project_id: sideProjectId, mission: world.missionId })),
+    );
+    value(await call(admin, "task_claim", { task_id: side.id, executor: { cli: "claude", model: "sonnet-5" } }));
+    value(await call(admin, "task_deliver", {
+      task_id: side.id,
+      summary: "s",
+      usage: { segments: [{ model: "sonnet-5", input: 10, output: 1, cache_read: 0, cache_write: 0 }], duration_ms: 1, turns: 1 },
+    }));
     value(await call(member, "task_claim", { task_id: memberCard.id, executor: { cli: "claude", model: "sonnet-5" } }));
     value(await call(member, "task_deliver", {
       task_id: memberCard.id,
@@ -268,6 +275,7 @@ describe("MCP review fixes: a member token reaches nothing of the admin's", () =
     const forMember = await call(member, "insights_query", {});
     expect(forMember.ok).toBe(true);
     expect(JSON.stringify(forMember)).not.toContain("ADMIN-TITULO-SECRETO");
+    expect(JSON.stringify(forMember)).not.toContain(side.short_id);
     const forAdmin = await call(admin, "insights_query", {});
     expect(JSON.stringify(forAdmin)).toContain("ADMIN-TITULO-SECRETO");
   });

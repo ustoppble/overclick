@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { authContextForUser } from "../lib/scope";
 import { authenticateBearer } from "./auth";
 import { createOverclickMcpServer } from "./server";
-import { closeTestWorld, createTestWorld, type TestWorld } from "./test-db";
+import {
+  closeTestWorld,
+  createTestWorld,
+  insertSideProject,
+  linkProjects,
+  type TestWorld,
+} from "./test-db";
 import { invokeToolForTests as invokeTool } from "./test-tools";
 import { generateTokenSecret, hashToken } from "./token";
 import type { AuthContext } from "./types";
@@ -27,6 +33,7 @@ describe("MCP scope: a member only reaches what is theirs (OCL-220)", () => {
   let memberId: string;
   let otherOrgId: string;
   let otherProjectId: string;
+  let sideProjectId: string;
   let memberSecret: string;
   let adminCard: string;
   let memberCard: string;
@@ -71,6 +78,10 @@ describe("MCP scope: a member only reaches what is theirs (OCL-220)", () => {
       })
       .returning({ id: project.id });
     otherProjectId = proj2!.id;
+    // The member works on OC; the admin's card sits in a project of the same
+    // organization the member is not linked to.
+    await linkProjects(world.db, memberId, [world.projectId]);
+    sideProjectId = await insertSideProject(world.db, world);
 
     admin = {
       tokenId: world.tokenId,
@@ -84,7 +95,7 @@ describe("MCP scope: a member only reaches what is theirs (OCL-220)", () => {
     if (!auth.ok) throw new Error("member token should authenticate");
     member = auth.ctx;
 
-    const a = await invokeTool(world.db, admin, "task_create", card("do admin", { project_id: world.projectId, mission: world.missionId }));
+    const a = await invokeTool(world.db, admin, "task_create", card("do admin", { project_id: sideProjectId, mission: world.missionId }));
     const m1 = await invokeTool(world.db, member, "task_create", card("do member", { project_id: world.projectId }));
     if (!a.ok || !m1.ok) throw new Error("fixture cards failed");
     adminCard = (a.value as { task: { short_id: string } }).task.short_id;

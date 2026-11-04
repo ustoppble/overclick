@@ -17,6 +17,7 @@ import {
   normalizeShortId,
   organization,
   project,
+  mcpToken,
   projectContextAudit,
   readTranscriptRef,
   resolveUsageSegments,
@@ -96,12 +97,11 @@ import {
 } from "../lib/insights";
 import { manageDenialMessage } from "../lib/manage-capability";
 import {
+  MISSION_NOT_YOURS,
+  canChangeMission,
   canManageStructure,
   canManageWorkspace,
-  canSeeMission,
   canSeeOrganization,
-  canSeeProject,
-  canSeeTask,
   isAdmin,
   missionScope,
   organizationScope,
@@ -1833,6 +1833,9 @@ async function missionUpdate(
         `Mission ${input.mission_id} not found in this workspace. Call mission_list to see the available missions.`,
       );
     }
+    if (!canChangeMission(principalFromAuth(ctx), current)) {
+      return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
+    }
 
     const contextChanged =
       input.context !== undefined || input.context_ops !== undefined;
@@ -1989,6 +1992,9 @@ async function missionDelete(
       "NOT_FOUND",
       `Mission ${input.mission_id} not found in this workspace. Call mission_list to see the available missions.`,
     );
+  }
+  if (!canChangeMission(principalFromAuth(ctx), current)) {
+    return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
   }
 
   return db.transaction(async (tx) => {
@@ -2783,7 +2789,9 @@ async function taskList(
     order,
     next_offset: truncated ? offset + limit : null,
     tasks: selected.map((row) => {
-      const mapped = mapTaskForRead(mapTask(row.task, row.project));
+      const mapped = mapTaskForRead(
+        withoutOthersTokenLabel(ctx, row.task, mapTask(row.task, row.project)),
+      );
       const costUsd = latestCostByTask.get(mapped.id);
       return {
         short_id: mapped.short_id,
@@ -3177,6 +3185,9 @@ async function taskCreate(
         `Mission ${input.mission} not found. Call mission_list to see the available missions or mission_create to start one.`,
       );
     }
+    if (!canChangeMission(principalFromAuth(ctx), miss)) {
+      return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
+    }
     missionId = miss.id;
   }
 
@@ -3412,6 +3423,16 @@ async function taskClaim(
         lastActivity &&
         isClaimStale(lastActivity, ws.claimTimeoutMinutes),
     );
+
+    // Taking a card away from whoever holds it, by force or because the claim
+    // went stale, is the holder's or an admin's. A member sees the admin's
+    // cards in their projects; seeing is not the right to cut their run short.
+    if (
+      (input.force || reclaimedStale) &&
+      !(await mayActOnClaim(tx, ctx, found.row.claimedByTokenId))
+    ) {
+      return err("PERMISSION_DENIED", CLAIM_NOT_YOURS);
+    }
 
     const reopenComment = await latestReopenComment(tx, found.row);
     const evaluated = evaluateClaim(
@@ -3825,6 +3846,49 @@ async function taskUpdate(
     );
   }
 
+  // Refuse before any other field of this update is written: a member files
+  // cards only in missions they wrote (see canChangeMission).
+  if (input.mission_id) {
+    const target = await findMission(db, ctx, input.mission_id);
+    if (target && !canChangeMission(principalFromAuth(ctx), target)) {
+      return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
+    }
+  }
+
+  // The run on a card belongs to the token that claimed it: its usage, the
+  // release it shipped in, its review mark and its boot failures are the
+  // holder's (or an admin's) to write. A comment stays open to anyone who
+  // sees the card: that is collaboration, not the run.
+  const runIsOthers = !(await mayActOnClaim(db, ctx, found.row.claimedByTokenId));
+  if (
+    runIsOthers &&
+    (input.usage !== undefined ||
+      input.spawn_failure !== undefined ||
+      input.resolved_in !== undefined ||
+      input.revisado === true)
+  ) {
+    return err("PERMISSION_DENIED", RUN_NOT_YOURS);
+  }
+
+  // Leaving a mission changes it as much as joining one: the mission the card
+  // is in now must be the caller's too, and a card another person is running
+  // stays where it is.
+  if (input.mission_id !== undefined) {
+    if (runIsOthers && found.row.status === "em_execucao") {
+      return err("PERMISSION_DENIED", RUN_NOT_YOURS);
+    }
+    if (found.row.missionId && found.row.missionId !== input.mission_id) {
+      const [origin] = await db
+        .select({ createdByUserId: mission.createdByUserId })
+        .from(mission)
+        .where(eq(mission.id, found.row.missionId))
+        .limit(1);
+      if (origin && !canChangeMission(principalFromAuth(ctx), origin)) {
+        return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
+      }
+    }
+  }
+
   if (input.status === "validado") {
     // Validating is the admin's (OCL-227): a member may not sign off on the
     // card they wrote, whatever flags their token carries.
@@ -3986,6 +4050,9 @@ async function taskUpdate(
           `Mission ${input.mission_id} not found in this workspace. Call mission_list to see the available missions or mission_create to start one. Send mission_id: null to detach the card.`,
         );
       }
+      if (!canChangeMission(principalFromAuth(ctx), miss)) {
+        return err("PERMISSION_DENIED", MISSION_NOT_YOURS);
+      }
       missionId = miss.id;
     }
     const moved = await db.transaction(async (tx) => {
@@ -3998,13 +4065,42 @@ async function taskUpdate(
       // keeps that true instead of leaving its children behind. Only the
       // children the caller may see follow (OCL-227): an admin's subtask under
       // a member's card stays where the admin put it, and is never counted.
-      const children = await tx
-        .update(task)
-        .set({ missionId })
-        .where(
-          and(eq(task.parentId, nextRow.id), taskScope(principalFromAuth(ctx))),
-        )
-        .returning({ id: task.id });
+      // Each child also has to pass what the parent passed above: leaving a
+      // mission changes it, and a run another person's token holds stays put.
+      const principal = principalFromAuth(ctx);
+      const candidates = await tx
+        .select({
+          id: task.id,
+          status: task.status,
+          claimedByTokenId: task.claimedByTokenId,
+          holder: mcpToken.ownerUserId,
+          missionId: mission.id,
+          missionAuthor: mission.createdByUserId,
+        })
+        .from(task)
+        .leftJoin(mcpToken, eq(task.claimedByTokenId, mcpToken.id))
+        .leftJoin(mission, eq(task.missionId, mission.id))
+        .where(and(eq(task.parentId, nextRow.id), taskScope(principal)));
+      const followers = isAdmin(principal)
+        ? candidates
+        : candidates.filter(
+            (child) =>
+              !(
+                child.status === "em_execucao" &&
+                child.claimedByTokenId !== null &&
+                child.holder !== principal?.userId
+              ) &&
+              (child.missionId === null ||
+                canChangeMission(principal, { createdByUserId: child.missionAuthor })),
+          );
+      const children =
+        followers.length === 0
+          ? []
+          : await tx
+              .update(task)
+              .set({ missionId })
+              .where(inArray(task.id, followers.map((child) => child.id)))
+              .returning({ id: task.id });
       return { updated, children: children.length };
     });
     if (moved.updated) nextRow = moved.updated;
@@ -4060,9 +4156,9 @@ async function taskUpdate(
         // name in the answer (OCL-227). It stays in its project under its id
         // and is detached instead, which is what keeps the rule above: no
         // subtask lives in a different project than its parent.
-        const principal = principalFromAuth(ctx);
-        const children = allChildren.filter((child) => canSeeTask(principal, child));
-        const hidden = allChildren.filter((child) => !canSeeTask(principal, child));
+        const visible = await visibleChildIds(tx, ctx, nextRow.id);
+        const children = allChildren.filter((child) => visible.has(child.id));
+        const hidden = allChildren.filter((child) => !visible.has(child.id));
         if (hidden.length > 0) {
           await tx
             .update(task)
@@ -4505,6 +4601,16 @@ async function taskDeliver(
     );
     }
 
+    // A delivery closes the run of whoever holds the claim: the holder, or an
+    // admin. Another member's token, or the admin's agent's claim seen by a
+    // member, is not theirs to hand in.
+    if (
+      found.row.status === "em_execucao" &&
+      !(await mayActOnClaim(tx, ctx, found.row.claimedByTokenId))
+    ) {
+      return err("PERMISSION_DENIED", CLAIM_NOT_YOURS);
+    }
+
     const transition = applyTransition(
       {
         status: found.row.status,
@@ -4855,17 +4961,29 @@ async function taskDelete(
       `Task ${input.task_id} not found in this workspace. Call task_list to see the available cards.`,
     );
     }
+    // A member sees every card of the projects linked to them, but deleting
+    // stays with the card's author: a colleague's card is not theirs to erase.
+    const principal = principalFromAuth(ctx);
+    if (!isAdmin(principal) && found.row.createdByUserId !== principal?.userId) {
+      return err(
+        "PERMISSION_DENIED",
+        `${found.row.shortId} was written by someone else: only its author or an admin can delete it.`,
+      );
+    }
 
     const allChildren = await tx
       .select({ id: task.id, createdByUserId: task.createdByUserId })
       .from(task)
       .where(eq(task.parentId, found.row.id));
-    // A subtask the caller may not see is someone else's card (OCL-227): an
-    // admin can open one under a member's card. It is detached before the
-    // delete, so the cascade cannot take it, and it is left out of the counts.
-    const principal = principalFromAuth(ctx);
-    const children = allChildren.filter((child) => canSeeTask(principal, child));
-    const hidden = allChildren.filter((child) => !canSeeTask(principal, child));
+    // A subtask the caller may not see, or (for a member) one someone else
+    // wrote, is not theirs to delete (OCL-227): an admin can open one under a
+    // member's card. It is detached before the delete, so the cascade cannot
+    // take it, and it is left out of the counts.
+    const visible = await visibleChildIds(tx, ctx, found.row.id);
+    const deletable = (child: { id: string; createdByUserId: string | null }) =>
+      visible.has(child.id) && (isAdmin(principal) || child.createdByUserId === principal?.userId);
+    const children = allChildren.filter(deletable);
+    const hidden = allChildren.filter((child) => !deletable(child));
     if (hidden.length > 0) {
       await tx
         .update(task)
@@ -4908,6 +5026,9 @@ async function branchRegister(
       "NOT_FOUND",
       `Task ${input.task_id} not found in this workspace. Call task_list to see the available cards.`,
     );
+  }
+  if (!(await mayActOnClaim(db, ctx, found.row.claimedByTokenId))) {
+    return err("PERMISSION_DENIED", RUN_NOT_YOURS);
   }
   const [updated] = await db
     .update(task)
@@ -5163,6 +5284,56 @@ function requireStructure(ctx: AuthContext, tool: string): Result<never> | null 
 }
 
 /**
+ * A card made without an origem carries the label of the token that made it
+ * as `origem.agent`. A member reading a card another person wrote must not
+ * learn the label of that person's token; their own cards read as written.
+ */
+function withoutOthersTokenLabel<T extends { origem?: { agent?: string } }>(
+  ctx: AuthContext,
+  row: { createdByUserId: string | null },
+  mapped: T,
+): T {
+  const principal = principalFromAuth(ctx);
+  if (!principal || isAdmin(principal) || row.createdByUserId === principal.userId) {
+    return mapped;
+  }
+  if (!mapped.origem?.agent) return mapped;
+  const { agent: _agent, ...rest } = mapped.origem;
+  // An origem needs at least one identifier; the board's own is the fallback.
+  const origem = Object.values(rest).some(Boolean) ? rest : { cli: "board" };
+  return { ...mapped, origem };
+}
+
+const CLAIM_NOT_YOURS =
+  "This card is held by another token. Only the token that holds the claim, another token of the same person, or an admin can take it over or deliver it.";
+
+const RUN_NOT_YOURS =
+  "Another person's token holds this card's claim. Only that person or an admin records its usage, branch, release, review mark or spawn failure, or moves it between missions while it runs. Comments stay open to anyone who sees the card.";
+
+/**
+ * Whether the caller may take over (force, stale reclaim) or deliver a claim:
+ * an admin always; anyone else only when the claim is their own, by the same
+ * token or by another token of the same person. A claim nobody holds is not
+ * a claim to protect. Unlike `canTakeOverClaim` this does not need the token's
+ * manage flag: an admin's agent reclaiming a stale card is the normal flow.
+ */
+async function mayActOnClaim(
+  db: Tx,
+  ctx: AuthContext,
+  claimedByTokenId: string | null,
+): Promise<boolean> {
+  if (isAdmin(principalFromAuth(ctx))) return true;
+  if (!claimedByTokenId || claimedByTokenId === ctx.tokenId) return true;
+  if (!ctx.userId) return false;
+  const [holder] = await db
+    .select({ owner: mcpToken.ownerUserId })
+    .from(mcpToken)
+    .where(eq(mcpToken.id, claimedByTokenId))
+    .limit(1);
+  return holder?.owner === ctx.userId;
+}
+
+/**
  * Whether the caller may release or keep alive a claim another token holds.
  * The same rule as `requireManage` (OCL-227): the manage flag on a member's
  * token must not let them free, or hold on to, a claim the admin took on one
@@ -5273,11 +5444,15 @@ async function assembleTaskPayload(
     .where(eq(executionAttempt.taskId, row.id))
     .orderBy(desc(executionAttempt.startedAt))
     .limit(1);
-  const mapped = mapTask(row, proj, {
-    reopenComment: comment,
-    reportsCount: count,
-    executor: cardExecutorFromAttempt(latestAttempt),
-  });
+  const mapped = withoutOthersTokenLabel(
+    ctx,
+    row,
+    mapTask(row, proj, {
+      reopenComment: comment,
+      reportsCount: count,
+      executor: cardExecutorFromAttempt(latestAttempt),
+    }),
+  );
   // The business above the project. Loaded only for a briefing: every other
   // read of a card has no use for the organization markdown.
   const projectOrganization = wantsBriefing
@@ -5298,7 +5473,7 @@ async function assembleTaskPayload(
       missionPayload = mapMission(miss, missOrg.name);
     }
   }
-  const comments = wantsComments ? await listTaskComments(db, row.id) : [];
+  const comments = wantsComments ? await listTaskComments(db, ctx, row.id) : [];
   const convention = branchConvention(mapped.short_id, mapped.title);
   let recipe: ReturnType<typeof bindUsageRecipe> = null;
   if (wantsRecipe) {
@@ -5551,6 +5726,7 @@ async function countReports(db: McpDatabase, row: TaskRow): Promise<number> {
  */
 async function listTaskComments(
   db: McpDatabase,
+  ctx: AuthContext,
   taskId: string,
 ): Promise<TaskComment[]> {
   const rows = await db
@@ -5559,6 +5735,7 @@ async function listTaskComments(
       kind: taskComment.kind,
       createdAt: taskComment.createdAt,
       authorAgentRef: taskComment.authorAgentRef,
+      authorUserId: taskComment.authorUserId,
       authorEmail: user.email,
     })
     .from(taskComment)
@@ -5570,8 +5747,29 @@ async function listTaskComments(
       ),
     )
     .orderBy(asc(taskComment.createdAt));
+  // Same rule as origem.agent (withoutOthersTokenLabel): a member does not
+  // learn the label of another person's token from the comments it wrote.
+  // Their own labels still read as written.
+  const principal = principalFromAuth(ctx);
+  const ownLabels =
+    principal && !isAdmin(principal) && ctx.userId
+      ? new Set(
+          (
+            await db
+              .select({ label: mcpToken.label })
+              .from(mcpToken)
+              .where(eq(mcpToken.ownerUserId, ctx.userId))
+          ).map((token) => token.label),
+        )
+      : null;
   return rows.map((row) => ({
-    author: row.authorAgentRef ?? row.authorEmail ?? "desconhecido",
+    author:
+      ownLabels &&
+      row.authorAgentRef &&
+      row.authorUserId !== ctx.userId &&
+      !ownLabels.has(row.authorAgentRef)
+        ? row.authorEmail ?? "agente"
+        : row.authorAgentRef ?? row.authorEmail ?? "desconhecido",
     kind: row.kind === "report" ? "report" : row.kind === "validation" ? "validation" : "comment",
     body: row.body,
     created_at: iso(row.createdAt),
@@ -5671,6 +5869,15 @@ async function findTask(
     : await query;
   const found = rows[0];
   return found ? { row: found.task, proj: found.project } : null;
+}
+
+/** The subtasks of `parentId` the caller may see, by the same scope as every read. */
+async function visibleChildIds(db: Tx, ctx: AuthContext, parentId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ id: task.id })
+    .from(task)
+    .where(and(eq(task.parentId, parentId), taskScope(principalFromAuth(ctx))));
+  return new Set(rows.map((row) => row.id));
 }
 
 async function allocateShortId(tx: Tx, proj: ProjectRow): Promise<string> {

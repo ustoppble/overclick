@@ -20,6 +20,12 @@ export const invitation = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
+    /**
+     * The projects the member will work on, linked when the link is accepted.
+     * Only projects of `organizationId`; an empty list makes a member who sees
+     * no project until an admin links one.
+     */
+    projectIds: uuid("project_ids").array().notNull().default([]),
     tokenHash: text("token_hash").notNull().unique(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),

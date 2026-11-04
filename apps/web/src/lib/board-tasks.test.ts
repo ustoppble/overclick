@@ -4,6 +4,8 @@ import {
   adminPrincipal,
   closeTestWorld,
   createTestWorld,
+  insertSideProject,
+  linkProjects,
   type TestWorld,
 } from "../mcp/test-db";
 import type { BoardPeriod, BoardPeriodField } from "./board-filter";
@@ -66,7 +68,22 @@ describe("board window", () => {
       })
       .returning({ id: user.id });
     if (!row) throw new Error("member not inserted");
+    // The member works on OC only.
+    await linkProjects(world.db, row.id, [world.projectId]);
     return { userId: row.id, role: "member", organizationId: world.organizationId };
+  }
+
+  /** A card of LT, a project of the same organization no member is linked to. */
+  async function sideCard(
+    sideProjectId: string,
+    title: string,
+    status: "aberto" | "em_execucao" | "feito" | "validado" | "descartado",
+    ageDays: number,
+  ) {
+    return card(title, status, ageDays, world.adminUserId, {
+      projectId: sideProjectId,
+      shortId: `LT-${seq + 1}`,
+    });
   }
 
   it("finds an old done card through the search and the short id link", async () => {
@@ -265,52 +282,55 @@ describe("board window", () => {
       ).toBe(old.id);
     });
 
-    it("gives a member the same periods over their own cards only", async () => {
+    it("gives a member the same periods over the cards of their linked projects only", async () => {
       world = await createTestWorld();
       const member = await memberPrincipal();
-      await card("admin recent", "aberto", 1);
+      const side = await insertSideProject(world.db, world);
+      const both = [world.projectId, side];
+      await sideCard(side, "admin recent", "aberto", 1);
       await card("member recent", "aberto", 1, member.userId);
+      await card("colleague old", "aberto", 100);
       await card("member old", "aberto", 100, member.userId);
-      await card("admin old", "aberto", 100);
+      await sideCard(side, "admin old", "aberto", 100);
 
-      const week = await loadBoardTasks(database(), [world.projectId], member, { now: NOW });
+      const week = await loadBoardTasks(database(), both, member, { now: NOW });
       expect(week.map((row) => row.title)).toEqual(["member recent"]);
-      const created = await loadBoardTasks(database(), [world.projectId], member, {
+      const created = await loadBoardTasks(database(), both, member, {
         now: NOW,
         periodBy: "created",
       });
       expect(created.map((row) => row.title)).toEqual(["member recent"]);
-      const everything = await loadBoardTasks(database(), [world.projectId], member, {
+      const everything = await loadBoardTasks(database(), both, member, {
         now: NOW,
         period: "all",
       });
-      expect(everything.map((row) => row.title).sort()).toEqual(["member old", "member recent"]);
+      expect(everything.map((row) => row.title).sort()).toEqual(["colleague old", "member old", "member recent"]);
     });
   });
 
-  it("never shows a member the admin's cards: window, search, link", async () => {
+  it("never shows a member a card of a project not linked to them: window, search, link", async () => {
     world = await createTestWorld();
     const member = await memberPrincipal();
-    await card("admin open", "aberto", 1);
-    const adminOld = await card("admin secret black", "validado", 30);
+    const side = await insertSideProject(world.db, world);
+    const both = [world.projectId, side];
+    await sideCard(side, "admin open", "aberto", 1);
+    const adminOld = await sideCard(side, "admin secret black", "validado", 30);
     await card("member open", "aberto", 1, member.userId);
     const memberOld = await card("member black", "validado", 30, member.userId);
-    const adminDone = await card("admin done stale", "feito", 30);
+    const adminDone = await sideCard(side, "admin done stale", "feito", 30);
     const memberDone = await card("member done stale", "feito", 30, member.userId);
 
-    const week = await loadBoardTasks(database(), [world.projectId], member, { now: NOW });
+    const week = await loadBoardTasks(database(), both, member, { now: NOW });
     expect(week.map((row) => row.title)).toEqual(["member open"]);
 
-    const everything = await loadBoardTasks(database(), [world.projectId], member, {
+    const everything = await loadBoardTasks(database(), both, member, {
       now: NOW,
       period: "all",
     });
     expect(everything.map((row) => row.id).sort()).toEqual(
       [memberDone.id, memberOld.id, week[0]!.id].sort(),
     );
-    expect(
-      await findBoardTaskByShortId(database(), [world.projectId], member, adminDone.shortId),
-    ).toBeNull();
+    expect(await findBoardTaskByShortId(database(), both, member, adminDone.shortId)).toBeNull();
 
     const hits = await searchBoardTaskIds(database(), world.workspaceId, member, "black");
     expect(hits).toEqual([memberOld.id]);
@@ -318,8 +338,15 @@ describe("board window", () => {
       await searchBoardTaskIds(database(), world.workspaceId, member, adminOld.shortId),
     ).toEqual([]);
 
-    expect(
-      await findBoardTaskByShortId(database(), [world.projectId], member, adminOld.shortId),
-    ).toBeNull();
+    expect(await findBoardTaskByShortId(database(), both, member, adminOld.shortId)).toBeNull();
+  });
+
+  it("shows a member a colleague's card in a linked project: window, search, link", async () => {
+    world = await createTestWorld();
+    const member = await memberPrincipal();
+    const colleague = await card("colleague black", "aberto", 1);
+    expect((await loadBoardTasks(database(), [world.projectId], member, { now: NOW })).map((r) => r.id)).toEqual([colleague.id]);
+    expect(await searchBoardTaskIds(database(), world.workspaceId, member, "black")).toEqual([colleague.id]);
+    expect((await findBoardTaskByShortId(database(), [world.projectId], member, colleague.shortId))?.id).toBe(colleague.id);
   });
 });

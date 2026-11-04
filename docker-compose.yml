@@ -53,6 +53,10 @@ services:
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
       EMAIL_FROM: "${EMAIL_FROM:-}"
       LOGIN_CODE_MAX_SENDS_PER_HOUR: "${LOGIN_CODE_MAX_SENDS_PER_HOUR:-}"
+      # The one origin an emailed link (team invitations) may carry, e.g.
+      # https://board.your-domain. Empty = those emails are not sent: the
+      # request's Host is attacker-controlled and is never used for a link.
+      OVERCLICK_PUBLIC_URL: "${OVERCLICK_PUBLIC_URL:-}"
     volumes:
       - update-trigger:/update-trigger
     ports:

@@ -1,4 +1,4 @@
-import { executionAttempt, handoff, project, task, type Database } from "@agent-board/db";
+import { executionAttempt, handoff, mission, project, task, type Database } from "@agent-board/db";
 import { and, asc, desc, eq, gte, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   DEFAULT_BOARD_PERIOD,
@@ -8,8 +8,8 @@ import {
   type BoardPeriodField,
 } from "./board-filter";
 import {
-  canSeeMission,
-  canSeeTask,
+  isAdmin,
+  missionScope,
   projectScope,
   taskScope,
   type MaybePrincipal,
@@ -31,25 +31,63 @@ export function boardWindowStart(
 /**
  * The cards themselves are filtered by scope in the query. What they point at
  * is filtered here (OCL-227): an admin can put a member's card in one of their
- * missions, or continue it in a card of theirs, and the member's card would
- * otherwise carry that mission's title or that card's id and short id along
- * with it. A reference the reader may not see reads as no reference at all.
+ * missions, or continue it in a card of a project the member is not linked to,
+ * and the member's card would otherwise carry that mission's title or that
+ * card's id and short id along with it. A reference the reader may not see
+ * reads as no reference at all. Null means the reader sees every reference.
  */
+type VisibleReferences = { missions: Set<string>; tasks: Set<string> } | null;
+
+type ReferencingRow = {
+  missionId: string | null;
+  supersedesId: string | null;
+  supersededById: string | null;
+};
+
+/** Which of the rows' missions and continuation cards the reader may see, by the scope in SQL. */
+async function visibleReferences(
+  database: Database,
+  principal: MaybePrincipal,
+  rows: ReferencingRow[],
+): Promise<VisibleReferences> {
+  if (isAdmin(principal)) return null;
+  const missionIds = [...new Set(rows.flatMap((row) => (row.missionId ? [row.missionId] : [])))];
+  const taskIds = [
+    ...new Set(rows.flatMap((row) => [row.supersedesId, row.supersededById].filter((id): id is string => Boolean(id)))),
+  ];
+  const [missions, tasks] = await Promise.all([
+    missionIds.length === 0
+      ? []
+      : database
+          .select({ id: mission.id })
+          .from(mission)
+          .where(and(inArray(mission.id, missionIds), missionScope(principal))),
+    taskIds.length === 0
+      ? []
+      : database
+          .select({ id: task.id })
+          .from(task)
+          .where(and(inArray(task.id, taskIds), taskScope(principal))),
+  ]);
+  return {
+    missions: new Set(missions.map((row) => row.id)),
+    tasks: new Set(tasks.map((row) => row.id)),
+  };
+}
+
 function withVisibleReferences<
-  Row extends {
-    missionId: string | null;
-    supersedesId: string | null;
-    supersededById: string | null;
+  Row extends ReferencingRow & {
     mission: { id: string; title: string; createdByUserId: string | null } | null;
     supersedes: { id: string; shortId: string; createdByUserId: string | null } | null;
     supersededBy: { id: string; shortId: string; createdByUserId: string | null } | null;
   },
->(principal: MaybePrincipal, row: Row) {
-  const mission = row.mission && canSeeMission(principal, row.mission) ? row.mission : null;
+>(visible: VisibleReferences, row: Row) {
+  const sees = (set: "missions" | "tasks", id: string) => visible === null || visible[set].has(id);
+  const mission = row.mission && sees("missions", row.mission.id) ? row.mission : null;
   const supersedes =
-    row.supersedes && canSeeTask(principal, row.supersedes) ? row.supersedes : null;
+    row.supersedes && sees("tasks", row.supersedes.id) ? row.supersedes : null;
   const supersededBy =
-    row.supersededBy && canSeeTask(principal, row.supersededBy) ? row.supersededBy : null;
+    row.supersededBy && sees("tasks", row.supersededBy.id) ? row.supersededBy : null;
   return {
     ...row,
     mission,
@@ -131,8 +169,9 @@ async function queryBoardTasks(
       },
     },
   });
+  const visible = await visibleReferences(database, principal, rows);
   return rows.map(({ attempts, handoffs, attemptExecutors, ...row }) => ({
-    ...withVisibleReferences(principal, row),
+    ...withVisibleReferences(visible, row),
     latestAttempt: attempts[0] ?? null,
     latestHandoffUsage: handoffs[0]?.usage ?? null,
     attemptExecutors: attemptExecutors ?? [],
@@ -163,7 +202,8 @@ export async function loadBoardTaskDetail(
       comments: true,
     },
   });
-  return row ? withVisibleReferences(principal, row) : null;
+  if (!row) return null;
+  return withVisibleReferences(await visibleReferences(database, principal, [row]), row);
 }
 
 export type BoardTaskDetailRow = NonNullable<Awaited<ReturnType<typeof loadBoardTaskDetail>>>;

@@ -1,7 +1,13 @@
 import { task, taskComment, user } from "@agent-board/db";
 import { eq, inArray } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
+import {
+  closeTestWorld,
+  createTestWorld,
+  insertSideProject,
+  linkProjects,
+  type TestWorld,
+} from "../mcp/test-db";
 import { invokeToolForTests as invokeTool } from "../mcp/test-tools";
 import type { AuthContext } from "../mcp/types";
 import { MAX_BULK_CARDS } from "../lib/bulk";
@@ -48,6 +54,8 @@ describe("discardCardsAction (bulk discard)", () => {
   let member: AuthContext;
   let memberId: string;
   let adminCards: string[];
+  /** The admin's, in a project of the same organization not linked to the member. */
+  let sideCards: string[];
   let memberCardId: string;
 
   beforeEach(async () => {
@@ -86,6 +94,12 @@ describe("discardCardsAction (bulk discard)", () => {
     adminCards = [];
     for (const title of ["um", "dois", "tres"]) {
       adminCards.push(idOf(await invokeTool(world.db, admin, "task_create", card(title))));
+    }
+    await linkProjects(world.db, memberId, [world.projectId]);
+    const sideProjectId = await insertSideProject(world.db, world);
+    sideCards = [];
+    for (const title of ["lado um", "lado dois"]) {
+      sideCards.push(idOf(await invokeTool(world.db, admin, "task_create", { ...card(title), project_id: sideProjectId })));
     }
     memberCardId = idOf(await invokeTool(world.db, member, "task_create", card("do member")));
     sessionUserId = world.adminUserId;
@@ -162,14 +176,14 @@ describe("discardCardsAction (bulk discard)", () => {
     });
   });
 
-  it("member: another person's card is refused as not found and stays untouched", async () => {
+  it("member: a card of a project not linked to them is refused as not found and stays untouched", async () => {
     sessionUserId = memberId;
-    const r = await discardCardsAction([adminCards[0]!], "não é meu");
+    const r = await discardCardsAction([sideCards[0]!], "não é meu");
     // The same answer an id that never existed gets: nothing to learn from it.
     expect(r).toEqual({
       ok: false,
       error: "Card not found.",
-      kept: [{ id: adminCards[0], error: "Card not found." }],
+      kept: [{ id: sideCards[0], error: "Card not found." }],
     });
     expect(await discardCardsAction([NOWHERE], "não é meu")).toEqual({
       ok: false,
@@ -178,13 +192,13 @@ describe("discardCardsAction (bulk discard)", () => {
     });
 
     // Mixed with their own card, the other person's card is still never touched.
-    const mixed = await discardCardsAction([memberCardId, adminCards[1]!], "lote");
+    const mixed = await discardCardsAction([memberCardId, sideCards[1]!], "lote");
     expect(mixed.ok).toBe(false);
     if (mixed.ok) return;
-    expect(mixed.kept?.find((k) => k.id === adminCards[1])?.error).toBe("Card not found.");
-    expect(await statuses([adminCards[0]!, adminCards[1]!])).toEqual({
-      [adminCards[0]!]: "aberto",
-      [adminCards[1]!]: "aberto",
+    expect(mixed.kept?.find((k) => k.id === sideCards[1])?.error).toBe("Card not found.");
+    expect(await statuses([sideCards[0]!, sideCards[1]!])).toEqual({
+      [sideCards[0]!]: "aberto",
+      [sideCards[1]!]: "aberto",
     });
   });
 

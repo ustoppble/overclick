@@ -146,7 +146,8 @@ export async function loadMissionPage(
 /**
  * The missions the reader may see (navigation plan E3), the most recently
  * changed first, each with its cards by status and the projects they are in.
- * A member sees the missions they created, and only their own cards in them.
+ * A member sees the missions they created or that hold a card of a project
+ * linked to them, and only the cards of their linked projects in them.
  */
 export async function loadMissionList(
   database: Database,

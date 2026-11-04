@@ -15,6 +15,7 @@ export { mission } from "./mission";
 export { missionAttempt } from "./mission-attempt";
 export { missionAttemptReport } from "./mission-attempt-report";
 export { project } from "./project";
+export { projectMember } from "./project-member";
 export { projectContextAudit } from "./project-context-audit";
 export { task } from "./task";
 export { taskComment } from "./task-comment";
@@ -39,6 +40,7 @@ export {
   missionRelations,
   organizationRelations,
   projectRelations,
+  projectMemberRelations,
   projectContextAuditRelations,
   taskCommentRelations,
   taskRelations,
