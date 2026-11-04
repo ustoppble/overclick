@@ -57,6 +57,13 @@
  * with no URL given the guard measures /board, /missions and the first
  * mission's page (/missions/<id>, found on the list), each at every width.
  *
+ * Navigation plan E4 put the scope and the search on the global bar and fixed
+ * the order in which the bar steps aside as it narrows (nav README §2): first
+ * the search turns into its icon, then the "running" word goes, then the
+ * place names go, and "to review" never does. The guard reads which of them
+ * are on screen at every width and fails a bar that let a later one go while
+ * an earlier one stayed, or that lost the search or the scope altogether.
+ *
  * Exit code is 0 when every width holds the rule and 1 when any width breaks
  * it, so this runs as a check in CI as easily as by hand.
  */
@@ -339,6 +346,45 @@ const REVIEW_VISIBLE = `(() => {
   return { applies: true, where: null };
 })()`;
 
+/**
+ * The fixed order the global bar steps aside in (E4). Each step may go only
+ * after every step before it went: the search field (to its icon), the
+ * running chip's word, the place names. The scope and the search, in one form
+ * or the other, never leave.
+ */
+const FALL_ORDER = `(() => {
+  const bar = document.querySelector(".global-bar");
+  if (!bar) return { applies: false };
+  const shown = (el) => {
+    if (!el) return false;
+    for (let node = el; node; node = node.parentElement) {
+      const cs = getComputedStyle(node);
+      if (cs.display === "none" || cs.visibility === "hidden") return false;
+    }
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.right > 0 && r.left < innerWidth;
+  };
+  return {
+    applies: true,
+    scope: shown(bar.querySelector(".gb-scope")),
+    field: shown(bar.querySelector(".gb-search-form")),
+    icon: shown(bar.querySelector(".gb-search-btn")),
+    runLabel: shown(bar.querySelector(".gb-chip-run .gb-lbl")),
+    placeNames: Array.from(bar.querySelectorAll(".gb-place span")).some(shown),
+  };
+})()`;
+
+/** What the fall order owes at a width, or null when it holds. */
+function fallOrderBreak(state) {
+  if (!state.applies) return null;
+  if (!state.scope) return "the scope left the bar";
+  if (!state.field && !state.icon) return "the search left the bar, field and icon both";
+  if (state.field && state.icon) return "the search shows as a field and an icon at once";
+  if (state.runLabel && !state.field) return "the running word stayed after the search turned into its icon";
+  if (state.placeNames && !state.runLabel) return "the place names stayed after the running word went";
+  return null;
+}
+
 const OPEN_MENU = `(() => {
   const btn = document.querySelector(".filters-btn");
   if (!btn || getComputedStyle(btn).display === "none") return false;
@@ -463,6 +509,18 @@ async function main() {
           } else {
             failed = true;
             console.log(`  FAIL ${width}px: "to review" is not on screen`);
+          }
+        }
+
+        const fall = await evaluate(cdp, sessionId, FALL_ORDER);
+        if (fall.applies) {
+          const steps = `search ${fall.field ? "field" : "icon"} · running word ${fall.runLabel ? "on" : "off"} · place names ${fall.placeNames ? "on" : "off"}`;
+          const broken = fallOrderBreak(fall);
+          if (broken) {
+            failed = true;
+            console.log(`  FAIL ${width}px: fall order broken, ${broken} (${steps})`);
+          } else {
+            console.log(`  ok   ${width}px: fall order holds (${steps})`);
           }
         }
 

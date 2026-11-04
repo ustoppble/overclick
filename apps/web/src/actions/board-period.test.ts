@@ -144,3 +144,77 @@ describe("the date the period reads is saved the same way", () => {
     expect(await stored()).toBe("created");
   });
 });
+
+describe("the board remembers only the scope and the period (navigation plan E4, F2)", () => {
+  const remembered = async () => {
+    const [row] = await world.db
+      .select({
+        organizationId: user.boardOrganizationId,
+        projectId: user.boardProjectId,
+        missionId: user.boardMissionId,
+        types: user.boardTaskTypes,
+        priorities: user.boardPriorities,
+        resolvedIn: user.boardResolvedIn,
+        period: user.boardPeriod,
+        periodBy: user.boardPeriodBy,
+      })
+      .from(user)
+      .where(eq(user.id, world.adminUserId));
+    return row!;
+  };
+
+  beforeEach(async () => {
+    world = await createTestWorld();
+    sessionUserId = world.adminUserId;
+  });
+
+  afterEach(async () => {
+    sessionUserId = "";
+    if (world) await closeTestWorld(world);
+  });
+
+  it("stores the organization, the project, the period and its date", async () => {
+    expect(
+      await setBoardFilterAction({
+        ...base,
+        organizationIds: [world.organizationId],
+        projectIds: [world.projectId],
+        period: "30d",
+        periodBy: "created",
+      }),
+    ).toEqual({ ok: true });
+    const row = await remembered();
+    expect(row.organizationId).toBe(world.organizationId);
+    expect(row.projectId).toBe(world.projectId);
+    expect(row.period).toBe("30d");
+    expect(row.periodBy).toBe("created");
+  });
+
+  it("does not store the mission, the type, the priority nor the release", async () => {
+    await setBoardFilterAction({
+      ...base,
+      missionId: world.missionId,
+      types: ["bug"],
+      priorities: ["alta"],
+      resolvedIn: null,
+    });
+    const row = await remembered();
+    expect(row.missionId).toBeNull();
+    expect(row.types).toBeNull();
+    expect(row.priorities).toBeNull();
+    expect(row.resolvedIn).toBeNull();
+  });
+
+  it("leaves what an older release stored where it is, untouched and unread", async () => {
+    await world.db
+      .update(user)
+      .set({ boardMissionId: world.missionId, boardTaskTypes: "bug" })
+      .where(eq(user.id, world.adminUserId));
+    await setBoardFilterAction({ ...base, period: "14d" });
+    const row = await remembered();
+    // The columns stay (the DROP is a card of its own); nothing writes them.
+    expect(row.missionId).toBe(world.missionId);
+    expect(row.types).toBe("bug");
+    expect(row.period).toBe("14d");
+  });
+});

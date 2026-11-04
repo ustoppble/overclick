@@ -68,3 +68,23 @@ describe("the board's new addresses (E3)", () => {
     expect(existsSync(join(app, "missions", "[id]", "not-found.tsx"))).toBe(true);
   });
 });
+
+/**
+ * Navigation plan E4, item 5 (decision 5): the old addresses answered 307 in
+ * the release that introduced them and answer 308 from the next one on, so
+ * a bookmark updates itself. Still one hop each. `/settings?tab=` stays
+ * temporary: where it lands depends on who asks (admin, member, nobody signed
+ * in), and a browser keeps a 308 for every reader of that machine.
+ */
+describe("the old addresses become permanent redirects (E4)", () => {
+  it.each(["home", "insights", "organizations"])("app/%s/page.tsx answers 308", (route) => {
+    const source = readFileSync(page(route), "utf8");
+    expect(source).toMatch(/\bpermanentRedirect\(/);
+    expect(source).not.toMatch(/\bredirect\(/);
+  });
+
+  it("/settings?tab= stays a 307: its destination depends on the reader", () => {
+    const source = readFileSync(page("settings"), "utf8");
+    expect(source).not.toContain("permanentRedirect");
+  });
+});
