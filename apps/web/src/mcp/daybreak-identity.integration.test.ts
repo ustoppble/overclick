@@ -59,13 +59,13 @@ describe("Daybreak executor identity (OCL-190)", () => {
     expect((await world.db.select().from(task))[0]?.harness).toMatchObject({ model: daybreak });
   });
 
-  it("rejects an unregistered model without taking the card", async () => {
+  it("takes the card on a model the workspace never registered and records it (E2)", async () => {
     await setup();
-    const [card] = await world.db.insert(task).values({ projectId: world.projectId, shortId: "OC-1", title: "Invalid" }).returning();
+    const [card] = await world.db.insert(task).values({ projectId: world.projectId, shortId: "OC-1", title: "Unlisted" }).returning();
     expect((await invokeTool(world.db, ctx(), "task_claim", { task_id: card!.id,
-      executor: { cli: "codex", model: "unknown-model" } })).ok).toBe(false);
-    expect((await world.db.select().from(task))[0]?.status).toBe("aberto");
-    expect(await world.db.select().from(executionAttempt)).toHaveLength(0);
+      executor: { cli: "codex", model: "unknown-model" } })).ok).toBe(true);
+    expect((await world.db.select().from(task))[0]?.status).toBe("em_execucao");
+    expect((await world.db.select().from(executionAttempt))[0]?.model).toBe("unknown-model");
   });
 
   it("keeps measured Daybreak tokens distinct through recipe, delivery and Insights", async () => {

@@ -74,6 +74,8 @@ const MissionWriteAckSchema = WriteAckSchema.extend({
 const ExecutorsWriteAckSchema = WriteAckSchema.extend({
   id: z.string().min(1),
   removed: z.boolean(),
+  /** Why nothing was written: executors_update is accepted and ignored (E2). */
+  warnings: WarningsSchema.optional(),
 });
 
 const TaskDeliverAckSchema = TaskWriteAckSchema.extend({
@@ -1295,11 +1297,11 @@ export const ConfiguredExecutorSchema = z.object({
 });
 
 /**
- * Adds or removes CLIs and models in the workspace executor config, in the
- * same shape the Settings grid saves. Guarded by the token's manage flag.
- * Adding models turns the CLI on unless `enabled: false` says otherwise: an
- * unchecked model is refused when a task_claim declares it.
- * `remove: true` drops the whole CLI and cannot be combined with the others.
+ * Accepted and ignored for one release (E2): the board no longer keeps a list
+ * of executors, the Overclock app decides what runs. The input is still
+ * validated as before, so an older caller keeps working and learns why from
+ * the answer's warning. Guarded by the token's manage flag.
+ * `remove: true` cannot be combined with the others.
  */
 export const ExecutorsUpdateInputSchema = z
   .object({
@@ -1371,11 +1373,13 @@ export const ExecutorsUpdateInputSchema = z
   });
 
 export const ExecutorsUpdateFullOutputSchema = z.object({
-  /** The whole config after the change, the shape Settings reads. */
+  /** The stored config, read back untouched: nothing is written any more (E2). */
   executors: z.array(ConfiguredExecutorSchema),
   /** Id the cli resolved to, which may differ from what was sent. */
   updated: z.string().min(1),
   removed: z.boolean(),
+  /** Why nothing was written: executors_update is accepted and ignored (E2). */
+  warnings: WarningsSchema.optional(),
 });
 
 export const ExecutorsUpdateOutputSchema = z.union([

@@ -1,14 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { project, workspace } from "@agent-board/db";
+import { project } from "@agent-board/db";
 import {
-  EffortSchema,
   MCP_TOOL_NAMES,
-  TaskClaimInputSchema,
   toolContracts,
   type McpToolName,
 } from "@agent-board/mcp-core";
 import { and, asc, eq } from "drizzle-orm";
-import { z } from "zod";
 import { invokeTool } from "./tools";
 import type { AuthContext, McpDatabase } from "./types";
 import { APP_VERSION } from "../lib/updates";
@@ -122,7 +119,7 @@ const DESCRIPTIONS: Record<McpToolName, string> = {
   insights_query:
     "Cost, tokens and time over the workspace, with execution and orchestration subtotals plus a combined total, grouped by project, mission, release, model, executor or card, with an optional period, plus the reopened rate per model. Release groups use resolved_in and a null label for cards without one. Same numbers the Insights page shows: estimated, unreported and unverified work comes back counted, never silently summed.",
   executors_update:
-    "Adds or removes CLIs and models in the workspace executor config, and can override the effort list keyed by model. Returns a compact acknowledgement by default; pass return: full for the complete executor config. Adding models turns the CLI on unless enabled:false says otherwise; remove:true drops the whole CLI. This is the catalog a task_claim is checked against, not a routing table. Needs a token with the manage flag.",
+    "Accepted and ignored for one release, with a warning: the board no longer keeps a list of executors. The Overclock app decides the CLI, the model and the effort, and task_claim records what ran, whatever the model. The answer keeps its shape (a compact acknowledgement, or return: full for the stored config, read back untouched) and nothing is written. Needs a token with the manage flag. The tool leaves the contract in a later release.",
 };
 
 function inputSchemaFor(name: McpToolName) {
@@ -135,32 +132,6 @@ function inputSchemaFor(name: McpToolName) {
     return value;
   };
   return unwrap(schema) as typeof schema;
-}
-
-/**
- * task_claim's executor.model narrowed to the workspace's own registered
- * models: an agent picks from what is actually configured instead of typing
- * a name free-hand. Falls back to the static free-text schema when the
- * workspace has nothing registered yet (a fresh board, before anyone has
- * called executors_update) — z.enum refuses an empty list, and there is
- * nothing to choose from yet anyway. The server still validates the same
- * catalog on the write path (see unregisteredClaimModelRefusal in
- * executor-identity.ts): a client can hold this schema in cache past the
- * moment a model is registered or removed.
- */
-function taskClaimInputSchemaFor(modelIds: string[]) {
-  if (modelIds.length === 0) return inputSchemaFor("task_claim");
-  return TaskClaimInputSchema.extend({
-    executor: z
-      .object({
-        cli: z.string().optional(),
-        model: z.enum(modelIds as [string, ...string[]]).optional(),
-        effort: EffortSchema.optional(),
-        agent: z.string().optional(),
-        session_id: z.string().optional(),
-      })
-      .optional(),
-  });
 }
 
 export async function createOverclickMcpServer(opts: {
@@ -181,18 +152,6 @@ export async function createOverclickMcpServer(opts: {
       ),
     )
     .orderBy(asc(project.createdAt));
-  const [ws] = await opts.db
-    .select({ executors: workspace.executors })
-    .from(workspace)
-    .where(eq(workspace.id, opts.ctx.workspaceId))
-    .limit(1);
-  const claimModelIds = [
-    ...new Set(
-      (ws?.executors ?? [])
-        .filter((item) => item.enabled)
-        .flatMap((item) => item.models),
-    ),
-  ];
   const server = new McpServer(
     { name: "overclick", version: APP_VERSION },
     { instructions: instructionsWithProjects(projects) },
@@ -221,10 +180,9 @@ export async function createOverclickMcpServer(opts: {
       name,
       {
         description: DESCRIPTIONS[name],
-        inputSchema:
-          name === "task_claim"
-            ? taskClaimInputSchemaFor(claimModelIds)
-            : inputSchemaFor(name),
+        // task_claim's model is free text for every workspace (E2): the board
+        // records what the Overclock app decided, it offers no menu of its own.
+        inputSchema: inputSchemaFor(name),
       },
       async (args: unknown) => {
         const result = await invokeTool(opts.db, opts.ctx, name, args);

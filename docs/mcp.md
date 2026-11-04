@@ -80,8 +80,8 @@ context are listed there with a short excerpt and a pointer to `project_get`.
 | | Money is opt-in and off by default: `pricing_enabled: false` comes back with every `cost_usd` null, never a zero standing in for "no cost to report", because on a flat subscription a dollar figure is fiction. Turn the cost layer on in Settings and the board reads the frozen attempt figures, labeled by source. Editing a price affects the next deliver/task_update, not historical snapshots |
 | | `group_by=model` reads the segments, so a run that switched model lands in both model groups with the tokens each one actually spent, each priced at its own rate. Those groups carry `shared_attempts`: the runs that touched more than one model. Their duration lands whole in every model the run touched, because nothing records how the wall clock split, so per-model durations overlap instead of adding up to the total |
 | | `group_by` project, mission, release, model, executor or card (omit it for totals and the reopen rate only), `since` and `until` to narrow the period. Release groups use the card's exact `resolved_in`; a null label is the "no release" bucket. Same rows and same aggregation the Insights page runs, so a number never disagrees with the screen: only finished attempts count, example cards stay out, `estimated`, `missing`, `zero_usage`, `suspect` and `delivery_unverified` come back as honesty counters. Card rows also carry `unpriced_models` and `unpriced_tokens`, so an unknown cost says `no price for X`; absent counters say `not reported`; explicit zero counters say `usage reported as zero`. None becomes a fake `$0`. The period narrows attempts by when they finished; reopens are not narrowed, so a delivery reopened later still counts |
-| `executors_update` | adds or removes CLIs and models in the executor config, in the shape the Settings grid saves. The default response is a compact acknowledgement; pass `return: "full"` for the complete executor config. **Needs a manage token** |
-| | one `cli` per call (the board id, or the binary name an agent sends: `claude` resolves to `claude-code`), plus `add_models`, `remove_models`, `enabled`, `label`, or `remove: true` to drop the CLI entirely. Adding models turns the CLI on unless `enabled: false` says otherwise, because an unchecked model is refused when a `task_claim` declares it. This is the catalog claims are checked against, not a routing table |
+| `executors_update` | **accepted and ignored for one release**, with a `warnings` entry (E2, in the OCL-202 pattern): the board no longer keeps a list of executors. The Overclock app decides the CLI, the model and the effort, and `task_claim` records what ran whatever the model, so nothing is written. The default response is still the compact acknowledgement (`changed` empty, `removed: false`); `return: "full"` reads the stored config back untouched. **Needs a manage token** |
+| | the input is validated as before (one `cli` per call, plus `add_models`, `remove_models`, `enabled`, `label` or `remove: true`), so an older caller keeps working and learns why from the warning. The tool leaves the contract in a later release, with notice |
 
 Write compatibility: `project_update`, `mission_update`, `task_create`, `task_release`,
 `task_heartbeat`, `task_update`, `task_deliver` and `executors_update`
@@ -277,9 +277,8 @@ commands run.
 ## The manage flag
 
 Reading the board is what a worker token is for. Rewriting the workspace configuration is
-not: a token that can rewrite the executor catalog decides which models a claim may
-declare. So the configuration tool sits behind a per-token **manage** flag, off by
-default.
+not: a token that can discard cards or release someone else's claim acts for the whole
+board. So those tools sit behind a per-token **manage** flag, off by default.
 
 Tick "This token can change the workspace configuration" when generating the token in
 Settings › MCP tokens, or tick the `manage` box on the token's row in that same list to
@@ -289,8 +288,9 @@ token is unchanged: same URL, same header, same tools for claiming and deliverin
 
 Untick the box to take the capability back. Revoked tokens cannot be granted anything.
 
-The configuration tool behind it is `executors_update` (`harness_set` went away with the
-harness policy in OCL-202). The flag also lets an owner release or heartbeat another
+The configuration tool behind it was `executors_update` (`harness_set` went away with the
+harness policy in OCL-202); since E2 it is accepted and ignored with a warning, because the
+Overclock app decides what runs. The flag also lets an owner release or heartbeat another
 token's stuck claim; the claiming token can always manage its own lease. Without the flag,
 configuration writes answer with a typed `PERMISSION_DENIED` and change nothing.
 
