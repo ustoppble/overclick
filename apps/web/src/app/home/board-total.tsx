@@ -96,15 +96,9 @@ export function totalParts(totals: BoardTotals, filter: BoardFilter, t: Dict) {
   }
 
   const detail = [
-    totals.costComputed > 0
-      ? `${totals.costComputed} ${t.board.costComputed}`
-      : null,
-    totals.costReported > 0
-      ? `${totals.costReported} ${t.board.costReported}`
-      : null,
-    totals.costEstimated > 0
-      ? `${totals.costEstimated} ${t.board.costEstimated}`
-      : null,
+    totals.costComputed > 0 ? t.board.costCountComputed(totals.costComputed) : null,
+    totals.costReported > 0 ? t.board.costCountReported(totals.costReported) : null,
+    totals.costEstimated > 0 ? t.board.costCountEstimated(totals.costEstimated) : null,
     totals.elapsedOnly > 0
       ? t.board.openFor(formatElapsed(totals.elapsedMs))
       : null,

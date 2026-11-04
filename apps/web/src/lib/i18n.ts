@@ -66,6 +66,10 @@ const en = {
     costComputed: "computed",
     costReported: "agent reported",
     costEstimated: "estimated",
+    /** E0 (B1): the popover counts its sources, so the word follows the number. */
+    costCountComputed: (n: number) => `${n} computed`,
+    costCountReported: (n: number) => `${n} agent reported`,
+    costCountEstimated: (n: number) => `${n} estimated`,
     /** Server-measured claim to deliver: time the card was open, not worked. */
     openFor: (value: string) => `open for ${value}`,
     /** The same, for the card line, where every word costs a column. */
@@ -778,6 +782,11 @@ const ptBR: Dict = {
     costComputed: "calculado",
     costReported: "reportado pelo agente",
     costEstimated: "estimado",
+    /** E0 (B1): o popover conta as origens, então a palavra concorda com o número. */
+    costCountComputed: (n: number) => (n === 1 ? "1 calculado" : `${n} calculados`),
+    costCountReported: (n: number) =>
+      n === 1 ? "1 reportado pelo agente" : `${n} reportados pelo agente`,
+    costCountEstimated: (n: number) => (n === 1 ? "1 estimado" : `${n} estimados`),
     openFor: (value: string) => `aberto por ${value}`,
     openShort: (value: string) => `aberto ${value}`,
     moveToMission: "Mover para missão",

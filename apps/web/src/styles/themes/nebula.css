@@ -85,7 +85,7 @@
   /* ---------- text ---------- */
   --oc-text-1: rgb(var(--oc-white-rgb));
   --oc-text-2: rgb(var(--oc-white-rgb) / 0.65);
-  --oc-text-3: rgb(var(--oc-white-rgb) / 0.45);
+  --oc-text-3: rgb(var(--oc-white-rgb) / 0.5);
   --oc-text-glow: rgb(var(--oc-white-rgb) / 0.15);
   --oc-icon: #aab2bd;
 

@@ -5,6 +5,8 @@ import {
   formatElapsed,
   formatMoney,
   formatMoneyOrNone,
+  formatShortDate,
+  formatShortDateTime,
   formatTokens,
 } from "./format";
 
@@ -72,5 +74,23 @@ describe("approx", () => {
   it("marks the inexact and leaves the exact alone", () => {
     expect(approx("$27.10", true)).toBe("~$27.10");
     expect(approx("175M", false)).toBe("175M");
+  });
+});
+
+describe("formatShortDate", () => {
+  // Built from local parts, so the test reads the same in any timezone.
+  const nov3 = new Date(2026, 10, 3, 14, 5);
+
+  it("puts the day first in Portuguese, so 3 November never reads as 11 March", () => {
+    expect(formatShortDate(nov3, "pt-BR")).toBe("03/11");
+  });
+
+  it("keeps the month first in English", () => {
+    expect(formatShortDate(nov3, "en")).toBe("11/03");
+  });
+
+  it("spells the time after the date in the reader's own order", () => {
+    expect(flat(formatShortDateTime(nov3, "pt-BR"))).toBe("03/11, 14:05");
+    expect(flat(formatShortDateTime(nov3, "en"))).toBe("11/03, 02:05 PM");
   });
 });

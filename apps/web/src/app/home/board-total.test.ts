@@ -119,3 +119,25 @@ describe("the reading of the tilde", () => {
   });
 
 });
+
+describe("the popover's source counts agree with their number", () => {
+  const detail = (totals: Partial<BoardTotals>, lang: Lang = "pt-BR") =>
+    totalParts({ ...EMPTY_BOARD_TOTALS, attempts: 9, costUsd: 27.1, ...totals }, FILTER, dict(lang))
+      .detail;
+
+  it("says 7 calculados, never 7 calculado", () => {
+    expect(detail({ costComputed: 7, costReported: 2, costEstimated: 3 })).toEqual([
+      "7 calculados",
+      "2 reportados pelo agente",
+      "3 estimados",
+    ]);
+  });
+
+  it("keeps the singular for one", () => {
+    expect(detail({ costComputed: 1, costReported: 1, costEstimated: 1 })).toEqual([
+      "1 calculado",
+      "1 reportado pelo agente",
+      "1 estimado",
+    ]);
+  });
+});
