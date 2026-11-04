@@ -1551,7 +1551,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
    title stop where it starts instead of running under it. */
 .nb .d-head { display: flex; align-items: center; flex-wrap: wrap; row-gap: 6px;
   padding-right: 44px; gap: var(--nebula-space-2); margin-bottom: var(--nebula-space-2);
-  font-family: var(--nebula-font-mono); font-size: 11px; color: var(--nebula-text-tertiary); }
+  font-family: var(--nebula-font-mono); font-size: 12px; color: var(--nebula-text-tertiary); }
 .nb .d-location {
   flex: 1 1 100%; min-width: 0; display: inline-flex; align-items: baseline;
   flex-wrap: wrap; gap: 4px; font-family: var(--nebula-font-sans); font-size: 12px;
@@ -1567,7 +1567,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb button.d-location-mission:hover { color: var(--nebula-text-primary); }
 .nb .d-location-empty { color: var(--nebula-text-tertiary); }
-.nb .d-status { font-family: var(--nebula-font-label); font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase;
+.nb .d-status { font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .07em; text-transform: uppercase;
   border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill); padding: 2px 9px; color: var(--nebula-text-secondary); }
 .nb .d-status.exec { color: var(--oc-info); border-color: rgb(var(--oc-info-rgb) / .3); }
 .nb .d-status.feito { color: var(--oc-warn); border-color: rgb(var(--oc-warn-rgb) / .3); }
@@ -1576,7 +1576,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   padding-right: 44px; margin-bottom: var(--nebula-space-4); line-height: 1.3; }
 /* AGB-68: an empty contract keeps the mono voice the panel uses for facts,
    instead of a dash that reads as a rendering accident. */
-.nb .d-sec p.d-empty { font-family: var(--nebula-font-label); font-size: 11px;
+.nb .d-sec p.d-empty { font-family: var(--nebula-font-label); font-size: 12px;
   color: var(--nebula-text-tertiary); letter-spacing: 0.03em; }
 .nb .d-sec { border-top: 1px solid var(--nebula-plan-divider); padding: var(--nebula-space-3) 0; }
 /* seção de validação em revisão: divisor esverdeado marca onde a decisão acontece */
@@ -1614,7 +1614,7 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 }
 .nb .d-check-step .md code,
 .nb .d-check-expected .md code {
-  font-size: 11px;
+  font-size: 12px;
 }
 .nb .md pre {
   margin: 6px 0 8px;
@@ -1669,14 +1669,14 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   line-height: 1.3;
 }
 .nb .d-sec .lbl { display: flex; align-items: baseline; justify-content: space-between; gap: var(--nebula-space-3);
-  font-family: var(--nebula-font-sans); font-size: 11px; font-weight: 600;
+  font-family: var(--nebula-font-sans); font-size: 12px; font-weight: 600;
   letter-spacing: .06em; text-transform: uppercase; color: var(--nebula-text-tertiary); margin-bottom: 8px; }
-.nb .d-progress { font-family: var(--nebula-font-label); font-size: 10px; letter-spacing: .04em;
+.nb .d-progress { font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .04em;
   color: var(--nebula-text-tertiary); text-transform: none; }
 .nb .d-progress.done { color: var(--oc-ok); }
 .nb .d-sec p { font-size: 12.5px; color: var(--nebula-text-secondary); line-height: 1.55; white-space: pre-line; }
 .nb .d-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 26px; }
-.nb .d-mono { font-family: var(--nebula-font-mono); font-size: 11px; color: var(--nebula-mist-light); }
+.nb .d-mono { font-family: var(--nebula-font-mono); font-size: 12px; color: var(--nebula-mist-light); }
 /* what really ran, under the harness the card planned */
 .nb .d-harness-ran { color: var(--nebula-text-tertiary); margin-top: 2px; }
 /* the panel has room for both: the mark, and the model spelled out beside it */
@@ -1700,39 +1700,39 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .d-attempt-commit { font-family: var(--nebula-font-mono); }
 .nb .d-roles .cli-mark { width: 13px; height: 13px; vertical-align: -2px; margin: 0 4px 0 2px; }
 .nb .d-roles { display: flex; gap: var(--nebula-space-2) var(--nebula-space-4); flex-wrap: wrap; min-width: 0; max-width: 100%; }
-.nb .d-roles .rl { font-size: 11.5px; color: var(--nebula-text-tertiary); min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb .d-roles .rl { font-size: 12px; color: var(--nebula-text-tertiary); min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb .d-roles .rl b { color: var(--nebula-text-primary); font-weight: var(--nebula-weight-medium); margin-left: 2px; }
 .nb .d-evid { background: rgb(var(--oc-scrim-rgb) / .6); border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-box);
   padding: 10px 13px; font-size: 12px; color: var(--nebula-text-secondary); line-height: 1.55; }
-.nb .d-tel { font-family: var(--nebula-font-mono); font-size: 11px; color: var(--nebula-text-secondary); letter-spacing: .02em; }
-.nb .d-usage-warning { margin: 8px 0 0; padding: 7px 9px; border: 1px solid rgb(var(--oc-danger-rgb) / .32); border-radius: var(--oc-radius-badge); color: var(--oc-danger); background: rgb(var(--oc-danger-deep-rgb) / .12); font-size: 11px; line-height: 1.45; }
+.nb .d-tel { font-family: var(--nebula-font-mono); font-size: 12px; color: var(--nebula-text-secondary); letter-spacing: .02em; }
+.nb .d-usage-warning { margin: 8px 0 0; padding: 7px 9px; border: 1px solid rgb(var(--oc-danger-rgb) / .32); border-radius: var(--oc-radius-badge); color: var(--oc-danger); background: rgb(var(--oc-danger-deep-rgb) / .12); font-size: 12px; line-height: 1.45; }
 /* the two clocks of a run, each one next to the source that measured it */
 .nb .d-clocks { display: flex; flex-direction: column; gap: 3px; margin-top: 7px; }
-.nb .d-clock { font-family: var(--nebula-font-mono); font-size: 10.5px;
+.nb .d-clock { font-family: var(--nebula-font-mono); font-size: 12px;
   color: var(--nebula-text-tertiary); letter-spacing: .02em; }
 .nb .d-clock b { color: var(--nebula-text-secondary); font-weight: var(--nebula-weight-medium); }
 .nb .d-clock i { font-style: normal; color: var(--nebula-text-tertiary); opacity: .75; }
 .nb .d-timeline { display: flex; flex-direction: column; gap: 6px; }
-.nb .d-tl-entry { font-family: var(--nebula-font-mono); font-size: 11px; }
+.nb .d-tl-entry { font-family: var(--nebula-font-mono); font-size: 12px; }
 .nb .d-tl-entry .tag { margin-right: 6px; }
 .nb .d-tl-meta { color: var(--nebula-text-tertiary); }
-.nb .d-transcript-path { font-family: var(--nebula-font-mono); font-size: 11px;
+.nb .d-transcript-path { font-family: var(--nebula-font-mono); font-size: 12px;
   color: var(--nebula-text-secondary); word-break: break-all; margin-top: 4px; }
 .nb .d-copy-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
-.nb .d-copy { font-family: var(--nebula-font-label); font-size: 10.5px; letter-spacing: .02em;
+.nb .d-copy { font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .02em;
   background: rgb(var(--oc-scrim-rgb) / .6); border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-control);
   padding: 5px 10px; color: var(--nebula-text-secondary); cursor: pointer;
   transition: border-color .15s, color .15s; max-width: 100%; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .nb .d-copy:hover { border-color: var(--nebula-mist-light); color: var(--nebula-text-primary); }
 .nb .d-copy.done { border-color: rgb(var(--oc-ok-rgb) / .45); color: var(--oc-ok); }
-.nb .d-transcript-note { font-size: 11px; color: var(--nebula-text-tertiary); margin-top: 8px; }
+.nb .d-transcript-note { font-size: 12px; color: var(--nebula-text-tertiary); margin-top: 8px; }
 
 /* ---------- validation panel (Done · review) ---------- */
 .nb .d-verify { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
   background: var(--nebula-panel-solid); border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-box);
   padding: 9px 13px; margin-bottom: 10px; }
-.nb .d-verify-lbl { font-family: var(--nebula-font-label); font-size: 9.5px; letter-spacing: .08em;
+.nb .d-verify-lbl { font-family: var(--nebula-font-label); font-size: 12px; letter-spacing: .08em;
   text-transform: uppercase; color: var(--nebula-text-tertiary); white-space: nowrap; }
 .nb .d-verify-value { font-size: 12px; color: var(--nebula-text-primary); word-break: break-all; }
 .nb a.d-verify-value { text-decoration: underline; text-underline-offset: 2px; }
@@ -1746,14 +1746,14 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
 .nb .d-check-row.ticked { border-color: rgb(var(--oc-ok-rgb) / .3); }
 .nb .d-check-row.ticked .d-check-step { color: var(--nebula-text-secondary); }
 .nb .d-check-row input[type="checkbox"] { margin-top: 2px; accent-color: var(--oc-ok); cursor: inherit; }
-.nb .d-check-num { font-family: var(--nebula-font-mono); font-size: 10.5px; color: var(--nebula-text-tertiary);
+.nb .d-check-num { font-family: var(--nebula-font-mono); font-size: 12px; color: var(--nebula-text-tertiary);
   border: 1px solid var(--nebula-glass-border); border-radius: var(--oc-radius-pill); min-width: 18px; height: 18px;
   display: inline-flex; align-items: center; justify-content: center; margin-top: 1px; }
 .nb .d-check-body { display: flex; flex-direction: column; gap: 2px; }
 .nb .d-check-step { font-size: 12.5px; color: var(--nebula-text-primary); line-height: 1.45; }
-.nb .d-check-expected { font-size: 11.5px; color: var(--nebula-text-secondary); line-height: 1.45; }
-.nb .d-check-meta { font-family: var(--nebula-font-label); font-size: 10px; color: var(--oc-ok); letter-spacing: .02em; }
-.nb .d-btn-ghost { background: none; border: none; color: var(--nebula-text-tertiary); font-size: 11.5px;
+.nb .d-check-expected { font-size: 12px; color: var(--nebula-text-secondary); line-height: 1.45; }
+.nb .d-check-meta { font-family: var(--nebula-font-label); font-size: 12px; color: var(--oc-ok); letter-spacing: .02em; }
+.nb .d-btn-ghost { background: none; border: none; color: var(--nebula-text-tertiary); font-size: 12px;
   padding: 8px 6px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; margin-right: auto; }
 .nb .d-btn-ghost:disabled { opacity: .4; cursor: not-allowed; }
 
