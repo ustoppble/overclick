@@ -1,3 +1,4 @@
+import { TEST_AUTH_SECRET, TEST_AUTH_SECRET_OTHER } from "../test-support/auth-secret";
 import { createHmac, hkdfSync } from "node:crypto";
 import { loginCode, loginFailure, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
@@ -44,7 +45,7 @@ describe("login codes", () => {
   let userId: string;
 
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     world = await createTestWorld();
     const [row] = await world.db
       .insert(user)
@@ -227,7 +228,7 @@ describe("login codes", () => {
 
     it("changes with the secret", () => {
       const before = hashLoginCode(EMAIL, "123456");
-      process.env.AUTH_SECRET = "t".repeat(32);
+      process.env.AUTH_SECRET = TEST_AUTH_SECRET_OTHER;
       expect(hashLoginCode(EMAIL, "123456")).not.toBe(before);
     });
 

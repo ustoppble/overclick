@@ -1,3 +1,4 @@
+import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const authState = vi.hoisted(() => ({
@@ -39,7 +40,7 @@ const EMAIL = "admin@example.invalid";
 
 describe("getSession", () => {
   beforeEach(() => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     authState.token = undefined;
     authState.users = [];
   });

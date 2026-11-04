@@ -1,3 +1,4 @@
+import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -41,7 +42,7 @@ function tokenIn(file: string): string {
  */
 describe("emergency sign-in", () => {
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     world = await createTestWorld();
     dir = mkdtempSync(join(tmpdir(), "ocl-emergency-test-"));
   });

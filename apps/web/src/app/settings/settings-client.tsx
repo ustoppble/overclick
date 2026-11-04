@@ -27,7 +27,6 @@ import { UpdatePanel } from "../../components/update-panel";
 import { asLang, formatCalendarDate, formatMediumDate } from "../../lib/format";
 import { LANGUAGES, dict, type Dict } from "../../lib/i18n";
 import type { Runtime } from "../../lib/runtime";
-import type { UpdaterState } from "../../lib/updates";
 import {
   OrganizationContextEditor,
   type OrganizationRow,
@@ -119,8 +118,6 @@ export function SettingsClient({
   updateLog,
   version,
   runtime,
-  updater,
-  enableCommand,
   manualCommand,
   sourceCommand,
   isAdmin,
@@ -170,9 +167,6 @@ export function SettingsClient({
   version: string;
   /** Read on the server: whether this instance runs from an image or a checkout. */
   runtime: Runtime;
-  /** Read on the server: whether the optional updater sidecar is alive. */
-  updater: UpdaterState;
-  enableCommand: string;
   manualCommand: string;
   sourceCommand: string;
 }) {
@@ -926,10 +920,8 @@ export function SettingsClient({
           <UpdatePanel
             version={version}
             runtime={runtime}
-            enableCommand={enableCommand}
             manualCommand={manualCommand}
             sourceCommand={sourceCommand}
-            initialState={updater}
             lastUpdate={updateLog}
             lang={lang}
           />

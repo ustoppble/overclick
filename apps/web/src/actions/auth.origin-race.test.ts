@@ -1,3 +1,4 @@
+import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
 import { loginFailure, user } from "@agent-board/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_LOGIN_FAILURES } from "../lib/login-rate-limit";
@@ -51,7 +52,7 @@ function codeForm(email: string, code: string): FormData {
  */
 describe("a parallel burst from one origin, one address per guess", () => {
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     process.env.OVERCLICK_TRUSTED_PROXY = "1";
     world = await createTestWorld();
     await world.db.insert(user).values({ email: "real@local.test" });
@@ -133,7 +134,7 @@ function signedIn(answers: Array<{ error: string } | null | undefined>): number 
  */
 describe.each([12, 30])("a parallel burst of %i right sign-ins from one origin", (burst) => {
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     process.env.OVERCLICK_TRUSTED_PROXY = "1";
     world = await createTestWorld();
   });
@@ -163,7 +164,7 @@ describe.each([12, 30])("a parallel burst of %i right sign-ins from one origin",
 
 describe("right sign-ins from one origin, one after the other", () => {
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     process.env.OVERCLICK_TRUSTED_PROXY = "1";
     world = await createTestWorld();
   });
@@ -189,7 +190,7 @@ describe("right sign-ins from one origin, one after the other", () => {
 
 describe("what a right sign-in gives back", () => {
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     process.env.OVERCLICK_TRUSTED_PROXY = "1";
     world = await createTestWorld();
   });
@@ -249,7 +250,7 @@ describe("two visitors behind the same edge", () => {
   }
 
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     process.env.OVERCLICK_TRUSTED_PROXY = "1";
     world = await createTestWorld();
   });

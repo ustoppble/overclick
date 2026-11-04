@@ -19,14 +19,14 @@
   },
   "dependencies": {
     "@agent-board/mcp-core": "workspace:*",
-    "drizzle-orm": "^0.44.7",
+    "drizzle-orm": "^0.45.4",
     "postgres": "^3.4.7",
     "tsx": "^4.19.4"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.14",
     "@types/node": "^22.15.3",
-    "drizzle-kit": "^0.31.4",
+    "drizzle-kit": "^0.31.11",
     "typescript": "^5.8.3",
     "vitest": "^3.1.3"
   }

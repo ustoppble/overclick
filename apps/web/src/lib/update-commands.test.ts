@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { updateCommand, updaterEnableCommand } from "./update-commands";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { updateCommand } from "./update-commands";
 
 describe("the manual update command per deploy mode", () => {
   it("never offers the quickstart's raw compose command on a hosted instance", () => {
@@ -12,18 +14,47 @@ describe("the manual update command per deploy mode", () => {
   });
 
   it("keeps the checkout command for the quickstart install", () => {
-    expect(updateCommand("quickstart")).toBe("git pull && docker compose up -d --build");
+    expect(updateCommand("quickstart")).toBe("git pull && docker compose up -d --build --remove-orphans");
   });
 });
 
-describe("the updater-enable command per deploy mode", () => {
-  it("pins the hosted project and compose file, not the quickstart default", () => {
-    expect(updaterEnableCommand("hosted")).toBe(
-      "docker compose -p overclick -f deploy/docker-compose.cloud.yml --profile updater up -d",
-    );
+describe("the retired updater sidecar", () => {
+  it("also drops the old sidecar container when the quickstart is updated", () => {
+    expect(updateCommand("quickstart")).toContain("--remove-orphans");
   });
 
-  it("uses the plain profile flag for the quickstart install", () => {
-    expect(updaterEnableCommand("quickstart")).toBe("docker compose --profile updater up -d");
+  it("leaves no command that turns it on, in any mode", () => {
+    for (const mode of ["hosted", "quickstart"] as const) {
+      expect(updateCommand(mode)).not.toContain("--profile");
+    }
+  });
+});
+
+describe("nothing in the app talks to an update sidecar", () => {
+  const src = join(__dirname, "..");
+  const files = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? files(join(dir, entry.name))
+        : /\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith(".test.ts")
+          ? [join(dir, entry.name)]
+          : [],
+    );
+
+  it("has no trigger directory, heartbeat or trigger action left", () => {
+    const needles = [
+      "UPDATE_TRIGGER_DIR",
+      "updater-alive",
+      "update-requested",
+      "triggerUpdateAction",
+      "readUpdaterStateAction",
+      "readUpdaterState",
+      "updaterEnableCommand",
+    ];
+    const hits = files(src).flatMap((file) => {
+      const text = readFileSync(file, "utf8");
+      return needles.filter((needle) => text.includes(needle)).map((n) => `${file}: ${n}`);
+    });
+    expect(hits).toEqual([]);
   });
 });

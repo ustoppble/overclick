@@ -1,3 +1,4 @@
+import { TEST_AUTH_SECRET } from "../test-support/auth-secret";
 import { loginFailure, user } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -59,7 +60,7 @@ describe("loginWithCodeAction rate limits failed attempts per identifier", () =>
   let code = "";
 
   beforeEach(async () => {
-    process.env.AUTH_SECRET = "s".repeat(32);
+    process.env.AUTH_SECRET = TEST_AUTH_SECRET;
     world = await createTestWorld();
     await world.db.insert(user).values([{ email: "exists@local.test" }]);
     code = (await issueLoginCode(world.db, "exists@local.test"))!.code;
