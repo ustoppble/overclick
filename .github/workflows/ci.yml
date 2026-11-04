@@ -83,3 +83,11 @@ jobs:
       # itself red here for a while without anyone finding out. Runs against stub
       # CLIs, no network.
       - run: scripts/test-plugin-package.sh
+
+      # The deploy scripts decide whether a hosted instance can be restored, so
+      # they get a linter and tests of their own: backup before any mutation,
+      # fail closed on a broken docker, the compose-project guard. Fake docker,
+      # no server.
+      - run: shellcheck deploy/deploy.sh deploy/backup.sh scripts/test-deploy-safety.sh
+      - run:
+      - run: scripts/test-deploy-safety.sh

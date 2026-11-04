@@ -52,10 +52,51 @@ VERSION="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' apps
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 TAG="${LABEL}.${STAMP}.v${VERSION:-unknown}"
 
-# A host that never ran this project has no database to dump: nothing to lose
-# either. Anything else wrong with the database stops here, loudly.
-if [ -z "$("${COMPOSE[@]}" ps --status running -q overclick-db 2>/dev/null)" ]; then
-  echo "==> backup: the database container is not running; nothing to dump"
+# Retention: newest KEEP of this label, by the time in the name.
+prune() {
+  local prefix=$1 suffix=$2 file n=0
+  # "." cannot be in a label, so `pre.` never matches the files of `pre-deploy`.
+  while IFS= read -r file; do
+    n=$((n + 1))
+    if [ "$n" -gt "$KEEP" ]; then
+      rm -f -- "$file"
+    fi
+  done < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name "${prefix}.[0-9]*${suffix}" | sort -r)
+}
+
+# The secrets copy comes first: it needs no database, so no early exit below may
+# leave a run without it.
+if [ -f deploy/.env ]; then
+  cp -- deploy/.env "$BACKUP_DIR/env-${TAG}.bak"
+  chmod 0600 "$BACKUP_DIR/env-${TAG}.bak"
+fi
+prune "env-${LABEL}" ".bak"
+
+# Fail closed: only a database container that does not exist at all may skip the
+# dump. The docker status is read apart from its output, so a failing docker
+# (daemon down, no permission, bad compose file) is never mistaken for "not
+# running". Its stderr is not echoed: it can carry host addresses.
+running=""
+status=0
+running="$("${COMPOSE[@]}" ps --status running -q overclick-db 2>/dev/null)" || status=$?
+if [ "$status" -ne 0 ]; then
+  echo "!! backup: 'docker compose ps' failed (exit ${status}); cannot tell whether the database is running, refusing to go on" >&2
+  exit 1
+fi
+if [ -z "$running" ]; then
+  existing=""
+  status=0
+  existing="$("${COMPOSE[@]}" ps --all -q overclick-db 2>/dev/null)" || status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "!! backup: 'docker compose ps --all' failed (exit ${status}); refusing to go on" >&2
+    exit 1
+  fi
+  if [ -n "$existing" ]; then
+    echo "!! backup: the database container exists but is not running; start it so it can be dumped, then rerun" >&2
+    exit 1
+  fi
+  # A host that never ran this project has no database to dump: nothing to lose.
+  echo "==> backup: no database container exists yet; nothing to dump"
   exit 0
 fi
 
@@ -74,23 +115,5 @@ fi
 mv -- "$PART" "$DUMP"
 chmod 0600 "$DUMP"
 
-if [ -f deploy/.env ]; then
-  cp -- deploy/.env "$BACKUP_DIR/env-${TAG}.bak"
-  chmod 0600 "$BACKUP_DIR/env-${TAG}.bak"
-fi
-
-# Retention: newest KEEP of this label, by the time in the name.
-prune() {
-  local prefix=$1 suffix=$2 file n=0
-  # "." cannot be in a label, so `pre.` never matches the files of `pre-deploy`.
-  while IFS= read -r file; do
-    n=$((n + 1))
-    if [ "$n" -gt "$KEEP" ]; then
-      rm -f -- "$file"
-    fi
-  done < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name "${prefix}.[0-9]*${suffix}" | sort -r)
-}
 prune "${LABEL}" ".dump"
-prune "env-${LABEL}" ".bak"
-
 echo "==> backup: done (newest ${KEEP} of '${LABEL}' kept, mode 600 in a 700 directory)"

@@ -8,7 +8,8 @@ volume and port.
 The root `docker-compose.yml` is a local quickstart only. On a hosted instance,
 always use `./deploy/deploy.sh`; it exports the deploy-only `COMPOSE_FILE`, takes
 a single-deploy lock, checks the existing project for accidental root compose
-files, and removes the known legacy Postgres orphan when it is safe to do so.
+files, and removes the known legacy Postgres orphan container once the backup and
+rollback tag exist (the legacy data volume is never deleted automatically).
 
 ## First deploy
 
@@ -285,9 +286,15 @@ survive every deploy. If another deploy is already running, the second
 invocation exits with a clear lock message and does not touch the compose
 project. In order, `deploy.sh`:
 
-1. runs `deploy/backup.sh pre-deploy` (below) and **stops if it fails**;
+1. runs `deploy/backup.sh pre-deploy` (below) and **stops if it fails**: it
+   copies `deploy/.env` first, then dumps the database, and any docker error
+   (or a database container that exists but is stopped) aborts instead of
+   being read as "nothing to back up";
 2. tags the image that is serving as `overclick-app:rollback-v<version>-<time>`;
-3. pulls, builds and restarts, then waits for the app to answer;
+3. only then mutates: removes the known legacy orphan container
+   `overclick-postgres-1` (its volume `overclick_pgdata` is kept and the script
+   prints the `docker volume rm` to run by hand), pulls, builds and restarts,
+   then waits for the app to answer;
 4. only once the app is healthy, frees disk: `docker builder prune` for cache
    older than 24 hours (`OVERCLICK_BUILD_CACHE_MAX_AGE`, any `docker` duration;
    the cache is shared with every other build on the host, hence the age
