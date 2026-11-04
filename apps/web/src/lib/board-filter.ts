@@ -434,7 +434,7 @@ export type BoardFilterQuery = {
  * board's poll — reads this first and the memory only for what it does not
  * say (E4 review h-ipv, item 1). Undefined when the address says nothing.
  */
-export type ScopeOverride = { organizations?: string; projects?: string };
+export type ScopeOverride = { organizations?: string; projects?: string; person?: string };
 
 /** The longest scope value an address may carry: ids joined, never a page of text. */
 const MAX_SCOPE_VALUE = 4_000;
@@ -442,7 +442,7 @@ const MAX_SCOPE_VALUE = 4_000;
 export function scopeOverrideFromSearch(
   search: string | Record<string, string | string[] | undefined>,
 ): ScopeOverride | undefined {
-  const read = (key: "organizations" | "projects"): string | undefined => {
+  const read = (key: "organizations" | "projects" | "person"): string | undefined => {
     const raw =
       typeof search === "string"
         ? new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get(key)
@@ -454,10 +454,16 @@ export function scopeOverrideFromSearch(
   };
   const organizations = read("organizations");
   const projects = read("projects");
-  if (organizations === undefined && projects === undefined) return undefined;
+  // The person filter rides with the scope (person-filter.ts): one id or a word.
+  const person = read("person");
+  const validPerson = person !== undefined && person.length <= 64 ? person : undefined;
+  if (organizations === undefined && projects === undefined && validPerson === undefined) {
+    return undefined;
+  }
   return {
     ...(organizations !== undefined ? { organizations } : {}),
     ...(projects !== undefined ? { projects } : {}),
+    ...(validPerson !== undefined ? { person: validPerson } : {}),
   };
 }
 

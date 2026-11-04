@@ -7,6 +7,7 @@ import {
   type BoardPeriod,
   type BoardPeriodField,
 } from "./board-filter";
+import { personCondition } from "./person-filter";
 import {
   isAdmin,
   missionScope,
@@ -218,7 +219,13 @@ export async function loadBoardTasks(
   database: Database,
   projectIds: string[],
   principal: MaybePrincipal,
-  options: { now?: Date; period?: BoardPeriod; periodBy?: BoardPeriodField } = {},
+  options: {
+    now?: Date;
+    period?: BoardPeriod;
+    periodBy?: BoardPeriodField;
+    /** Only the cards linked to this person (person-filter.ts); null is everyone. */
+    personUserId?: string | null;
+  } = {},
 ) {
   if (projectIds.length === 0) return [];
   const since = boardWindowStart(options.now ?? new Date(), options.period);
@@ -232,6 +239,7 @@ export async function loadBoardTasks(
     and(
       inArray(task.projectId, projectIds),
       since ? gte(column, since) : undefined,
+      options.personUserId ? personCondition(options.personUserId) : undefined,
     ),
   );
 }
@@ -242,12 +250,18 @@ export async function loadBoardTasksByIds(
   projectIds: string[],
   principal: MaybePrincipal,
   ids: string[],
+  /** Only the cards linked to this person (the search's hits); null is everyone. */
+  personUserId: string | null = null,
 ) {
   if (projectIds.length === 0 || ids.length === 0) return [];
   return queryBoardTasks(
     database,
     principal,
-    and(inArray(task.projectId, projectIds), inArray(task.id, ids)),
+    and(
+      inArray(task.projectId, projectIds),
+      inArray(task.id, ids),
+      personUserId ? personCondition(personUserId) : undefined,
+    ),
   );
 }
 

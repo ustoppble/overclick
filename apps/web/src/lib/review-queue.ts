@@ -9,6 +9,7 @@ import {
 import { and, asc, count, eq, inArray, max, sql } from "drizzle-orm";
 import { parseComoConfirmo } from "../mcp/map";
 import { resolveBoardFilter, type ScopeOverride } from "./board-filter";
+import { personCondition, readBoardPerson, type VisiblePerson } from "./person-filter";
 import {
   organizationScope,
   projectScope,
@@ -31,6 +32,12 @@ export type ReviewScope = {
   organizationIds: string[];
   /** Empty means every project the reader may see. */
   projectIds: string[];
+  /**
+   * Only the cards linked to this person (person-filter.ts): the two numbers
+   * and the To review list follow the board's person filter, so a chip never
+   * counts what its list will not show. Null or absent is everyone.
+   */
+  personUserId?: string | null;
 };
 
 export type ReviewScopeLabel = {
@@ -65,6 +72,7 @@ function inScope(principal: MaybePrincipal, scope: ReviewScope) {
       ? inArray(project.organizationId, scope.organizationIds)
       : undefined,
     scope.projectIds.length > 0 ? inArray(task.projectId, scope.projectIds) : undefined,
+    scope.personUserId ? personCondition(scope.personUserId) : undefined,
   );
 }
 
@@ -148,7 +156,7 @@ export { nextInQueue } from "./review-queue-order";
 
 /**
  * The scope the reader left on the board: the organization/project pair they
- * last chose, read back the way the board reads it. Only the pair: the
+ * last chose, and the person, read back the way the board reads them. The
  * facets, the mission and the period are the board's own narrowing.
  */
 export async function readReviewScope(
@@ -159,7 +167,11 @@ export async function readReviewScope(
    * The reader's projects, when the caller already read them through the
    * same scope (the board's signature poll does): one query fewer per poll.
    */
-  known?: { projects: { id: string; name: string; organizationId: string }[] },
+  known?: {
+    projects: { id: string; name: string; organizationId: string }[];
+    /** The people the reader can see on a card, when the caller already has them. */
+    people?: readonly VisiblePerson[];
+  },
   /**
    * The scope the address carries (E4 review h-ipv, item 1): it wins over the
    * remembered pair, which fills only what the address does not say — the
@@ -171,6 +183,7 @@ export async function readReviewScope(
     workspaceId,
     organizationIds: [],
     projectIds: [],
+    personUserId: null,
     label: { organization: null, project: null },
   };
   if (!principal) return empty;
@@ -178,6 +191,7 @@ export async function readReviewScope(
     .select({
       organizationId: user.boardOrganizationId,
       projectId: user.boardProjectId,
+      person: user.boardPerson,
     })
     .from(user)
     .where(eq(user.id, principal.userId))
@@ -210,6 +224,10 @@ export async function readReviewScope(
     undefined,
     organizations,
   );
+  const person = await readBoardPerson(database, workspaceId, principal, override, {
+    people: known?.people,
+    remembered: me?.person ?? null,
+  });
   const oneOrganization =
     filter.organizationIds.length === 1
       ? filter.organizationIds[0]
@@ -220,6 +238,7 @@ export async function readReviewScope(
     workspaceId,
     organizationIds: filter.organizationIds,
     projectIds: filter.projectIds,
+    personUserId: person.userId,
     label: {
       organization: organizations.find((item) => item.id === oneOrganization)?.name ?? null,
       project:

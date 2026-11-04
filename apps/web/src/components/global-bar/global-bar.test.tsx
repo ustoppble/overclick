@@ -4,9 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../actions/auth", () => ({ logoutAction: async () => {} }));
 vi.mock("../../actions/global-bar", () => ({ globalBarCountsAction: async () => null }));
-vi.mock("../../actions/board-filter", () => ({ setBoardScopeAction: async () => ({ ok: true }) }));
+vi.mock("../../actions/board-filter", () => ({
+  setBoardScopeAction: async () => ({ ok: true }),
+  setBoardPersonAction: async () => ({ ok: true }),
+}));
 
 const { AvatarMenu, GlobalBarClient, ownsCountsPoll } = await import("./global-bar-client");
+const { personOnScreen } = await import("./person-picker");
 
 type Props = Parameters<typeof GlobalBarClient>[0];
 
@@ -212,5 +216,46 @@ describe("the avatar menu", () => {
     expect(html).toContain("Tema");
     expect(html).toContain("Sair");
     expect(menu("member", "en")).toContain("My agent");
+  });
+});
+
+describe("the person filter in the bar (OCL person filter)", () => {
+  const people = [
+    { id: "11111111-1111-4111-8111-111111111111", email: "dono@exemplo.com.br" },
+    { id: "22222222-2222-4222-8222-222222222222", email: "bia@exemplo.com.br" },
+  ];
+  const person = { people, viewerId: people[0]!.id, remembered: "all" };
+  const params = (query: string) => new URLSearchParams(query);
+
+  it("sits right after the scope, on the bar's one row, reading everyone by default", () => {
+    const html = render({ person });
+    const row = html.match(/<div class="gb-row">[\s\S]*?<nav class="gb-places"/)![0];
+    expect(row.indexOf('class="gb-scope-wrap"')).toBeGreaterThan(-1);
+    expect(row.indexOf('class="gb-scope-wrap"')).toBeLessThan(row.indexOf("gb-person-wrap"));
+    expect(html).toContain("Todas as pessoas");
+    expect(html).not.toMatch(/class="gb-scope gb-person on"/);
+  });
+
+  it("names the remembered pick: me, or the person's short name", () => {
+    expect(render({ person: { ...person, remembered: "me" } })).toContain(">Eu<");
+    const picked = render({ person: { ...person, remembered: people[1]!.id } });
+    expect(picked).toContain(">bia<");
+    expect(picked).toMatch(/class="gb-scope gb-person on"/);
+  });
+
+  it("is absent without the person data", () => {
+    expect(render()).not.toContain("gb-person");
+  });
+
+  it("reads the address first, and an id it does not offer as everyone", () => {
+    expect(personOnScreen(people, person.viewerId, "me", params(""))).toBe("me");
+    expect(personOnScreen(people, person.viewerId, "me", params("person=all"))).toBe("all");
+    expect(personOnScreen(people, person.viewerId, "all", params(`person=${people[1]!.id}`))).toBe(
+      people[1]!.id,
+    );
+    expect(personOnScreen(people, person.viewerId, "all", params(`person=${people[0]!.id}`))).toBe("me");
+    expect(
+      personOnScreen(people, person.viewerId, "me", params("person=33333333-3333-4333-8333-333333333333")),
+    ).toBe("all");
   });
 });
