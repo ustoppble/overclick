@@ -26,6 +26,7 @@ import { pickRowNumber, typeInitial } from "../../lib/board-row";
 import { formatShortDateTime } from "../../lib/format";
 import { dict, type Dict } from "../../lib/i18n";
 import { CliMark } from "../../components/cli-mark";
+import { StatusMark } from "../../components/status-mark";
 import { Markdown } from "../../components/markdown";
 import { Icon, type IconName } from "../../components/icon";
 import { BoardMobileList } from "./board-mobile-list";
@@ -385,8 +386,10 @@ function CardMetaTail({
   }
   if (card.status === "em_execucao") {
     const activity = card.claimInactive ?? card.elapsed;
+    // A run past the claim timeout has gone quiet: that is the one line of a
+    // running card that waits for a person (the attention amber, E1).
     return activity ? (
-      <span className="telemetry">
+      <span className={`telemetry${card.claimStale ? " no-signal" : ""}`}>
         {sep}
         <b>{activity}</b>
       </span>
@@ -984,11 +987,17 @@ function DetailActions({
   card,
   allTicked,
   onClose,
+  onValidated,
+  viewerRole,
   t,
 }: {
   card: BoardCard;
   allTicked: boolean;
   onClose: () => void;
+  /** The review list moves on to the next card instead of closing. */
+  onValidated?: () => void;
+  /** Validating is the admin's: a member is not offered the button (F10). */
+  viewerRole: ViewerRole;
   t: Dict;
 }) {
   const router = useRouter();
@@ -1154,7 +1163,8 @@ function DetailActions({
       const r = await validateTaskAction(card.id, { override });
       if (!r.ok) setErr(r.error);
       else {
-        onClose();
+        if (onValidated) onValidated();
+        else onClose();
         router.refresh();
       }
     });
@@ -1188,6 +1198,23 @@ function DetailActions({
           </button>
           <button className="d-btn-pri oc-tappable" disabled={pending || !comment.trim()} onClick={reopen}>
             {pending ? t.detail.reopening : t.detail.reopen}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // F10: the member's card waits on the admin. They can still send it back
+  // with a comment; validating is not theirs to offer.
+  if (viewerRole === "member") {
+    return (
+      <div className="d-actions">
+        {err ? <p className="d-err">{err}</p> : null}
+        <div className="d-actions-row">
+          {discardButton}
+          <span className="d-empty d-awaiting">{t.review.awaitingAdmin}</span>
+          <button className="d-btn-sec oc-tappable" disabled={pending} onClick={() => setReopening(true)}>
+            {t.detail.reopenWithComment}
           </button>
         </div>
       </div>
@@ -1237,12 +1264,16 @@ function Detail({
   missions,
   onMissionSelect,
   onClose,
+  viewerRole,
+  queue,
   t,
 }: {
   card: OpenBoardCard;
   missions: BoardMissionOption[];
   onMissionSelect?: (missionId: string) => void;
   onClose: () => void;
+  viewerRole: ViewerRole;
+  queue?: ReviewQueuePosition;
   t: Dict;
 }) {
   const router = useRouter();
@@ -1338,6 +1369,33 @@ function Detail({
           <Icon name="close" label={null} size={15} />
         </button>
         <div className="d-head">
+          {queue ? (
+            // The review list's place in line (E1): "1 of 4 to review", with the
+            // neighbours one step away on either side.
+            <div className="d-queue">
+              <button
+                type="button"
+                className="d-queue-step oc-tappable"
+                onClick={queue.onPrevious}
+                disabled={queue.total < 2}
+                aria-label={t.review.previous}
+              >
+                <Icon name="chevronLeft" label={null} size={14} />
+              </button>
+              <span className="d-queue-pos">
+                <b>{t.review.position(queue.index + 1, queue.total)}</b> {t.review.positionSuffix}
+              </span>
+              <button
+                type="button"
+                className="d-queue-step oc-tappable"
+                onClick={queue.onNext}
+                disabled={queue.total < 2}
+                aria-label={t.review.next}
+              >
+                <Icon name="chevronRight" label={null} size={14} />
+              </button>
+            </div>
+          ) : null}
           <span>{card.shortId}</span>
           <CardLocation
             card={card}
@@ -1349,7 +1407,7 @@ function Detail({
           <span className={`d-status ${STATUS_CHIP[card.status]}`}>
             {/* The same mark the card's column carries on the board, so the
                 chip and the column say the same thing the same way. */}
-            <Icon name={COLUMN_ICON[card.status]} label={null} size={11} />
+            <StatusMark status={card.status} />
             {statusLabels(t)[card.status]}
           </span>
         </div>
@@ -1549,7 +1607,14 @@ function Detail({
         {/* Last in the panel and last in the reading, so it is the row the
             whole card leads to. On a desktop it holds the bottom of the
             panel while the two columns scroll under it (AGB-74). */}
-        <DetailActions card={card} allTicked={allTicked} onClose={onClose} t={t} />
+        <DetailActions
+          card={card}
+          allTicked={allTicked}
+          onClose={onClose}
+          onValidated={queue?.onValidated}
+          viewerRole={viewerRole}
+          t={t}
+        />
       </div>
     </div>
   );
@@ -1649,6 +1714,7 @@ export function Board({
   onMissionSelect,
   initialOpen = null,
   detailVersion,
+  viewerRole = "admin",
 }: {
   cards: BoardCard[];
   lang: string;
@@ -1663,6 +1729,8 @@ export function Board({
   initialOpen?: BoardCard | null;
   /** The board's signature: when it moves, the open card's detail is read again. */
   detailVersion?: string;
+  /** Who is looking: the amber and the Validate button are the admin's. */
+  viewerRole?: ViewerRole;
 }) {
   const t = dict(lang);
   const colLabel = columnLabels(t);
@@ -1726,16 +1794,11 @@ export function Board({
             <div key={status} id={`board-col-${status}`}>
               <div className="col-head">
                 {/* The mark anchors the column, the word still names it. */}
-                <Icon
-                  name={COLUMN_ICON[status]}
-                  label={null}
-                  size={14}
-                  className="col-mark"
-                />
+                <StatusMark status={status} />
                 <span className="col-title" title={colLabel[status]}>
                   {colLabel[status]}
                 </span>
-                <span className="count">{list.length}</span>
+                <span className={countClass(status, viewerRole)}>{list.length}</span>
               </div>
               <div className="col">
                 {list.length === 0 ? (
@@ -1755,29 +1818,124 @@ export function Board({
         labels={colLabel}
         renderRow={renderRow}
         renderEmpty={(status) => <EmptyState status={status} t={t} />}
+        countClass={(status) => countClass(status, viewerRole)}
         t={t}
       />
-      {openLine && (!detail.state || detail.state.status === "loading") ? (
-        <DetailSkeleton />
-      ) : null}
-      {openLine && detail.state?.status === "error" ? (
-        <DetailError
-          message={detail.state.error}
-          onRetry={detail.retry}
-          onClose={() => setOpen(null)}
-          t={t}
-        />
-      ) : null}
-      {openLine && detail.state?.status === "ready" ? (
-        <Detail
-          key={openLine.id}
-          card={{ ...openLine, ...detail.state.detail }}
+      {openLine ? (
+        <CardSheetBody
+          line={openLine}
+          detail={detail}
           missions={missions}
           onMissionSelect={onMissionSelect}
           onClose={() => setOpen(null)}
+          viewerRole={viewerRole}
           t={t}
         />
       ) : null}
     </>
+  );
+}
+
+export type ViewerRole = "admin" | "member";
+
+/** Where the open card sits in the review list, and how to move along it. */
+export type ReviewQueuePosition = {
+  index: number;
+  total: number;
+  onPrevious: () => void;
+  onNext: () => void;
+  /** Validating moves on to the next card instead of closing the sheet. */
+  onValidated: () => void;
+};
+
+/**
+ * The To review counter is the one column count that waits for a person, so
+ * it alone wears the attention amber, and only for the admin: a member's
+ * cards wait on someone else (F10).
+ */
+function countClass(status: ColumnStatus, viewerRole: ViewerRole): string {
+  return status === "feito" && viewerRole === "admin" ? "count attention" : "count";
+}
+
+function CardSheetBody({
+  line,
+  detail,
+  missions,
+  onMissionSelect,
+  onClose,
+  viewerRole,
+  queue,
+  t,
+}: {
+  line: BoardCard;
+  detail: ReturnType<typeof useCardDetail>;
+  missions: BoardMissionOption[];
+  onMissionSelect?: (missionId: string) => void;
+  onClose: () => void;
+  viewerRole: ViewerRole;
+  queue?: ReviewQueuePosition;
+  t: Dict;
+}) {
+  if (!detail.state || detail.state.status === "loading") return <DetailSkeleton />;
+  if (detail.state.status === "error") {
+    return (
+      <DetailError message={detail.state.error} onRetry={detail.retry} onClose={onClose} t={t} />
+    );
+  }
+  return (
+    <Detail
+      key={line.id}
+      card={{ ...line, ...detail.state.detail }}
+      missions={missions}
+      onMissionSelect={onMissionSelect}
+      onClose={onClose}
+      viewerRole={viewerRole}
+      queue={queue}
+      t={t}
+    />
+  );
+}
+
+/**
+ * The card sheet on its own, for a list that is not the board: the To review
+ * list opens its cards here, with their place in line (E1). Same detail,
+ * same actions, same skeleton and error as the board's.
+ */
+export function CardSheet({
+  card,
+  lang,
+  missions,
+  detailVersion,
+  viewerRole,
+  queue,
+  onClose,
+}: {
+  card: BoardCard;
+  lang: string;
+  missions: BoardMissionOption[];
+  detailVersion?: string;
+  viewerRole: ViewerRole;
+  queue?: ReviewQueuePosition;
+  onClose: () => void;
+}) {
+  const t = dict(lang);
+  const detail = useCardDetail(card.id, detailVersion, t);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <CardSheetBody
+      line={card}
+      detail={detail}
+      missions={missions}
+      onClose={onClose}
+      viewerRole={viewerRole}
+      queue={queue}
+      t={t}
+    />
   );
 }

@@ -44,7 +44,11 @@ describe("the global bar (navigation plan E1)", () => {
 
   it("puts aria-current on the place the reader is in, and only there", () => {
     const onBoard = render({ current: "board" });
-    expect(onBoard.match(/aria-current="page"/g)?.length).toBe(1);
+    // The places nav, then the phone's bottom bar: one current place in each.
+    const places = onBoard.match(/<nav[^>]*class="gb-places"[\s\S]*?<\/nav>/)![0];
+    expect(places.match(/aria-current="page"/g)?.length).toBe(1);
+    const tabs = onBoard.match(/<nav[^>]*class="gb-tabbar"[\s\S]*?<\/nav>/)![0];
+    expect(tabs.match(/aria-current="page"/g)?.length).toBe(1);
     expect(onBoard).toMatch(/href="\/home"[^>]*aria-current="page"/);
 
     const onUsage = render({ current: "usage" });

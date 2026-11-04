@@ -40,7 +40,6 @@ export const KNOWN_TYPE_RAMP_EXCEPTIONS: { file: string; selector: string; value
   // app/settings/project-context.module.css
   { file: "app/settings/project-context.module.css", selector: ".fieldLabel,\n.previewLabel", value: "9.5px" },
   // styles/nebula.css
-  { file: "styles/nebula.css", selector: ".nb .am-opt", value: "11.5px" },
   { file: "styles/nebula.css", selector: ".nb .btn-back", value: "12.5px" },
   { file: "styles/nebula.css", selector: ".nb .btn-new", value: "12.5px" },
   { file: "styles/nebula.css", selector: ".nb .card .card-type", value: "10px" },

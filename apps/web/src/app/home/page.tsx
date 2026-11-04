@@ -15,7 +15,9 @@ import {
   boardWindowStart,
   findBoardTaskByShortId,
   loadBoardTasks,
+  loadBoardTasksByIds,
 } from "../../lib/board-tasks";
+import { loadReviewQueue, readReviewScope } from "../../lib/review-queue";
 import { loadBoardSignature } from "../../lib/board-signature";
 import { loadBoardTotals } from "../../lib/board-totals-query";
 import { getSession } from "../../lib/cookies";
@@ -40,6 +42,7 @@ import { scheduledUpdateCheck } from "../../lib/update-scheduler";
 import { scheduledProjectContextRefresh } from "../../lib/project-context-scheduler";
 import { readUpdaterState } from "../../lib/updates";
 import { HomeShell } from "./home-shell";
+import { ReviewQueueView } from "./review-queue-view";
 
 export const dynamic = "force-dynamic";
 
@@ -182,6 +185,59 @@ export default async function HomePage({
     },
   }));
 
+  const params = await searchParams;
+
+  // The To review list (navigation plan E1): every delivery waiting in the
+  // reader's scope, oldest first, whatever the board's period and filters.
+  if (params.status === "feito") {
+    const t = dict(ws.language);
+    const scope = await readReviewScope(db(), ws.id, principal);
+    const queue = await loadReviewQueue(db(), principal, scope);
+    const queueRows = await loadBoardTasksByIds(
+      db(),
+      projects.map((item) => item.id),
+      principal,
+      queue.map((entry) => entry.id),
+    );
+    const cards = toBoardCards(queueRows, {
+      tr: t,
+      pricingEnabled: ws.pricingEnabled,
+      viewerId: session.userId,
+      claimTimeoutMinutes: ws.claimTimeoutMinutes,
+    });
+    const byId = new Map(cards.map((card) => [card.id, card]));
+    const rows = queue.flatMap((entry) => {
+      const card = byId.get(entry.id);
+      return card ? [{ card, deliveredAt: entry.deliveredAt, checks: entry.checks }] : [];
+    });
+    const { organization: org, project: proj } = scope.label;
+    const scopeLabel = org && proj ? `${org} › ${proj}` : (proj ?? org ?? t.review.scopeAll);
+    const asked = typeof params.card === "string" ? params.card.toUpperCase() : null;
+    const openCardId = asked
+      ? (rows.find((row) => row.card.shortId.toUpperCase() === asked)?.card.id ?? null)
+      : null;
+    const signature = await loadBoardSignature(
+      db(),
+      ws.id,
+      projects.map((item) => item.id),
+      principal,
+    );
+    return (
+      <div className="nb nebula-surface">
+        <NebulaAtmosphere />
+        <ReviewQueueView
+          lang={ws.language}
+          rows={rows}
+          missions={missions}
+          viewerRole={principal.role}
+          scopeLabel={scopeLabel}
+          openCardId={openCardId}
+          boardSignature={signature}
+        />
+      </div>
+    );
+  }
+
   // Only the tags the workspace actually uses. This stays a small indexed-ish
   // dimension query instead of loading attempts or handoffs to build a menu.
   const releaseRows = await db()
@@ -264,7 +320,6 @@ export default async function HomePage({
   });
   // A link to one card (?card=OCL-12) opens it even when the window left it
   // out. Out of scope reads as no card, the same as an id that matches none.
-  const params = await searchParams;
   const linked = typeof params.card === "string" ? params.card : null;
   const linkedRow = linked
     ? (findLinkedCard(rows, linked) ??
@@ -326,6 +381,7 @@ export default async function HomePage({
         openCardId={linkedRow?.id ?? null}
         windowSince={boardWindowStart(windowNow, initialFilter.period)?.toISOString() ?? null}
         boardSignature={boardSignature}
+        viewerRole={principal.role}
       />
 
       <div className="nebula-glass-fade viewport-fade" aria-hidden="true" />

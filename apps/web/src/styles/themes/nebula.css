@@ -45,6 +45,10 @@
   --oc-warn-rgb: 255 217 160;
   --oc-warn-2-rgb: 245 196 148;
   --oc-warn-3-rgb: 240 180 120;
+  /* Navigation plan E1: "something waits for you" — the review count, the
+     To review counter, a running card with no signal. Its own pair so it can
+     be amber where warn is grey (xai); here it is warn's value, unchanged. */
+  --oc-attention-rgb: 255 217 160;
   --oc-mist-rgb: 133 143 163;
   --oc-mist-deep-rgb: 115 128 148;
   --oc-haze-rgb: 140 150 171;
@@ -109,6 +113,7 @@
   --oc-warn: #ffd9a0;
   --oc-warn-pip: #e5c07b;
   --oc-warn-deep: #b8863b;
+  --oc-attention: #ffd9a0;
   /* OCL-138: a to-do state, not an error — kept off --oc-danger on purpose. */
   --oc-todo: #d4917a;
 

@@ -1,0 +1,469 @@
+/* ============================================================
+   GLOBAL BAR — navigation plan E1 (variant A, "one colour only")
+
+   The bar every signed-in page wears: the wordmark, the places (Board,
+   Consumo), the two work-state chips and the avatar. Its own sheet, so the
+   stages that rework nebula.css in parallel do not fight over it.
+
+   Rules this sheet keeps from day one (plan §3.5): nothing under 12px, no
+   stacked opacity on text, radius 4/8/12, spacing 4/8/12/16/24/32/48, 200ms
+   motion on colour and background only, and the amber only through
+   --oc-attention, only on the closed list at the end of this file.
+   ============================================================ */
+
+/* ---------- the bar ---------- */
+.global-bar {
+  position: relative;
+  z-index: var(--oc-z-menu);
+  background: var(--oc-bg);
+  border-bottom: 1px solid var(--oc-border);
+  color: var(--oc-text-1);
+  font-family: var(--oc-font-ui);
+  font-size: 13px;
+  line-height: 16px;
+}
+.global-bar .gb-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--oc-space-3);
+  height: 48px;
+  padding: 0 var(--oc-space-6);
+  min-width: 0;
+}
+.global-bar .logo {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  margin-right: var(--oc-space-1);
+  color: var(--oc-text-1);
+  border-radius: var(--oc-radius-control-sm);
+}
+.global-bar .logo svg { display: block; }
+.global-bar .logo:focus-visible { outline: none; box-shadow: var(--oc-focus-ring); }
+
+.global-bar .gb-places {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-space-1);
+  margin-left: var(--oc-space-2);
+  min-width: 0;
+}
+.global-bar .gb-place {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  height: 32px;
+  padding: 0 var(--oc-space-3);
+  border-radius: var(--oc-radius-control);
+  color: var(--oc-text-2);
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background-color var(--oc-duration-micro) var(--oc-ease-atmosphere),
+    color var(--oc-duration-micro) var(--oc-ease-atmosphere);
+}
+.global-bar .gb-place .nb-icon { display: none; }
+.global-bar .gb-place:hover { background: var(--oc-surface-hover); color: var(--oc-text-1); }
+.global-bar .gb-place[aria-current="page"] {
+  background: var(--oc-surface-hover);
+  color: var(--oc-text-1);
+  box-shadow: inset 0 -2px 0 var(--oc-accent);
+}
+.global-bar .gb-place:focus-visible { outline: none; box-shadow: var(--oc-focus-ring); }
+
+.global-bar .gb-right {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  margin-left: auto;
+  flex: none;
+}
+
+/* the two chips: a Control (32px, 1px border, radius 8, 13/500) */
+.global-bar .gb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  height: 32px;
+  padding: 0 var(--oc-space-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-2);
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background-color var(--oc-duration-micro) var(--oc-ease-atmosphere),
+    color var(--oc-duration-micro) var(--oc-ease-atmosphere);
+}
+.global-bar .gb-chip:hover { background: var(--oc-surface-hover); color: var(--oc-text-1); }
+.global-bar .gb-chip:focus-visible { outline: none; box-shadow: var(--oc-focus-ring); }
+.global-bar .gb-chip .gb-n {
+  font-family: var(--oc-font-data);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--oc-text-1);
+}
+/* what waits for you reads one step louder than what runs */
+.global-bar .gb-chip-review { color: var(--oc-text-1); border-color: var(--oc-border-strong); }
+.global-bar .gb-chip-review.on { background: var(--oc-surface-on); }
+
+/* the avatar: the one round trigger, a person and not a command */
+.global-bar .gb-account { position: relative; display: inline-flex; }
+.global-bar .gb-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: 50%;
+  background: var(--oc-surface-2);
+  color: var(--oc-text-1);
+  font: 600 13px/1 var(--oc-font-ui);
+  cursor: pointer;
+}
+.global-bar .gb-avatar[aria-expanded="true"],
+.global-bar .gb-avatar:focus-visible { outline: none; box-shadow: var(--oc-focus-ring); }
+
+/* ---------- the avatar menu ---------- */
+.gb-menu {
+  position: absolute;
+  top: calc(100% + var(--oc-space-2));
+  right: 0;
+  z-index: var(--oc-z-menu);
+  min-width: 288px;
+  padding: var(--oc-space-1);
+  background: var(--oc-surface-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-card);
+  box-shadow: var(--oc-shadow-panel);
+  color: var(--oc-text-1);
+  font-size: 13px;
+  line-height: 16px;
+}
+.gb-menu hr { border: 0; border-top: 1px solid var(--oc-border); margin: var(--oc-space-1) 0; }
+/* the legacy auth sheet styles every <form> as a panel; this one is a row */
+.gb-menu form { display: block; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
+.gb-menu-head {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-space-3);
+  padding: var(--oc-space-3) var(--oc-space-2);
+}
+.gb-menu .gb-avatar-static {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: 50%;
+  background: var(--oc-surface-2);
+  font: 600 13px/1 var(--oc-font-ui);
+}
+.gb-who { display: flex; flex-direction: column; gap: var(--oc-space-1); min-width: 0; }
+.gb-who b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gb-who span { font-size: 12px; color: var(--oc-text-3); }
+.gb-mi {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  width: 100%;
+  min-height: 36px;
+  padding: var(--oc-space-1) var(--oc-space-2);
+  border: 0;
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-2);
+  font: 500 13px/16px var(--oc-font-ui);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.gb-mi:hover, .gb-mi:focus-visible { outline: none; background: var(--oc-surface-hover); color: var(--oc-text-1); }
+.gb-mi .gb-mi-sub { display: block; font-size: 12px; font-weight: 400; color: var(--oc-text-3); }
+/* the theme picker, inside this menu. B2: three equal segments wide enough
+   that "Overclock" is never cut. */
+.gb-menu .am-theme { display: flex; flex-direction: column; gap: var(--oc-space-2); padding: var(--oc-space-2); }
+.gb-menu .am-theme-lbl {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: var(--oc-tracking-wide);
+  text-transform: uppercase;
+  color: var(--oc-text-3);
+}
+.gb-menu .am-theme-opts { display: grid; grid-template-columns: repeat(3, minmax(max-content, 1fr)); gap: var(--oc-space-1); }
+.gb-menu .am-theme-opt {
+  height: 32px;
+  padding: 0 var(--oc-space-2);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-2);
+  font: 500 13px/1 var(--oc-font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.gb-menu .am-theme-opt:hover { color: var(--oc-text-1); background: var(--oc-surface-hover); }
+.gb-menu .am-theme-opt.on { color: var(--oc-text-1); background: var(--oc-surface-on); border-color: var(--oc-border-strong); }
+
+/* ---------- the phone's bottom bar ---------- */
+.gb-tabbar { display: none; }
+
+/* ---------- what steps aside, in order ----------
+   ≥1280 everything; under 1280 "em execução" keeps its number only; under 900
+   the places keep their mark only; under 768 the places and the review count
+   go down to the bottom bar, where Review is a tab of its own. */
+@media (max-width: 1279px) {
+  .global-bar .gb-chip-run .gb-lbl { display: none; }
+}
+@media (max-width: 1099px) {
+  .global-bar .gb-row { gap: var(--oc-space-2); padding: 0 var(--oc-space-4); }
+  .global-bar .gb-place { padding: 0 var(--oc-space-2); }
+  .global-bar .gb-place .nb-icon { display: block; }
+}
+@media (max-width: 899px) {
+  .global-bar .gb-place span { display: none; }
+}
+@media (max-width: 768px), (orientation: landscape) and (max-height: 500px) {
+  .global-bar .gb-row { padding: 0 var(--oc-space-3) 0 var(--oc-space-4); }
+  .global-bar .gb-places,
+  .global-bar .gb-chip-run,
+  .global-bar .gb-chip-review { display: none; }
+  .gb-tabbar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: var(--oc-z-chrome);
+    height: 64px;
+    padding-bottom: var(--oc-space-2);
+    background: var(--oc-bg);
+    border-top: 1px solid var(--oc-border);
+    font-family: var(--oc-font-ui);
+  }
+  .gb-tab {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--oc-space-1);
+    color: var(--oc-text-3);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .gb-tab[aria-current="page"] { color: var(--oc-text-1); box-shadow: inset 0 2px 0 var(--oc-accent); }
+  .gb-tab .gb-tab-badge {
+    position: absolute;
+    top: var(--oc-space-1);
+    left: calc(50% + 8px);
+    min-width: 20px;
+    height: 20px;
+    padding: 0 var(--oc-space-1);
+    border-radius: var(--oc-radius-control);
+    background: var(--oc-surface-on);
+    color: var(--oc-text-1);
+    font: 600 12px/20px var(--oc-font-data);
+    text-align: center;
+  }
+  /* the page keeps its last line clear of the bar */
+  body:has(.gb-tabbar) .nb { padding-bottom: calc(64px + var(--oc-space-9)); }
+}
+
+/* ---------- the status mark (components/status-mark.tsx) ----------
+   The shape says the state; the grey rises with urgency. */
+.status-mark { display: inline-flex; flex: none; align-items: center; color: var(--oc-text-2); }
+.status-mark svg { display: block; width: 12px; height: 12px; }
+.status-mark[data-status="feito"] { color: var(--oc-text-1); }
+.status-mark[data-status="validado"],
+.status-mark[data-status="descartado"] { color: var(--oc-text-3); }
+.status-mark .sm-tick { stroke: var(--oc-bg); }
+
+/* ---------- the To review list (/home?status=feito) ---------- */
+/* no z-index here: a stacking context would hold the card sheet (the .ov
+   modal rung) under the global bar */
+.rq-page { max-width: 1320px; margin: 0 auto; }
+.rq-head { display: flex; align-items: flex-end; gap: var(--oc-space-4); margin-bottom: var(--oc-space-6); }
+.rq-head-text { display: flex; flex-direction: column; gap: var(--oc-space-2); min-width: 0; }
+.rq-title { margin: 0; font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: var(--oc-tracking-tight); color: var(--oc-text-1); }
+.rq-title .rq-n { font-family: var(--oc-font-data); font-weight: 600; }
+.rq-lead { margin: 0; max-width: 68ch; font-size: 13px; line-height: 20px; color: var(--oc-text-2); }
+.rq-head .rq-oldest {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  height: 32px;
+  padding: 0 var(--oc-space-4);
+  border: 1px solid var(--oc-accent);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-accent);
+  color: var(--oc-accent-contrast);
+  font: 600 13px/1 var(--oc-font-ui);
+  cursor: pointer;
+}
+.rq-cols,
+.rq-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 200px 80px 96px 120px 16px;
+  align-items: center;
+  gap: var(--oc-space-4);
+  padding: 0 var(--oc-space-4);
+}
+.rq-cols {
+  height: 32px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: var(--oc-tracking-wide);
+  text-transform: uppercase;
+  color: var(--oc-text-3);
+}
+.rq-list { border: 1px solid var(--oc-border); border-radius: var(--oc-radius-card); background: var(--oc-surface); overflow: hidden; }
+.rq-row {
+  width: 100%;
+  min-height: 64px;
+  border: 0;
+  border-top: 1px solid var(--oc-border);
+  background: transparent;
+  color: var(--oc-text-1);
+  font: 400 13px/20px var(--oc-font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--oc-duration-micro) var(--oc-ease-atmosphere);
+}
+.rq-row:first-child { border-top: 0; }
+.rq-row:hover, .rq-row.current { background: var(--oc-surface-hover); }
+.rq-row:focus-visible { outline: none; box-shadow: var(--oc-focus-ring-inset); }
+.rq-row .rq-id, .rq-row .rq-num { font-family: var(--oc-font-data); font-size: 12px; color: var(--oc-text-2); }
+.rq-row .rq-main { display: flex; flex-direction: column; min-width: 0; }
+.rq-row .rq-main b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-row .rq-who { display: inline-flex; align-items: center; gap: var(--oc-space-2); }
+.rq-row .rq-ctx, .rq-row .rq-when, .rq-row .rq-who { font-size: 12px; color: var(--oc-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-row .r, .rq-cols .r { text-align: right; justify-self: end; }
+.rq-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--oc-space-2);
+  padding: var(--oc-space-8);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-card);
+  background: var(--oc-surface);
+}
+.rq-empty h2 { margin: 0; font-size: 16px; line-height: 20px; font-weight: 600; color: var(--oc-text-1); }
+.rq-empty p { margin: 0; font-size: 13px; line-height: 20px; color: var(--oc-text-2); }
+.rq-empty a {
+  margin-top: var(--oc-space-2);
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--oc-space-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  color: var(--oc-text-2);
+  font-weight: 500;
+  text-decoration: none;
+}
+/* after Validate: the card left, the next one is open, and Undo is one tap away */
+.rq-toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--oc-space-6);
+  z-index: var(--oc-z-sheet);
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-3);
+  padding: var(--oc-space-2) var(--oc-space-2) var(--oc-space-2) var(--oc-space-4);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-card);
+  background: var(--oc-surface-3);
+  box-shadow: var(--oc-shadow-panel);
+  color: var(--oc-text-1);
+  font: 500 13px/16px var(--oc-font-ui);
+}
+.rq-toast button {
+  height: 28px;
+  padding: 0 var(--oc-space-3);
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-1);
+  font: 500 13px/1 var(--oc-font-ui);
+  cursor: pointer;
+}
+@media (max-width: 1099px) {
+  .rq-cols, .rq-row { grid-template-columns: 88px minmax(0, 1fr) 96px 16px; }
+  .rq-cols .rq-hide-md, .rq-row .rq-hide-md { display: none; }
+}
+@media (max-width: 768px), (orientation: landscape) and (max-height: 500px) {
+  .rq-head { flex-direction: column; align-items: stretch; }
+  .rq-head .rq-oldest { margin-left: 0; justify-content: center; }
+  .rq-cols { display: none; }
+  .rq-cols, .rq-row { grid-template-columns: minmax(0, 1fr) auto; padding: var(--oc-space-3) var(--oc-space-4); }
+  .rq-row .rq-id { display: none; }
+  .rq-toast { bottom: calc(64px + var(--oc-space-4)); }
+}
+
+/* the open card's place in the review list: "1 of 4 to review" */
+/* first in the sheet's head, on a line of its own, so every layout of the
+   sheet (centred panel, wide grid, phone) keeps it on top */
+.nb .d-queue {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: var(--oc-space-2);
+  margin-bottom: var(--oc-space-1);
+  font-family: var(--oc-font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--oc-text-2);
+}
+.nb .d-queue b { font-weight: 600; color: var(--oc-text-1); }
+.nb .d-queue-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-2);
+  cursor: pointer;
+}
+.nb .d-queue-step:hover:not(:disabled) { background: var(--oc-surface-hover); color: var(--oc-text-1); }
+.nb .d-queue-step:disabled { cursor: default; color: var(--oc-text-3); }
+.nb .d-awaiting { margin-right: auto; font-size: 13px; color: var(--oc-text-2); }
+
+/* the column head and the sheet's state chip carry the status mark */
+.nb .col-head .status-mark { align-self: center; }
+.nb .ml-head .status-mark { margin-right: var(--oc-space-2); }
+
+/* ---------- the attention amber: the closed list (design README §3) ----------
+   Only where something waits for the person. A member's count waits on
+   someone else and stays neutral (the markup leaves the class off).
+   attention-color.test.ts holds this list shut. */
+.global-bar .gb-chip-review.attention .gb-n { color: var(--oc-attention); }
+.gb-tabbar .gb-tab-badge.attention { background: var(--oc-attention); color: var(--oc-accent-contrast); }
+.nb .col-head .count.attention { color: var(--oc-attention); font-weight: 600; }
+.nb .ml-head .count.attention { color: var(--oc-attention); font-weight: 600; }
+.rq-title .rq-n.attention { color: var(--oc-attention); }
+.nb .telemetry.no-signal { color: var(--oc-attention); }
+/* the minutes sit in a <b> the telemetry line greys; here they keep the amber */
+.nb .telemetry.no-signal b { color: inherit; }

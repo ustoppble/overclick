@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { Icon } from "../../components/icon";
 import { NebulaAtmosphere } from "../../components/nebula-atmosphere";
-import { Wordmark } from "../../components/wordmark";
 import { getSession } from "../../lib/cookies";
 import { db } from "../../lib/db";
 import {
@@ -10,7 +9,6 @@ import {
   formatMoneyOrNone,
   formatTokens,
 } from "../../lib/format";
-import { dict } from "../../lib/i18n";
 import { loadModelPrices } from "../../lib/prices";
 import {
   loadOrganizationOverviews,
@@ -141,7 +139,6 @@ export default async function OrganizationsPage() {
     principal,
   );
 
-  const shared = dict(ws.language);
   const t = organizationsCopy(ws.language);
   const lang = ws.language === "pt-BR" ? "pt-BR" : "en";
 
@@ -150,23 +147,15 @@ export default async function OrganizationsPage() {
       <NebulaAtmosphere />
 
       <div className="page ins-page">
+        {/* The wordmark and the way back moved up to the global bar
+            (navigation plan E1); managing stays here, beside what it manages. */}
         <header className="ins-topbar-wrap">
           <div className="ins-topbar-l1">
-            <Wordmark label={shared.board.homeLink} />
             <div className="spacer" />
             <a className="btn-ghost" href="/settings?tab=organizations">
               <Icon name="settings" label={null} size={14} />
               {t.manage}
             </a>
-            <a className="btn-ghost ins-back" href="/home">
-              <Icon name="back" label={null} size={14} />
-              {t.backToBoard}
-            </a>
-          </div>
-          <div className="ins-topbar-l2">
-            <div className="crumb">
-              {ws.name} / <b>{t.title}</b>
-            </div>
           </div>
         </header>
 

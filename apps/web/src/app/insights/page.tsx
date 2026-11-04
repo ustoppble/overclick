@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { mission, project } from "@agent-board/db";
 import { Icon } from "../../components/icon";
 import { NebulaAtmosphere } from "../../components/nebula-atmosphere";
-import { Wordmark } from "../../components/wordmark";
 import {
   NO_MISSION,
   boardFilterFromQuery,
@@ -12,7 +11,6 @@ import {
 import { getSession } from "../../lib/cookies";
 import { missionScope, projectScope } from "../../lib/scope";
 import { pagePrincipal } from "../../lib/web-scope";
-import { dict } from "../../lib/i18n";
 import { db } from "../../lib/db";
 import {
   computeInsights,
@@ -515,9 +513,6 @@ export default async function InsightsPage({
       .where(and(eq(mission.workspaceId, ws.id), missionScope(principal))),
   ]);
   const t = insightsCopy(ws.language);
-  // The wordmark is shared chrome, so its label comes from the shared
-  // dictionary and not from this page's own copy.
-  const shared = dict(ws.language);
   const filter = boardFilterFromQuery(
     {
       projects: one(params.projects),
@@ -557,24 +552,9 @@ export default async function InsightsPage({
     <div className="nb nebula-surface">
       <NebulaAtmosphere />
 
+      {/* The wordmark, the way back and the crumb moved up to the global bar
+          (navigation plan E1), where Consumo is a place like the board. */}
       <div className="page ins-page">
-        <header className="ins-topbar-wrap">
-          <div className="ins-topbar-l1">
-            <Wordmark label={shared.board.homeLink} />
-            <div className="spacer" />
-            {/* The arrow was a character inside the label; it is the set's own
-                glyph now, silent because the word beside it says where it goes. */}
-            <a className="btn-ghost ins-back" href="/home">
-              <Icon name="back" label={null} size={14} />
-              {t.backToBoard}
-            </a>
-          </div>
-          <div className="ins-topbar-l2">
-            <div className="crumb">
-              {ws.name} / <b>{t.title}</b>
-            </div>
-          </div>
-        </header>
 
         {/* Title, what the page counts and the filter that qualifies both are
             one group with one gap, instead of three margins that had to be

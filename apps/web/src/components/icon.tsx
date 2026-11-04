@@ -253,6 +253,29 @@ const ART = {
       <path d="M18.6 12H9.2" />
     </>
   ),
+  /** The board, as a place in the global bar (navigation plan E1). */
+  board: (
+    <>
+      <rect x="3.6" y="4" width="4.8" height="16" rx="1.4" />
+      <rect x="10.4" y="4" width="4.8" height="11" rx="1.4" />
+      <rect x="17.2" y="4" width="3.6" height="7" rx="1.4" />
+    </>
+  ),
+  /** The To review list, as the phone's bottom-bar tab. */
+  toReview: (
+    <>
+      <path d="M4 12.5l5 5 11-11" />
+      <path d="M4 6.5h7M4 9.5h4" />
+    </>
+  ),
+  /** My agent: installing, connecting and the person's own tokens. */
+  plug: (
+    <>
+      <path d="M7.6 3.6v4.4M16.4 3.6v4.4" />
+      <path d="M5.2 8h13.6v3a6.8 6.8 0 0 1-13.6 0z" />
+      <path d="M12 17.8v2.6" />
+    </>
+  ),
   /** A card that is waiting on the person looking at it. */
   review: (
     <>

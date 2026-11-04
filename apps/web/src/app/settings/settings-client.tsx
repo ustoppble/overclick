@@ -20,7 +20,6 @@ import {
   type PluginPairing,
 } from "../../components/plugin-install";
 import { UpdatePanel } from "../../components/update-panel";
-import { Wordmark } from "../../components/wordmark";
 import { LANGUAGES, dict, type Dict } from "../../lib/i18n";
 import type { Runtime } from "../../lib/runtime";
 import type { UpdaterState } from "../../lib/updates";
@@ -391,12 +390,8 @@ export function SettingsClient({
     <>
       <NebulaAtmosphere />
       <div className="page">
-        <div className="topbar nebula-glass">
-          <Wordmark label={t.board.homeLink} />
-          <div className="crumb">{workspaceName} / <b>{projectName}</b></div>
-          <div className="spacer" />
-          <a className="btn-ghost" href="/home">{t.settings.backToBoard}</a>
-        </div>
+        {/* The wordmark and the way back live in the global bar now
+            (navigation plan E1). */}
 
         <h1>{t.settings.title}</h1>
         <p className="page-sub">{t.settings.sub}</p>

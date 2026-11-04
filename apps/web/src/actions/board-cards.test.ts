@@ -126,11 +126,17 @@ describe("board signature action", () => {
     expect(await boardSignatureAction()).toBeNull();
   });
 
+  /** The fingerprint out of an answer that carried one. */
+  const signatureOf = async () => {
+    const answer = await boardSignatureAction();
+    return answer && "signature" in answer ? answer.signature : answer;
+  };
+
   it("answers the same text twice for a board that did not move, and a new one when it did", async () => {
     sessionUserId = world.adminUserId;
-    const first = await boardSignatureAction();
+    const first = await signatureOf();
     expect(first).toEqual(expect.any(String));
-    expect(await boardSignatureAction()).toBe(first);
+    expect(await signatureOf()).toBe(first);
 
     await world.db.insert(task).values({
       projectId: world.projectId,
@@ -139,13 +145,26 @@ describe("board signature action", () => {
       status: "aberto",
       createdByUserId: world.adminUserId,
     });
-    expect(await boardSignatureAction()).not.toBe(first);
+    expect(await signatureOf()).not.toBe(first);
+  });
+
+  it("carries the global bar's two numbers with the fingerprint (navigation plan E1)", async () => {
+    sessionUserId = world.adminUserId;
+    await world.db.insert(task).values([
+      { projectId: world.projectId, shortId: "OC-902", title: "running", status: "em_execucao", createdByUserId: world.adminUserId },
+      { projectId: world.projectId, shortId: "OC-903", title: "to review", status: "feito", createdByUserId: world.adminUserId },
+      { projectId: world.projectId, shortId: "OC-904", title: "to review too", status: "feito", createdByUserId: world.adminUserId },
+    ]);
+    expect(await boardSignatureAction()).toEqual({
+      signature: expect.any(String),
+      counts: { running: 1, review: 2 },
+    });
   });
 
   it("answers a limited sign once a person has polled twelve times in a minute, and does not touch the board", async () => {
     sessionUserId = world.adminUserId;
     for (let i = 0; i < BOARD_SIGNATURE_MAX_PER_MINUTE; i += 1) {
-      expect(await boardSignatureAction()).toEqual(expect.any(String));
+      expect(await signatureOf()).toEqual(expect.any(String));
     }
     expect(await boardSignatureAction()).toEqual({ limited: true });
     expect(await boardSignatureAction()).toEqual({ limited: true });

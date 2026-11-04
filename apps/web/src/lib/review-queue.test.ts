@@ -159,7 +159,13 @@ describe("countCardsByStatus: by scope and role, never by period or filters", ()
       })
       .where(eq(user.id, world.adminUserId));
     const remembered = await readReviewScope(world.db as unknown as Database, world.workspaceId, adminP);
-    expect(remembered).toEqual({ ...scope(), label: expect.any(Object) });
+    // Only the organization/project pair is read: a single project is the
+    // board's default selection, the facets are not part of the scope.
+    expect(remembered).toEqual({
+      ...scope(),
+      projectIds: [world.projectId],
+      label: { organization: null, project: "OverClick" },
+    });
 
     const counts = await countCardsByStatus(world.db as unknown as Database, adminP, remembered);
     expect(counts.feito).toBe(2);
@@ -222,6 +228,7 @@ describe("loadReviewQueue: the oldest delivery first", () => {
     const queue = await loadReviewQueue(world.db as unknown as Database, adminP, scope());
     expect(queue.map((entry) => entry.id)).toEqual([b, c, a]);
     expect(queue[0]!.shortId).toMatch(/^OC-\d+$/);
+    expect(queue[0]!.checks).toEqual({ done: 0, total: 1 });
   });
 
   it("sends a card that was returned and delivered again to the end", async () => {

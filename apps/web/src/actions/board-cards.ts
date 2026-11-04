@@ -5,6 +5,7 @@ import { project, workspace } from "@agent-board/db";
 import type { BoardCard, BoardCardDetail } from "../app/home/board";
 import { toBoardCardDetail, toBoardCards } from "../lib/board-card";
 import { loadBoardSignature } from "../lib/board-signature";
+import { loadGlobalCounts, type GlobalCounts } from "../lib/global-counts";
 import { boardSignatureLimiter } from "../lib/board-signature-guard";
 import {
   boardSearchLimiter,
@@ -138,9 +139,13 @@ export async function searchBoardCardsAction(
  * the login. One poll at a time and a dozen a minute per person (the page
  * asks three): past that the answer is `{ limited: true }`, which the page
  * takes as "ask again later", never as a reason to rebuild itself.
+ *
+ * The answer also carries the global bar's two numbers (navigation plan E1),
+ * counted by scope and role, so the bar's chips move with the board's poll
+ * instead of polling a second time.
  */
 export async function boardSignatureAction(): Promise<
-  string | { limited: true } | null
+  { signature: string; counts: GlobalCounts } | { limited: true } | null
 > {
   const session = await getSession();
   if (!session) return null;
@@ -151,12 +156,16 @@ export async function boardSignatureAction(): Promise<
   try {
     const reader = await boardReader(session);
     if (!reader) return null;
-    return await loadBoardSignature(
-      db(),
-      reader.ws.id,
-      reader.projects.map((item) => item.id),
-      reader.principal,
-    );
+    const [signature, counts] = await Promise.all([
+      loadBoardSignature(
+        db(),
+        reader.ws.id,
+        reader.projects.map((item) => item.id),
+        reader.principal,
+      ),
+      loadGlobalCounts(db(), reader.ws.id, reader.principal),
+    ]);
+    return { signature, counts };
   } finally {
     slot.release();
   }

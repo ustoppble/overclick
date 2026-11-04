@@ -7,7 +7,7 @@ import type { Lang } from "../../lib/i18n";
 const en = {
   /** The locale the money formatter reads off any copy object in hand. */
   lang: "en" as Lang,
-  title: "Insights",
+  title: "Usage",
   sub: "What this board consumes: execution and orchestration tokens and time per project, per mission, per release, per executor, per model, per card.",
   backToBoard: "Board",
   totalCost: "Total cost",
@@ -133,7 +133,7 @@ export type InsightsCopy = typeof en;
 
 const ptBR: InsightsCopy = {
   lang: "pt-BR" as Lang,
-  title: "Insights",
+  title: "Consumo",
   sub: "O que este board consome: tokens e tempo de execução e orquestração por projeto, por missão, por release, por executor, por modelo, por card.",
   backToBoard: "Board",
   totalCost: "Custo total",

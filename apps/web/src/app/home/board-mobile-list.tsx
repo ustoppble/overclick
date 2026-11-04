@@ -9,6 +9,7 @@ import {
 } from "../../lib/board-columns";
 import type { Dict } from "../../lib/i18n";
 import { Icon } from "../../components/icon";
+import { StatusMark } from "../../components/status-mark";
 import type { BoardCard } from "./board";
 
 /**
@@ -39,6 +40,7 @@ export function BoardMobileList({
   labels,
   renderRow,
   renderEmpty,
+  countClass = () => "count",
   t,
 }: {
   /** Already through the board filters, exactly what the columns render. */
@@ -47,6 +49,8 @@ export function BoardMobileList({
   /** The card as one dense row, rendered by the board that owns the detail. */
   renderRow: (card: BoardCard) => ReactNode;
   renderEmpty: (status: ColumnStatus) => ReactNode;
+  /** The column count's class: the To review count wears the amber for the admin. */
+  countClass?: (status: ColumnStatus) => string;
   t: Dict;
 }) {
   const counts = useMemo(() => countByStatus(cards), [cards]);
@@ -60,6 +64,8 @@ export function BoardMobileList({
   return (
     <div className="board-mobile">
       <label className="ml-head">
+        {/* The column's mark, the same one its desktop head carries. */}
+        <StatusMark status={status} />
         <select
           className="ml-status"
           aria-label={t.board.columnShown}
@@ -79,7 +85,7 @@ export function BoardMobileList({
         <span className="ml-caret">
           <Icon name="chevronDown" label={null} size={13} />
         </span>
-        <span className="count">{counts[status]}</span>
+        <span className={countClass(status)}>{counts[status]}</span>
       </label>
       <div className="col">
         {list.length === 0 ? renderEmpty(status) : list.map(renderRow)}

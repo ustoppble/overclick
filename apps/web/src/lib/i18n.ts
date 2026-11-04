@@ -28,9 +28,9 @@ const en = {
      * "overclick" alone tells a screen reader the brand, not the destination.
      */
     homeLink: "overclick, go to the board",
-    colOpen: "Open",
+    colOpen: "Queue",
     colInProgress: "In progress",
-    colDone: "Done · review",
+    colDone: "To review",
     colValidated: "Validated",
     colDiscarded: "Discarded",
     /**
@@ -38,12 +38,12 @@ const en = {
      * control. This names the control, not the column it happens to be on.
      */
     columnShown: "Column shown",
-    statusOpen: "open",
+    statusOpen: "queued",
     statusInProgress: "in progress",
-    statusDone: "done · review",
+    statusDone: "to review",
     statusValidated: "validated",
     statusDiscarded: "discarded",
-    emptyOpenBefore: "Nothing queued. Create a card or tell your agent: ",
+    emptyOpenBefore: "Nothing queued. Ask your agent: ",
     emptyOpenCmd: "register this as a task",
     emptyOpenAfter: ".",
     emptyInProgress: "No agent working right now.",
@@ -75,7 +75,7 @@ const en = {
     /** The same, for the card line, where every word costs a column. */
     openShort: (value: string) => `open ${value}`,
     /**
-     * The running total of the board: the same numbers Insights reports for
+     * The running total of the board: the same numbers Usage reports for
      * the filter in force, on the one line the topbar has for them.
      */
     totalLabel: "What this board consumed",
@@ -105,8 +105,8 @@ const en = {
     /** A model with no row in the price table adds nothing and says so. */
     totalUnpriced: (n: number) => `${n} unpriced model`,
     totalUnpricedShort: (n: number) => `${n} no price`,
-    /** The popover behind the stat sends you to the same filter in Insights. */
-    totalOpenInsights: "Open in Insights",
+    /** The popover behind the stat sends you to the same filter in Usage. */
+    totalOpenInsights: "Open in Usage",
     organizations: "Organizations",
     allOrganizations: "All organizations",
     /** Same rule as the project chip: the name while one fits, then a count. */
@@ -230,7 +230,7 @@ const en = {
       feito: number;
       validado: number;
     }) =>
-      `${counts.aberto} open · ${counts.em_execucao} in progress · ${counts.feito} done · ${counts.validado} validated`,
+      `${counts.aberto} queued · ${counts.em_execucao} in progress · ${counts.feito} to review · ${counts.validado} validated`,
     missionProgressPercent: (pct: number) => `${pct}% complete`,
     /**
      * The button on the hard right of the bar: navigation and the account
@@ -279,7 +279,7 @@ const en = {
     executionSource: "reported by the agent",
     elapsedSource: "claim to deliver, measured by the board",
     usageSuspect:
-      "usage above the possible claim window, probably a whole-session total; counted in Insights totals and marked suspect",
+      "usage above the possible claim window, probably a whole-session total; counted in the Usage totals and marked suspect",
     timeline: "Execution trace",
     executorSwap: "executor swap",
     spawnFailure: "spawn failure",
@@ -469,12 +469,12 @@ const en = {
     projectSaved: "Project context saved. New briefings already use it.",
     pricesSub:
       "Off by default. Tokens and time are facts on every plan; a dollar figure is fiction on a flat subscription and a price table goes stale and lies with confidence. Turn this on only if you pay per token, and the board adds an approximate cost next to the numbers it measured.",
-    pricingToggle: "Show approximate cost on cards and insights",
+    pricingToggle: "Show approximate cost on cards and in Usage",
     pricingOffNote:
-      "Cost is off. Cards and insights show tokens and time only. The table below stays here, unused, until you turn it on.",
+      "Cost is off. Cards and Usage show tokens and time only. The table below stays here, unused, until you turn it on.",
     pricingOnNote:
       "Cost is on. Every dollar figure is approximate, computed from this table and labeled with where it came from.",
-    pricingSaved: "Saved. Cards and insights follow the new setting.",
+    pricingSaved: "Saved. Cards and Usage follow the new setting.",
     thPriceModel: "Model",
     thPriceInput: "input / Mtok",
     thPriceOutput: "output / Mtok",
@@ -669,6 +669,66 @@ const en = {
       "Who runs each card is decided in the Overclock app. The board records what ran: the CLI, the model and the effort, on the card and in each attempt.",
     ranFromAttempts: "Read from the attempts: every CLI that ran a card here.",
   },
+  /**
+   * The global bar (navigation plan E1): the places, the work-state chips and
+   * the avatar menu, on every signed-in page. Its own block, so the other
+   * stages that edit this file do not collide with it.
+   */
+  nav: {
+    places: "Places",
+    board: "Board",
+    usage: "Usage",
+    runningLabel: "in progress",
+    running: (n: number) => `${n} in progress`,
+    review: "to review",
+    reviewAwaiting: "awaiting validation",
+    reviewCount: (n: number) => `${n} to review`,
+    reviewCountMember: (n: number) => `${n} awaiting validation`,
+    reviewTab: "Review",
+    reviewTabMember: "Validation",
+    account: (email: string) => `Account: ${email}`,
+    roleAdmin: "Admin",
+    roleMember: "Member",
+    allOrganizations: "all organizations",
+    myAgent: "My agent",
+    myAgentSub: "Install, connect and my tokens",
+    settings: "Settings",
+    settingsSub: "Organizations and projects, agents, team, prices, system",
+    organizations: "Organizations",
+    organizationsSub: "Each business and its projects",
+    logout: "Log out",
+  },
+  /** The To review list and the card it opens (navigation plan E1, F1). */
+  review: {
+    title: "To review",
+    titleMember: "Awaiting validation",
+    lead: (scope: string) =>
+      `Every delivery waiting for you in ${scope}, from any date. The board's period does not apply here; the one delivered longest ago comes first.`,
+    leadMember: "Your deliveries the admin has not validated yet.",
+    scopeAll: "every project",
+    reviewOldest: "Review the oldest",
+    empty: "Nothing to review.",
+    emptyBody:
+      "Everything the agents delivered has been through you. When an agent delivers, the number shows at the top.",
+    emptyMember: "Nothing of yours waiting for the admin.",
+    emptyMemberBody: "When your agent delivers a card, it shows here until the admin validates it.",
+    backToBoard: "Back to the board",
+    colCard: "Card",
+    colRanBy: "Ran by",
+    colChecks: "Checks",
+    colCost: "Cost",
+    colDelivered: "Delivered ↑",
+    deliveredAgo: (elapsed: string) => `delivered ${elapsed} ago`,
+    position: (i: number, n: number) => `${i} of ${n}`,
+    positionSuffix: "to review",
+    previous: "Previous card to review",
+    next: "Next card to review",
+    validated: (id: string) => `${id} validated`,
+    undo: "Undo",
+    undoing: "Undoing…",
+    awaitingAdmin: "Awaiting the admin's validation",
+    adminOnly: "Only an admin can validate a card.",
+  },
   auth: {
     brand: "self-hosted · open source · mit",
     foot: "local instance · no data sent anywhere",
@@ -745,21 +805,21 @@ const ptBR: Dict = {
     memberInstalled: (emails: string[]) =>
       emails.length === 1
         ? `${emails[0]} concluiu a instalação: o agente dele chegou ao board.`
-        : `${emails.length} members concluíram a instalação: ${emails.join(", ")}.`,
+        : `${emails.length} membros concluíram a instalação: ${emails.join(", ")}.`,
     memberInstalledLink: "Ver a equipe",
     homeLink: "overclick, ir para o board",
-    colOpen: "Aberto",
+    colOpen: "Fila",
     colInProgress: "Em execução",
-    colDone: "Feito · revisão",
+    colDone: "Para revisar",
     colValidated: "Validado",
-    colDiscarded: "Descartados",
+    colDiscarded: "Descartado",
     columnShown: "Coluna exibida",
-    statusOpen: "aberto",
+    statusOpen: "na fila",
     statusInProgress: "em execução",
-    statusDone: "feito · revisão",
+    statusDone: "para revisar",
     statusValidated: "validado",
     statusDiscarded: "descartado",
-    emptyOpenBefore: "Nada na fila. Crie um card ou diga ao seu agente: ",
+    emptyOpenBefore: "Nada na fila. Peça ao seu agente: ",
     emptyOpenCmd: "registre isso como tarefa",
     emptyOpenAfter: ".",
     emptyInProgress: "Nenhum agente trabalhando agora.",
@@ -814,7 +874,7 @@ const ptBR: Dict = {
     totalSuspectShort: (n: number) => `${n} suspeito${n === 1 ? "" : "s"}`,
     totalUnpriced: (n: number) => `${n} modelo sem preço`,
     totalUnpricedShort: (n: number) => `${n} sem preço`,
-    totalOpenInsights: "Abrir no Insights",
+    totalOpenInsights: "Abrir no Consumo",
     organizations: "Organizações",
     allOrganizations: "Todas as organizações",
     organizationFilter: "Filtrar por organização",
@@ -901,7 +961,7 @@ const ptBR: Dict = {
       feito: number;
       validado: number;
     }) =>
-      `${counts.aberto} abertos · ${counts.em_execucao} fazendo · ${counts.feito} prontos · ${counts.validado} validado`,
+      `${counts.aberto} na fila · ${counts.em_execucao} em execução · ${counts.feito} para revisar · ${counts.validado} validado`,
     missionProgressPercent: (pct: number) => `${pct}% concluído`,
     accountMenu: "Conta e navegação",
     theme: "Tema",
@@ -939,7 +999,7 @@ const ptBR: Dict = {
     executionSource: "reportado pelo agente",
     elapsedSource: "do claim à entrega, medido pelo board",
     usageSuspect:
-      "usage acima do possível na janela, provável soma da sessão; somado nos Insights e marcado como suspeito",
+      "usage acima do possível na janela, provável soma da sessão; somado no Consumo e marcado como suspeito",
     timeline: "Rastro de execução",
     executorSwap: "troca de executor",
     spawnFailure: "falha de boot",
@@ -1126,12 +1186,12 @@ const ptBR: Dict = {
     projectSaved: "Contexto do projeto salvo. Novos briefings já usam o conteúdo.",
     pricesSub:
       "Desligado por padrão. Tokens e tempo são fatos em qualquer plano; um valor em dólar é ficção numa assinatura fixa, e tabela de preço envelhece e mente com confiança. Ligue só se você paga por token, e o board passa a mostrar um custo aproximado ao lado dos números que mediu.",
-    pricingToggle: "Mostrar custo aproximado nos cards e no Insights",
+    pricingToggle: "Mostrar custo aproximado nos cards e no Consumo",
     pricingOffNote:
-      "Custo desligado. Cards e Insights mostram só tokens e tempo. A tabela abaixo fica aqui, parada, até você ligar.",
+      "Custo desligado. Cards e Consumo mostram só tokens e tempo. A tabela abaixo fica aqui, parada, até você ligar.",
     pricingOnNote:
       "Custo ligado. Todo valor em dólar é aproximado, calculado por esta tabela e rotulado com a origem.",
-    pricingSaved: "Salvo. Cards e Insights seguem a nova configuração.",
+    pricingSaved: "Salvo. Cards e Consumo seguem a nova configuração.",
     thPriceModel: "Modelo",
     thPriceInput: "entrada / Mtok",
     thPriceOutput: "saída / Mtok",
@@ -1312,6 +1372,60 @@ const ptBR: Dict = {
     decidedInOverclock:
       "Quem executa cada card é decidido no app Overclock. O board registra o que rodou: a CLI, o modelo e o esforço, no card e em cada tentativa.",
     ranFromAttempts: "Lido das tentativas: toda CLI que rodou um card aqui.",
+  },
+  nav: {
+    places: "Lugares",
+    board: "Board",
+    usage: "Consumo",
+    runningLabel: "em execução",
+    running: (n: number) => `${n} em execução`,
+    review: "para revisar",
+    reviewAwaiting: "aguardando validação",
+    reviewCount: (n: number) => `${n} para revisar`,
+    reviewCountMember: (n: number) => `${n} aguardando validação`,
+    reviewTab: "Revisar",
+    reviewTabMember: "Validação",
+    account: (email: string) => `Conta: ${email}`,
+    roleAdmin: "Admin",
+    roleMember: "Membro",
+    allOrganizations: "todas as organizações",
+    myAgent: "Meu agente",
+    myAgentSub: "Instalar, conectar e meus tokens",
+    settings: "Configurações",
+    settingsSub: "Organizações e projetos, agentes, equipe, preços, sistema",
+    organizations: "Organizações",
+    organizationsSub: "Cada negócio e os seus projetos",
+    logout: "Sair",
+  },
+  review: {
+    title: "Para revisar",
+    titleMember: "Aguardando validação",
+    lead: (scope: string) =>
+      `Todas as entregas esperando você em ${scope}, de qualquer data. O período do board não vale aqui; a entregue há mais tempo vem primeiro.`,
+    leadMember: "Suas entregas que o admin ainda não validou.",
+    scopeAll: "todos os projetos",
+    reviewOldest: "Revisar a mais antiga",
+    empty: "Nada para revisar.",
+    emptyBody:
+      "Tudo o que os agentes entregaram já passou por você. Quando um agente entregar, o número aparece no topo.",
+    emptyMember: "Nada seu esperando o admin.",
+    emptyMemberBody: "Quando o seu agente entregar um card, ele aparece aqui até o admin validar.",
+    backToBoard: "Voltar ao board",
+    colCard: "Card",
+    colRanBy: "Executado por",
+    colChecks: "Checagens",
+    colCost: "Custo",
+    colDelivered: "Entregue ↑",
+    deliveredAgo: (elapsed: string) => `entregue há ${elapsed}`,
+    position: (i: number, n: number) => `${i} de ${n}`,
+    positionSuffix: "para revisar",
+    previous: "Card anterior para revisar",
+    next: "Próximo card para revisar",
+    validated: (id: string) => `${id} validado`,
+    undo: "Desfazer",
+    undoing: "Desfazendo…",
+    awaitingAdmin: "Aguardando validação do admin",
+    adminOnly: "Só o admin valida um card. O seu fica aguardando validação.",
   },
   auth: {
     brand: "self-hosted · open source · mit",
