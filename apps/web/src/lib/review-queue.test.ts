@@ -5,6 +5,7 @@ import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db"
 import { invokeToolForTests as invokeTool } from "../mcp/test-tools";
 import type { AuthContext } from "../mcp/types";
 import { loadBoardTasks } from "./board-tasks";
+import { loadGlobalCounts } from "./global-counts";
 import {
   countCardsByStatus,
   loadReviewQueue,
@@ -276,5 +277,40 @@ describe("nextInQueue: after validating, the next card of the same list", () => 
 
   it("starts from the top when the card is not in the list any more", () => {
     expect(nextInQueue(ids, "z")).toBe("a");
+  });
+});
+
+describe("the bar's two numbers read only the two statuses they show (E1 review, M1)", () => {
+  it("counts only the statuses it is asked for, and leaves the others at zero", async () => {
+    await create(admin, "still in the queue");
+    const done = await create(admin, "delivered");
+    await deliver(admin, done);
+    const all = await countCardsByStatus(world.db as unknown as Database, adminP, scope());
+    expect(all.aberto).toBe(1);
+    const two = await countCardsByStatus(world.db as unknown as Database, adminP, scope(), [
+      "em_execucao",
+      "feito",
+    ]);
+    expect(two).toEqual({ aberto: 0, em_execucao: 0, feito: 1, validado: 0, descartado: 0 });
+  });
+
+  it("gives the same numbers when the caller hands over the projects it already read", async () => {
+    const done = await create(admin, "delivered");
+    await deliver(admin, done);
+    const running = await create(admin, "running");
+    await invokeTool(world.db, admin, "task_claim", {
+      task_id: running,
+      executor: { cli: "claude", model: "sonnet-5" },
+    });
+    const projects = await world.db
+      .select({ id: project.id, name: project.name, organizationId: project.organizationId })
+      .from(project)
+      .where(eq(project.workspaceId, world.workspaceId));
+    const read = await loadGlobalCounts(world.db as unknown as Database, world.workspaceId, adminP);
+    const reused = await loadGlobalCounts(world.db as unknown as Database, world.workspaceId, adminP, {
+      projects,
+    });
+    expect(read).toEqual({ running: 1, review: 1 });
+    expect(reused).toEqual(read);
   });
 });

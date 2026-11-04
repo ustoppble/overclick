@@ -42,6 +42,7 @@ export function ReviewQueueView({
   missions,
   viewerRole,
   scopeLabel,
+  count,
   openCardId,
   boardSignature,
 }: {
@@ -51,6 +52,8 @@ export function ReviewQueueView({
   viewerRole: ViewerRole;
   /** The scope in words: "Overclock › overclick", or every project. */
   scopeLabel: string;
+  /** How many wait: the queue's length, the number the chip carries (B2). */
+  count: number;
   /** The card a link asked to open (?card=OCL-12). */
   openCardId: string | null;
   boardSignature: string;
@@ -135,7 +138,7 @@ export function ReviewQueueView({
         <div className="rq-head-text">
           <h1 className="rq-title">
             {admin ? t.review.title : t.review.titleMember}{" "}
-            <span className={`rq-n${admin ? " attention" : ""}`}>{rows.length}</span>
+            <span className={`rq-n${admin ? " attention" : ""}`}>{count}</span>
           </h1>
           <p className="rq-lead">{admin ? t.review.lead(scopeLabel) : t.review.leadMember}</p>
         </div>

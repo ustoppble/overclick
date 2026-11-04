@@ -25,7 +25,21 @@ import {
  * property; responsive folds are a separate concern). That is enough for
  * this codebase, where every trigger selector is class-based.
  */
-const TRIGGER_CLASSES = ["gb-avatar", "gb-chip", "pf-trigger", "mf-trigger", "ff-trigger", "period-trigger"];
+const TRIGGER_CLASSES = [
+  "gb-avatar",
+  "gb-chip",
+  // Navigation plan E4: the scope moved up to the global bar, the search box
+  // with it (its icon form on narrower bars), and type and priority left
+  // Filtros for a trigger each.
+  "gb-scope",
+  "gb-search-btn",
+  "pf-trigger",
+  "mf-trigger",
+  "ff-trigger",
+  "type-trigger",
+  "priority-trigger",
+  "period-trigger",
+];
 
 /**
  * The avatar is the one round trigger (navigation plan E1): it is a person,
@@ -199,6 +213,29 @@ describe("the global bar is one line of places, state and the avatar (navigation
     expect(has(rulesOf(".global-bar .gb-chip-run .gb-lbl", true), "display", "none")).toBe(true);
   });
 
+  it("steps aside in one fixed order: the search turns into its icon, then the running word, then the place names (E4)", () => {
+    const sheet = COMPONENT_SHEETS["styles/global-bar.css"]!.replace(/\/\*[\s\S]*?\*\//g, "");
+    const block = (query: string) => {
+      const at = sheet.indexOf(`@media ${query}`);
+      expect(at, query).toBeGreaterThan(-1);
+      // the block runs to the next @media, which is enough for this flat sheet
+      const next = sheet.indexOf("@media", at + 1);
+      return sheet.slice(at, next === -1 ? undefined : next);
+    };
+    const under1280 = block("(max-width: 1279px)");
+    expect(under1280).toMatch(/\.global-bar \.gb-search-form\s*[,{][^}]*display:\s*none/);
+    expect(under1280).toMatch(/\.global-bar \.gb-search-btn\s*\{[^}]*display:\s*inline-flex/);
+    expect(under1280).toMatch(/\.gb-chip-run \.gb-lbl\s*\{[^}]*display:\s*none/);
+    expect(block("(max-width: 899px)")).toMatch(/\.global-bar \.gb-place span\s*\{[^}]*display:\s*none/);
+    // the search is a field on the widest bars and never both at once
+    expect(declared(topLevel(".global-bar .gb-search-btn"), "display")).toBe("none");
+  });
+
+  it("puts the scope right after the wordmark and keeps only the organization on the phone (E4)", () => {
+    expect(has(rulesOf(".global-bar .gb-scope .gb-scope-proj", true), "display", "none")).toBe(true);
+    expect(has(rulesOf(".global-bar .gb-scope .gb-scope-sep", true), "display", "none")).toBe(true);
+  });
+
   it("leaves the old level 1 out of the board: no state chip, no account menu", () => {
     const text = Object.values(COMPONENT_SHEETS).join("\n");
     expect(text).not.toContain(".am-trigger");
@@ -232,27 +269,34 @@ describe("the filter line is one line, and what does not fit steps aside instead
     expect(wraps).toBe(false);
   });
 
-  it("collapses in order: the cost's support, the period date, the count and the clear label", () => {
+  it("collapses in order: the cost's support, the 'Mostrar' word, then the long period phrase (E4)", () => {
     expect(declares(inAtRules(".nb .board-total .bt-sub"), "display", "none")).toBe(true);
-    expect(declares(inAtRules(".nb .topbar-l2 .period-by-filter"), "display", "none")).toBe(true);
-    expect(declares(inAtRules(".nb .topbar-l2 .ff-sheet-only"), "display", "block")).toBe(true);
-    expect(declares(inAtRules(".nb .topbar-l2 .filter-result:not(.narrowed)"), "display", "none")).toBe(true);
-    expect(declares(inAtRules(".nb .topbar-l2 .clear-board-filters .cbf-label"), "display", "none")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-l2 .period-trigger .show-prefix"), "display", "none")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-l2 .period-trigger .period-long"), "display", "none")).toBe(true);
+    expect(declares(inAtRules(".nb .topbar-l2 .period-trigger .period-short"), "display", "inline")).toBe(true);
+    // the period date, the count and Clear left the line in E4: nothing to fold
+    expect(declares(inAtRules(".nb .topbar-l2 .period-by-filter"), "display", "none")).toBe(false);
+    expect(declares(inAtRules(".nb .topbar-l2 .filter-result:not(.narrowed)"), "display", "none")).toBe(false);
   });
 
-  it("never lets the scope pair or the mission shrink below their triggers' floor", () => {
-    expect(declares(inAtRules(".nb .topbar-l2 .crumb"), "min-width", "96px")).toBe(true);
+  it("never lets the scope or the mission shrink below their triggers' floor", () => {
+    // Navigation plan E4: the scope pair left the filter line for the global
+    // bar, and its floor went with it.
+    expect(declared(topLevel(".global-bar .gb-scope"), "min-width")).toBe("96px");
+    expect(declares(inAtRules(".nb .topbar-l2 .crumb"), "min-width", "96px")).toBe(false);
     expect(declares(inAtRules(".nb .topbar-l2 .mission-filter"), "min-width", "96px")).toBe(true);
   });
 
-  it("keeps a floor under the project and mission triggers", () => {
-    const floor = allRulesInSourceOrder
-      .map(({ rule }) => rule)
-      .filter(
-        (rule) =>
-          !rule.insideAtRule &&
-          splitSelectorList(rule.selector).some((s) => /\.topbar-l2 \.(pf|mf)-trigger$/.test(s)),
-      );
-    expect(declared(floor, "min-width")).toBe("96px");
+  it("keeps a floor under the mission, type and priority triggers", () => {
+    for (const trigger of ["mf", "type", "priority"]) {
+      const floor = allRulesInSourceOrder
+        .map(({ rule }) => rule)
+        .filter(
+          (rule) =>
+            !rule.insideAtRule &&
+            splitSelectorList(rule.selector).some((s) => new RegExp(`\\.topbar-l2 \\.${trigger}-trigger$`).test(s)),
+        );
+      expect(declared(floor, "min-width"), `.${trigger}-trigger`).toBe("96px");
+    }
   });
 });

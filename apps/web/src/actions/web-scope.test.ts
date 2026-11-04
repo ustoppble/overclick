@@ -207,11 +207,14 @@ describe("web scope: a member only reaches what is theirs", () => {
       ok: false,
       error: "Project not found.",
     });
-    expect(await setBoardFilterAction({ ...base, missionId: adminMissionId })).toEqual({
-      ok: false,
-      error: "Mission not found.",
-    });
-    expect(await setBoardFilterAction({ ...base, missionId: memberMissionId })).toEqual({ ok: true });
+    // Navigation plan E4: the mission is no longer remembered, so there is
+    // nothing to refuse; someone else's mission id is simply never stored.
+    expect(await setBoardFilterAction({ ...base, missionId: adminMissionId })).toEqual({ ok: true });
+    const [stored] = await world.db
+      .select({ missionId: user.boardMissionId })
+      .from(user)
+      .where(eq(user.id, memberId));
+    expect(stored?.missionId).not.toBe(adminMissionId);
   });
 
   it("member: cannot create, edit or delete organizations and projects", async () => {

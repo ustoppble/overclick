@@ -2511,31 +2511,18 @@ body:has(.nb) { display: block; padding: 0; background: var(--nebula-void); }
   .nb .topbar-l2 > *,
   .nb .topbar-more > * { order: 1; }
   .nb .topbar-l1 > :not(.logo) { order: 2; }
-  /* the mission and the scope pair yield, but never below their triggers'
-     96px floor (plus the 4px between the pair, and the mission's 6px gap and
-     13px clear mark): a box narrower than what it holds draws over its
-     neighbour instead of truncating. min-content would hold the whole names,
-     which is the opposite of yielding. */
-  .nb .topbar-l2 .crumb { min-width: 96px; }
-  .nb .topbar-l2 .crumb:has(> .project-filter + .project-filter) { min-width: 196px; }
+  /* the mission yields, but never below its trigger's 96px floor (plus the
+     mission's 6px gap and 13px clear mark): a box narrower than what it holds
+     draws over its neighbour instead of truncating. min-content would hold
+     the whole name, which is the opposite of yielding. The scope pair left
+     this line for the global bar in E4, with its own floor. */
   .nb .topbar-l2 .mission-filter { min-width: 96px; }
   .nb .topbar-l2 .mission-filter:has(.mf-clear) { min-width: 115px; }
 }
-.nb .clear-board-filters .cbf-icon { display: none; }
-@media (min-width: 769px) and (max-width: 1799px) {
-  .nb .topbar-l2 .period-by-filter { display: none; }
-  .nb .topbar-l2 .ff-sheet-only { display: block; }
-  .nb .topbar-l2 .ff-trigger .badge.ff-badge-bar { display: none; }
-  .nb .topbar-l2 .ff-trigger .badge.ff-badge-sheet { display: inline-flex; }
-}
-@media (min-width: 769px) and (max-width: 1599px) {
-  .nb .topbar-l2 .filter-result:not(.narrowed) { display: none; }
-  .nb .topbar-l2 .clear-board-filters { width: 32px; padding: 0; justify-content: center; }
-  .nb .topbar-l2 .clear-board-filters .cbf-icon { display: block; }
-  .nb .topbar-l2 .clear-board-filters .cbf-label { display: none; }
-}
+/* E4: the period date, the count and Clear left the line (the date into the
+   period's menu, the other two into the chips line under it); what steps
+   aside now is in board-filters.css. */
 @media (min-width: 769px) and (max-width: 1279px) {
-  .nb .topbar-l2 .filter-result { display: none; }
   .nb .topbar-wrap { gap: 8px; }
   .nb .board-total .bt-label { display: none; }
 }

@@ -1,140 +1,74 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { TASK_PRIORITIES, TASK_TYPES } from "../../lib/board-filter";
 import { dict } from "../../lib/i18n";
-import { FacetFilters, toggleFacet } from "./facet-filters";
+import { FacetMenu, MoreFilters, toggleFacet } from "./facet-filters";
 
-describe("facet filter menu", () => {
+describe("facet menus", () => {
   it("adds and removes choices while preserving the canonical order", () => {
     const order = ["bug", "feature", "rfc"] as const;
     expect(toggleFacet(["rfc"], "bug", order)).toEqual(["bug", "rfc"]);
     expect(toggleFacet(["bug", "rfc"], "bug", order)).toEqual(["rfc"]);
   });
 
-  it("keeps selections independent between the two menu sections", () => {
+  it("keeps the priorities in their own order", () => {
     const priorities = ["urgente", "alta", "media", "baixa"] as const;
-    expect(toggleFacet(["alta"], "urgente", priorities)).toEqual([
-      "urgente",
-      "alta",
-    ]);
+    expect(toggleFacet(["alta"], "urgente", priorities)).toEqual(["urgente", "alta"]);
   });
 
-  it("renders one counted trigger and seven vertical checkbox options", () => {
+  it("gives type and priority a trigger each, counted, with the checkboxes behind it (E4)", () => {
+    const t = dict("pt-BR");
+    const types = renderToStaticMarkup(
+      createElement(FacetMenu, {
+        kind: "type",
+        label: t.board.typeFilter,
+        choices: TASK_TYPES,
+        names: { bug: "bug", feature: "feature", rfc: "rfc" },
+        value: ["feature", "rfc"],
+        onChange: vi.fn(),
+        defaultOpen: true,
+      }),
+    );
+    expect(types).toMatch(/class="type-trigger on"/);
+    expect(types).toContain(">Tipo</span>");
+    expect(types).toContain('class="badge">2</span>');
+    expect(types.match(/type="checkbox"/g)).toHaveLength(3);
+
+    const priorities = renderToStaticMarkup(
+      createElement(FacetMenu, {
+        kind: "priority",
+        label: t.board.priorityFilter,
+        choices: TASK_PRIORITIES,
+        names: { urgente: "urgente", alta: "alta", media: "média", baixa: "baixa" },
+        value: [],
+        onChange: vi.fn(),
+      }),
+    );
+    expect(priorities).toMatch(/class="priority-trigger"/);
+    expect(priorities).not.toContain("badge");
+    expect(priorities).not.toContain('type="checkbox"');
+  });
+
+  it("leaves the release in More, and the search out of the line: it is in the global bar", () => {
     const html = renderToStaticMarkup(
-      createElement(FacetFilters, {
-        types: ["bug"],
-        priorities: ["urgente"],
+      createElement(MoreFilters, {
         releases: [
           { value: "v1.2.0", count: 2 },
           { value: null, count: 3 },
         ],
         resolvedIn: "v1.2.0",
-        onTypesChange: vi.fn(),
-        onPrioritiesChange: vi.fn(),
         onReleaseChange: vi.fn(),
-        periodBy: "updated",
-        onPeriodByChange: vi.fn(),
-        onClear: vi.fn(),
-        query: "",
-        onQueryChange: vi.fn(),
         defaultOpen: true,
-        t: dict("en"),
+        t: dict("pt-BR"),
       }),
     );
-
-    expect(html).toContain(">Filters</span>");
-    expect(html).toContain('class="badge ff-badge-bar">3</span>');
-    expect(html).toContain(">Type</h3>");
-    expect(html).toContain(">Priority</h3>");
+    expect(html).toContain(">Mais</span>");
+    expect(html).toContain('class="filter-chip ff-trigger on"');
     expect(html).toContain(">Release</h3>");
-    expect(html).toContain("v1.2.0");
-    expect(html).toContain("No release");
-    expect(html.match(/type="checkbox"/g)).toHaveLength(7);
-    // Three releases, and the two dates the period can read (phone only).
-    expect(html.match(/type="radio"/g)).toHaveLength(5);
-    expect(html).not.toContain("facet-chip");
-  });
-
-  it("keeps the board search inside Filters and exposes the active term", () => {
-    const html = renderToStaticMarkup(
-      createElement(FacetFilters, {
-        types: [],
-        priorities: [],
-        releases: [],
-        resolvedIn: undefined,
-        onTypesChange: vi.fn(),
-        onPrioritiesChange: vi.fn(),
-        onReleaseChange: vi.fn(),
-        periodBy: "updated",
-        onPeriodByChange: vi.fn(),
-        onClear: vi.fn(),
-        query: "OCL-72",
-        onQueryChange: vi.fn(),
-        defaultOpen: true,
-        t: dict("en"),
-      }),
-    );
-
-    expect(html).toContain('type="search"');
-    expect(html).toContain('value="OCL-72"');
-    expect(html).toContain('class="badge ff-query-badge"');
-    expect(html).toContain("Clear board search");
-  });
-
-  it("names itself differently inside the phone's filters sheet, where the bar button already says Filters", () => {
-    const render = (lang: "en" | "pt-BR") =>
-      renderToStaticMarkup(
-        createElement(FacetFilters, {
-          types: [],
-          priorities: [],
-          releases: [],
-          resolvedIn: undefined,
-          onTypesChange: vi.fn(),
-          onPrioritiesChange: vi.fn(),
-          onReleaseChange: vi.fn(),
-          periodBy: "updated",
-          onPeriodByChange: vi.fn(),
-          onClear: vi.fn(),
-          query: "",
-          onQueryChange: vi.fn(),
-          t: dict(lang),
-        }),
-      );
-    expect(render("en")).toContain('<span class="ff-label-bar">Filters</span>');
-    expect(render("en")).toContain('<span class="ff-label-sheet">More filters</span>');
-    expect(render("pt-BR")).toContain('<span class="ff-label-bar">Filtros</span>');
-    expect(render("pt-BR")).toContain('<span class="ff-label-sheet">Mais filtros</span>');
-  });
-
-  it("holds the date the period reads on the phone, where More filters counts it too", () => {
-    const render = (periodBy: "updated" | "created") =>
-      renderToStaticMarkup(
-        createElement(FacetFilters, {
-          types: ["bug"],
-          priorities: [],
-          releases: [],
-          resolvedIn: undefined,
-          onTypesChange: vi.fn(),
-          onPrioritiesChange: vi.fn(),
-          onReleaseChange: vi.fn(),
-          periodBy,
-          onPeriodByChange: vi.fn(),
-          onClear: vi.fn(),
-          query: "",
-          onQueryChange: vi.fn(),
-          defaultOpen: true,
-          t: dict("pt-BR"),
-        }),
-      );
-    const updated = render("updated");
-    expect(updated).toContain('class="ff-section ff-sheet-only"');
-    expect(updated).toContain(">Atualizado</span>");
-    expect(updated).toContain(">Criado</span>");
-    expect(updated).toContain('class="badge ff-badge-bar">1</span>');
-    expect(updated).toContain('class="badge ff-badge-sheet">1</span>');
-    // The desktop bar has its own control for it, so only the sheet counts it.
-    const created = render("created");
-    expect(created).toContain('class="badge ff-badge-bar">1</span>');
-    expect(created).toContain('class="badge ff-badge-sheet">2</span>');
+    expect(html).toContain("Sem release");
+    expect(html.match(/type="radio"/g)).toHaveLength(3);
+    expect(html).not.toContain('type="search"');
+    expect(html).not.toContain('type="checkbox"');
   });
 });

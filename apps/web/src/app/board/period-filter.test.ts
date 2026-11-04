@@ -1,48 +1,45 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { dict } from "../../lib/i18n";
-import { PeriodByFilter, PeriodFilter } from "./period-filter";
+import { PeriodFilter } from "./period-filter";
 
-describe("period filter", () => {
-  it("is a menu trigger that shows the picked period and keeps the list closed", () => {
-    const html = renderToStaticMarkup(
-      createElement(PeriodFilter, { value: "7d", onChange: () => {}, t: dict("pt-BR") }),
-    );
+const render = (props: Partial<Parameters<typeof PeriodFilter>[0]> = {}) =>
+  renderToStaticMarkup(
+    createElement(PeriodFilter, {
+      value: "7d",
+      by: "updated",
+      onChange: vi.fn(),
+      onByChange: vi.fn(),
+      t: dict("pt-BR"),
+      ...props,
+    }),
+  );
+
+describe("the period, written out on the filter line (navigation plan E4)", () => {
+  it("reads 'Mostrar: atualizados nos últimos 7 dias' and keeps the panel closed", () => {
+    const html = render();
     expect(html).toContain('class="period-trigger oc-tappable"');
-    expect(html).toContain('aria-haspopup="listbox"');
     expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('aria-label="Período"');
-    expect(html).toContain("Últimos 7 dias");
-    // a chevron like the project and mission triggers, and no native select
+    expect(html).toContain(">Mostrar:</span>");
+    expect(html).toContain("atualizados nos últimos 7 dias");
     expect(html).toContain("<svg");
     expect(html).not.toContain("<select");
-    expect(html).not.toContain("role=\"listbox\"");
+    expect(html).not.toContain('role="listbox"');
   });
 
-  it("labels the trigger with the picked period, in English too", () => {
-    const html = renderToStaticMarkup(
-      createElement(PeriodFilter, { value: "all", onChange: () => {}, t: dict("en") }),
-    );
-    expect(html).toContain("All time");
-    expect(html).not.toContain("Last 7 days");
-    expect(html).toContain('aria-label="Period"');
+  it("writes a period out of the default in full, with the date it reads", () => {
+    expect(render({ value: "30d", by: "created" })).toContain("criados nos últimos 30 dias");
+    expect(render({ value: "all", t: dict("en") })).toContain("updated at any time");
+    expect(render({ value: "all", t: dict("en") })).toContain(">Show:</span>");
   });
 
-  it("has a sibling that says which date the period reads, the same 32px control", () => {
-    const html = renderToStaticMarkup(
-      createElement(PeriodByFilter, { value: "updated", onChange: () => {}, t: dict("pt-BR") }),
-    );
-    expect(html).toContain('class="period-filter period-by-filter"');
-    expect(html).toContain('class="period-trigger oc-tappable"');
-    expect(html).toContain('aria-haspopup="listbox"');
-    expect(html).toContain('aria-label="Data do período"');
-    expect(html).toContain("Atualizado");
-    expect(html).not.toContain("<select");
-    const created = renderToStaticMarkup(
-      createElement(PeriodByFilter, { value: "created", onChange: () => {}, t: dict("en") }),
-    );
-    expect(created).toContain("Created");
-    expect(created).toContain('aria-label="Period date"');
+  it("holds the period and the date it reads in one panel: no second control for the date", () => {
+    const html = render({ defaultOpen: true });
+    expect(html.match(/role="listbox"/g)).toHaveLength(2);
+    expect(html.match(/role="option"/g)).toHaveLength(6);
+    expect(html).toContain(">Período</h3>");
+    expect(html).toContain(">Data do período</h3>");
+    expect(html).not.toContain("period-by-filter");
   });
 });

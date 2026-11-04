@@ -86,6 +86,9 @@ export type InsightAttemptRow = InsightUsageRow & {
   projectName: string;
   missionId: string | null;
   resolvedIn: string | null;
+  /** The card's dates, which the board's period reads (E4). */
+  taskUpdatedAt: Date;
+  taskCreatedAt: Date;
 };
 
 /** A mission attempt is deliberately not a card and therefore has no task fields. */
@@ -93,6 +96,8 @@ export type MissionAttemptInsightRow = InsightUsageRow & {
   /** A mission belongs to a business of its own, not to its project's. */
   organizationId: string;
   missionTitle: string;
+  /** When it started; with `finishedAt`, what the board's period reads (E4). */
+  startedAt: Date;
 };
 
 export type ReopenRow = {
@@ -132,6 +137,8 @@ export async function loadInsightAttemptRows(
       missionId: mission.id,
       missionTitle: mission.title,
       resolvedIn: task.resolvedIn,
+      taskUpdatedAt: task.updatedAt,
+      taskCreatedAt: task.createdAt,
       model: executionAttempt.model,
       executor: executionAttempt.executor,
       modelSource: executionAttempt.modelSource,
@@ -200,6 +207,7 @@ export async function loadMissionAttemptRows(
       modelSource: missionAttempt.modelSource,
       status: missionAttempt.status,
       result: missionAttempt.result,
+      startedAt: missionAttempt.startedAt,
       finishedAt: missionAttempt.finishedAt,
       usageSegments: missionAttempt.usageSegments,
       tokensIn: missionAttempt.tokensIn,

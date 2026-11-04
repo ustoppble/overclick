@@ -7,12 +7,12 @@ import { UpdateBanner } from "../../components/update-banner";
 import { InstallNotice } from "../../components/install-notice";
 import { loadInstallNotices } from "../../lib/invitations";
 import {
+  boardFilterFromQuery,
   filterBoardCards,
   releaseValueOptions,
-  resolveBoardFilter,
 } from "../../lib/board-filter";
 import { resolveCardRoute, type CardRoute } from "../../lib/card-route";
-import { CARD_ROUTE_PARAM } from "../../lib/redirects";
+import { CARD_ROUTE_PARAM, withQuery } from "../../lib/redirects";
 import { toBoardCards } from "../../lib/board-card";
 import { findLinkedCard } from "../../lib/board-window";
 import {
@@ -22,6 +22,7 @@ import {
   loadBoardTasksByIds,
 } from "../../lib/board-tasks";
 import { loadReviewQueue, readReviewScope } from "../../lib/review-queue";
+import { joinReviewQueue } from "../../lib/review-queue-order";
 import { loadBoardSignature } from "../../lib/board-signature";
 import { loadBoardTotals } from "../../lib/board-totals-query";
 import { getSession } from "../../lib/cookies";
@@ -102,7 +103,9 @@ export default async function BoardPage({
       cardAsked,
     );
     if (cardRoute.kind === "not-found") notFound();
-    if (cardRoute.kind === "moved") redirect(cardRoute.to);
+    // The query the address carried rides along (E3 review): the board
+    // behind the card keeps the period and the filters the link meant.
+    if (cardRoute.kind === "moved") redirect(withQuery(cardRoute.to, params, [CARD_ROUTE_PARAM]));
   }
   return (
     <Suspense fallback={<BoardLoading />}>
@@ -254,11 +257,12 @@ async function BoardContent({
       viewerId: session.userId,
       claimTimeoutMinutes: ws.claimTimeoutMinutes,
     });
-    const byId = new Map(cards.map((card) => [card.id, card]));
-    const rows = queue.flatMap((entry) => {
-      const card = byId.get(entry.id);
-      return card ? [{ card, deliveredAt: entry.deliveredAt, checks: entry.checks }] : [];
-    });
+    // The list's number is the queue's length, the chip's count (B2); a line
+    // the card query could not read does not quietly lower it.
+    const { rows, count: queueCount, missing } = joinReviewQueue(queue, cards);
+    if (missing.length > 0) {
+      console.warn(`[review] ${missing.length} card(s) in the queue had no line to show`);
+    }
     const { organization: org, project: proj } = scope.label;
     const scopeLabel = org && proj ? `${org} › ${proj}` : (proj ?? org ?? t.review.scopeAll);
     const asked = typeof params.card === "string" ? params.card.toUpperCase() : null;
@@ -280,6 +284,7 @@ async function BoardContent({
           missions={missions}
           viewerRole={principal.role}
           scopeLabel={scopeLabel}
+          count={queueCount}
           openCardId={openCardId}
           boardSignature={signature}
         />
@@ -308,14 +313,13 @@ async function BoardContent({
     releaseRows.flatMap((row) => (row.value ? [{ value: row.value }] : [])),
   );
 
+  // Only the scope and the period are remembered (navigation plan E4, F2).
+  // The mission, type, priority and release columns are still on the user,
+  // from before, and are not read.
   const [me] = await db()
     .select({
       boardOrganizationId: user.boardOrganizationId,
       boardProjectId: user.boardProjectId,
-      boardMissionId: user.boardMissionId,
-      boardTaskTypes: user.boardTaskTypes,
-      boardPriorities: user.boardPriorities,
-      boardResolvedIn: user.boardResolvedIn,
       boardPeriod: user.boardPeriod,
       boardPeriodBy: user.boardPeriodBy,
     })
@@ -338,22 +342,30 @@ async function BoardContent({
   // when there is a banner to draw.
   const updater = release ? await readUpdaterState() : null;
   const projectIds = projects.map((item) => item.id);
-  // The period is part of the filter, and the window is built from it.
-  const rememberedFilter = resolveBoardFilter(
+  // The URL wins over the memory, and the memory only fills what the URL
+  // does not say (E4, F2): a link with ?period=30d shows 30 days to whoever
+  // opens it. The period is part of the filter, and the window is built from it.
+  const rememberedFilter = boardFilterFromQuery(
     {
-      organizationId: me?.boardOrganizationId ?? null,
-      projectId: me?.boardProjectId ?? null,
-      missionId: me?.boardMissionId ?? null,
-      types: me?.boardTaskTypes ?? null,
-      priorities: me?.boardPriorities ?? null,
-      resolvedIn: me?.boardResolvedIn ?? null,
-      period: me?.boardPeriod ?? null,
-      periodBy: me?.boardPeriodBy ?? null,
+      organizations: one(params.organizations),
+      projects: one(params.projects),
+      mission: one(params.mission),
+      types: one(params.types),
+      priorities: one(params.priorities),
+      release: one(params.release),
+      period: one(params.period),
+      periodBy: one(params.periodBy),
     },
     projects,
     missions,
     releases,
     organizations,
+    {
+      organizationId: me?.boardOrganizationId ?? null,
+      projectId: me?.boardProjectId ?? null,
+      period: me?.boardPeriod ?? null,
+      periodBy: me?.boardPeriodBy ?? null,
+    },
   );
   // A card's address opens over the board of the card's project when the
   // remembered filter would hide it. Nothing is saved: the next visit to
@@ -442,8 +454,6 @@ async function BoardContent({
 
       <HomeShell
         lang={ws.language}
-        organizations={organizations}
-        projects={projects}
         missions={missions}
         releases={releases}
         cards={cards}
@@ -454,9 +464,16 @@ async function BoardContent({
         windowSince={boardWindowStart(windowNow, initialFilter.period)?.toISOString() ?? null}
         boardSignature={boardSignature}
         viewerRole={principal.role}
+        initialQuery={one(params.q) ?? ""}
       />
 
       <div className="nebula-glass-fade viewport-fade" aria-hidden="true" />
     </div>
   );
+}
+
+/** One value of a query parameter; a repeated one reads as its first. */
+function one(value: string | string[] | undefined): string | null {
+  const first = Array.isArray(value) ? value[0] : value;
+  return first ?? null;
 }

@@ -6,8 +6,10 @@ import {
 } from "../../lib/mission-progress";
 import type { Dict } from "../../lib/i18n";
 
-const SEGMENT_CLASS: Record<MissionProgressStatus, string> = {
-  aberto: "seg-aberto",
+/** The statuses that fill the bar; the queue is the track, never a segment. */
+type FilledStatus = Exclude<MissionProgressStatus, "aberto">;
+
+const SEGMENT_CLASS: Record<FilledStatus, string> = {
   em_execucao: "seg-em-execucao",
   feito: "seg-feito",
   validado: "seg-validado",
@@ -17,7 +19,7 @@ const SEGMENT_CLASS: Record<MissionProgressStatus, string> = {
  * What fills the bar, from the most finished: validated, waiting for review,
  * running. The queue is what is left of the track.
  */
-const FILLED: readonly MissionProgressStatus[] = ["validado", "feito", "em_execucao"];
+const FILLED: readonly FilledStatus[] = ["validado", "feito", "em_execucao"];
 
 /** The legend reads the whole mission, the queue included. */
 const LEGEND: readonly MissionProgressStatus[] = [...FILLED, "aberto"];

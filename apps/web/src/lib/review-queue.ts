@@ -68,18 +68,26 @@ function inScope(principal: MaybePrincipal, scope: ReviewScope) {
   );
 }
 
-/** Cards per status inside the scope, as this reader may see them. */
+/**
+ * Cards per status inside the scope, as this reader may see them. `statuses`
+ * narrows the count to the ones the caller shows (the global bar reads two
+ * of five, E1 review M1); the others come back as zero.
+ */
 export async function countCardsByStatus(
   database: Database,
   principal: MaybePrincipal,
   scope: ReviewScope,
+  statuses?: readonly (keyof TaskStatusCounts)[],
 ): Promise<TaskStatusCounts> {
   if (!principal) return { ...NO_COUNTS };
+  if (statuses && statuses.length === 0) return { ...NO_COUNTS };
   const rows = await database
     .select({ status: task.status, n: count() })
     .from(task)
     .innerJoin(project, eq(task.projectId, project.id))
-    .where(inScope(principal, scope))
+    .where(
+      and(inScope(principal, scope), statuses ? inArray(task.status, [...statuses]) : undefined),
+    )
     .groupBy(task.status);
   const counts = { ...NO_COUNTS };
   for (const row of rows) counts[row.status] = Number(row.n);
@@ -147,6 +155,11 @@ export async function readReviewScope(
   database: Database,
   workspaceId: string,
   principal: MaybePrincipal,
+  /**
+   * The reader's projects, when the caller already read them through the
+   * same scope (the board's signature poll does): one query fewer per poll.
+   */
+  known?: { projects: { id: string; name: string; organizationId: string }[] },
 ): Promise<ReviewScope & { label: ReviewScopeLabel }> {
   const empty = {
     workspaceId,
@@ -163,11 +176,13 @@ export async function readReviewScope(
     .from(user)
     .where(eq(user.id, principal.userId))
     .limit(1);
-  const projects = await database
-    .select({ id: project.id, name: project.name, organizationId: project.organizationId })
-    .from(project)
-    .where(and(eq(project.workspaceId, workspaceId), projectScope(principal)))
-    .orderBy(asc(project.createdAt));
+  const projects =
+    known?.projects ??
+    (await database
+      .select({ id: project.id, name: project.name, organizationId: project.organizationId })
+      .from(project)
+      .where(and(eq(project.workspaceId, workspaceId), projectScope(principal)))
+      .orderBy(asc(project.createdAt)));
   const organizations = await database
     .select({ id: organization.id, name: organization.name })
     .from(organization)

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeFilterChips,
   activeFilterCount,
+  clearBoardFilter,
+  periodIsDefault,
+  removeFilterChip,
+  resetBoardPeriod,
   ALL_ORGANIZATIONS,
   ALL_PROJECTS,
   NO_MISSION,
@@ -299,10 +304,12 @@ describe("several projects at once", () => {
         }),
       ),
     ).toBe(
-      "organizations=all&projects=p1%2Cp2&mission=m1&types=bug%2Cfeature&priorities=urgente%2Calta&release=v1.2.0",
+      "organizations=all&projects=p1%2Cp2&mission=m1&types=bug%2Cfeature&priorities=urgente%2Calta&release=v1.2.0&period=7d&periodBy=updated",
     );
+    // Navigation plan E4: a link the app makes always says its scope and its
+    // period, so the page it opens never borrows the reader's memory for them.
     expect(boardFilterToQuery(boardFilter())).toBe(
-      "organizations=all&projects=all",
+      "organizations=all&projects=all&period=7d&periodBy=updated",
     );
 
     expect(
@@ -643,10 +650,17 @@ describe("the period filter", () => {
     expect(periodDays("all")).toBeNull();
   });
 
-  it("is not part of the query shared with Insights, and neither is the date it reads", () => {
+  it("rides on the query shared with Consumo, and so does the date it reads (E4)", () => {
     const base = resolveBoardFilter(none, projects, missions);
-    expect(boardFilterToQuery(base)).toBe(boardFilterToQuery({ ...base, period: "30d" }));
-    expect(boardFilterToQuery(base)).toBe(boardFilterToQuery({ ...base, periodBy: "created" }));
+    expect(boardFilterToQuery({ ...base, period: "30d" })).toContain("period=30d");
+    expect(boardFilterToQuery({ ...base, periodBy: "created" })).toContain("periodBy=created");
+    const back = boardFilterFromQuery(
+      Object.fromEntries(new URLSearchParams(boardFilterToQuery({ ...base, period: "all", periodBy: "created" }))),
+      projects,
+      missions,
+    );
+    expect(back.period).toBe("all");
+    expect(back.periodBy).toBe("created");
   });
 
   it("reads the last activity unless the reader picked the creation date", () => {
@@ -696,7 +710,7 @@ describe("active filter count", () => {
     expect(activeFilterCount({ ...none, period: "14d", periodBy: "created" })).toBe(2);
   });
 
-  it("counts every choice made, one each, the way the Filters menu counts its own", () => {
+  it("counts every choice made behind Filtros, one each, the way the menu counts its own", () => {
     expect(
       activeFilterCount({
         organizationIds: ["o1"],
@@ -706,11 +720,135 @@ describe("active filter count", () => {
         priorities: ["urgente", "alta"],
         resolvedIn: "v1.2.0",
       }),
-    ).toBe(8);
+    ).toBe(5);
+  });
+
+  it("leaves the scope out: it lives in the global bar, not behind Filtros (E4)", () => {
+    expect(activeFilterCount({ ...none, organizationIds: ["o1"], projectIds: ["p1"] })).toBe(0);
   });
 
   it("counts the cards without a release and the cards without a mission as choices", () => {
     expect(activeFilterCount({ ...none, resolvedIn: null })).toBe(1);
     expect(activeFilterCount({ ...none, missionId: NO_MISSION })).toBe(1);
+  });
+});
+
+describe("the URL wins over the memory, and the memory only fills what the URL lacks (E4, F2)", () => {
+  const remembered = {
+    organizationId: "o1",
+    projectId: "p2",
+    period: "30d",
+    periodBy: "created",
+  };
+
+  it("reads the remembered scope and period when the URL says nothing", () => {
+    const filter = boardFilterFromQuery({}, projects, missions, undefined, organizations, remembered);
+    expect(filter.organizationIds).toEqual(["o1"]);
+    expect(filter.projectIds).toEqual(["p2"]);
+    expect(filter.period).toBe("30d");
+    expect(filter.periodBy).toBe("created");
+  });
+
+  it("takes the URL's scope and period over the remembered ones", () => {
+    const filter = boardFilterFromQuery(
+      { organizations: "all", projects: "p3", period: "7d", periodBy: "updated" },
+      projects,
+      missions,
+      undefined,
+      organizations,
+      remembered,
+    );
+    expect(filter.organizationIds).toEqual([]);
+    expect(filter.projectIds).toEqual(["p3"]);
+    expect(filter.period).toBe("7d");
+    expect(filter.periodBy).toBe("updated");
+  });
+
+  it("fills only the missing half: a link with a period keeps the remembered scope", () => {
+    const filter = boardFilterFromQuery({ period: "14d" }, projects, missions, undefined, organizations, remembered);
+    expect(filter.period).toBe("14d");
+    expect(filter.periodBy).toBe("created");
+    expect(filter.organizationIds).toEqual(["o1"]);
+    expect(filter.projectIds).toEqual(["p2"]);
+  });
+
+  it("never fills a mission, a type, a priority or a release from memory", () => {
+    const filter = boardFilterFromQuery({}, projects, missions, [{ value: "v1.2.0" }], organizations, remembered);
+    expect(filter.missionId).toBeNull();
+    expect(filter.types).toEqual([]);
+    expect(filter.priorities).toEqual([]);
+    expect(filter.resolvedIn).toBeUndefined();
+  });
+
+  it("reads a URL period it does not know as the remembered one, not as 7 days", () => {
+    const filter = boardFilterFromQuery({ period: "90d" }, projects, missions, undefined, organizations, remembered);
+    expect(filter.period).toBe("30d");
+  });
+});
+
+describe("Clear and Back to 7 days are two different buttons (E4)", () => {
+  const narrowed = boardFilter({
+    organizationIds: ["o1"],
+    projectIds: ["p1"],
+    missionId: "m1",
+    types: ["bug"],
+    priorities: ["alta"],
+    resolvedIn: "v1.2.0",
+    period: "30d",
+    periodBy: "created",
+  });
+
+  it("Clear filters keeps the scope and the period, and drops the rest", () => {
+    expect(clearBoardFilter(narrowed)).toEqual(
+      boardFilter({ organizationIds: ["o1"], projectIds: ["p1"], period: "30d", periodBy: "created" }),
+    );
+  });
+
+  it("Back to 7 days puts the period and its date back to the default, and touches nothing else", () => {
+    expect(resetBoardPeriod(narrowed)).toEqual({ ...narrowed, period: "7d", periodBy: "updated" });
+  });
+
+  it("says when the period is out of the default, which is when Back to 7 days is offered", () => {
+    expect(periodIsDefault(boardFilter())).toBe(true);
+    expect(periodIsDefault(boardFilter({ period: "30d" }))).toBe(false);
+    expect(periodIsDefault(boardFilter({ periodBy: "created" }))).toBe(false);
+  });
+});
+
+describe("the active chips under the filter line (E4)", () => {
+  const names = {
+    mission: (id: string) => (id === "m1" ? "Onboarding" : null),
+  };
+
+  it("has one removable chip per narrowed dimension, and none for the scope or the period", () => {
+    const chips = activeFilterChips(
+      boardFilter({
+        organizationIds: ["o1"],
+        projectIds: ["p1"],
+        missionId: "m1",
+        types: ["feature", "rfc"],
+        priorities: ["urgente"],
+        resolvedIn: null,
+        period: "30d",
+      }),
+      names,
+    );
+    expect(chips.map((chip) => chip.key)).toEqual(["mission", "types", "priorities", "release"]);
+    expect(chips.find((chip) => chip.key === "mission")!.values).toEqual(["Onboarding"]);
+    expect(chips.find((chip) => chip.key === "types")!.values).toEqual(["feature", "rfc"]);
+    expect(chips.find((chip) => chip.key === "release")!.values).toEqual([null]);
+  });
+
+  it("removes exactly its own dimension", () => {
+    const filter = boardFilter({ missionId: "m1", types: ["bug"], priorities: ["alta"], resolvedIn: "v1.2.0" });
+    expect(removeFilterChip(filter, "types")).toEqual({ ...filter, types: [] });
+    expect(removeFilterChip(filter, "priorities")).toEqual({ ...filter, priorities: [] });
+    expect(removeFilterChip(filter, "mission")).toEqual({ ...filter, missionId: null });
+    const { resolvedIn: _gone, ...noRelease } = filter;
+    expect(removeFilterChip(filter, "release")).toEqual(noRelease);
+  });
+
+  it("is empty on a board that is not narrowed", () => {
+    expect(activeFilterChips(boardFilter(), names)).toEqual([]);
   });
 });

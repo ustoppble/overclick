@@ -4,8 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../actions/auth", () => ({ logoutAction: async () => {} }));
 vi.mock("../../actions/global-bar", () => ({ globalBarCountsAction: async () => null }));
+vi.mock("../../actions/board-filter", () => ({ setBoardScopeAction: async () => ({ ok: true }) }));
 
-const { AvatarMenu, GlobalBarClient } = await import("./global-bar-client");
+const { AvatarMenu, GlobalBarClient, ownsCountsPoll } = await import("./global-bar-client");
 
 type Props = Parameters<typeof GlobalBarClient>[0];
 
@@ -16,6 +17,18 @@ const base: Props = {
   role: "admin",
   organizationName: null,
   counts: { running: 2, review: 4 },
+  scope: {
+    organizations: [
+      { id: "o1", name: "Overclock" },
+      { id: "o2", name: "Sydra" },
+    ],
+    projects: [
+      { id: "p1", name: "overclick", organizationId: "o1" },
+      { id: "p2", name: "app", organizationId: "o1" },
+      { id: "p3", name: "site", organizationId: "o2" },
+    ],
+    remembered: { organizationIds: ["o1"], projectIds: ["p1"] },
+  },
 };
 
 const render = (props: Partial<Props> = {}) =>
@@ -103,6 +116,77 @@ describe("the global bar (navigation plan E1)", () => {
     expect(html).toMatch(/<nav[^>]*class="gb-tabbar"/);
     expect(html).toMatch(/gb-tab-badge attention[^>]*>4</);
     expect(render({ counts: { running: 0, review: 0 } })).not.toContain("gb-tab-badge");
+  });
+});
+
+describe("the scope and the search in the global bar (navigation plan E4)", () => {
+  it("puts the scope right after the wordmark, written as organization › project", () => {
+    const html = render();
+    const row = html.match(/<div class="gb-row">[\s\S]*?<nav[^>]*class="gb-places"/)![0];
+    expect(row.indexOf("logo")).toBeLessThan(row.indexOf("gb-scope"));
+    expect(row).toMatch(/class="gb-scope"[^>]*aria-haspopup="dialog"/);
+    expect(row).toContain("Overclock");
+    expect(row).toMatch(/gb-scope-sep[^>]*>›</);
+    expect(row).toContain("overclick");
+  });
+
+  it("says every project when the scope is a whole organization, and every organization when it is all", () => {
+    expect(
+      render({ scope: { ...base.scope, remembered: { organizationIds: ["o2"], projectIds: [] } } }),
+    ).toContain("Todos os projetos");
+    expect(
+      render({ scope: { ...base.scope, remembered: { organizationIds: [], projectIds: [] } } }),
+    ).toContain("Todas as organizações");
+  });
+
+  it("names the organization a remembered project belongs to, even under all organizations", () => {
+    const html = render({ scope: { ...base.scope, remembered: { organizationIds: [], projectIds: ["p3"] } } });
+    expect(html).toContain("Sydra");
+    expect(html).not.toContain("Todas as organizações");
+  });
+
+  it("shows the name as fixed text when there is nothing to choose: one organization, one project (F17)", () => {
+    const html = render({
+      scope: {
+        organizations: [{ id: "o1", name: "Overclock" }],
+        projects: [{ id: "p1", name: "overclick", organizationId: "o1" }],
+        remembered: { organizationIds: [], projectIds: [] },
+      },
+    });
+    expect(html).toMatch(/<span class="gb-scope gb-scope-fixed"/);
+    expect(html).not.toMatch(/<button[^>]*class="gb-scope"/);
+    expect(html).toContain("overclick");
+  });
+
+  it("has a search that says what it reaches, keeps ⌘K, and lands on /board?q= from anywhere", () => {
+    const html = render({ current: "usage" });
+    expect(html).toMatch(/<form[^>]*class="gb-search-form"[^>]*action="\/board"|<form[^>]*action="\/board"[^>]*class="gb-search-form"/);
+    expect(html).toMatch(/<input[^>]*name="q"/);
+    expect(html).toContain('placeholder="Buscar cards"');
+    expect(html).toContain("⌘K");
+    expect(render({ lang: "en" })).toContain('placeholder="Search cards"');
+    // its icon form, for the bars too narrow for the field
+    expect(html).toMatch(/class="gb-search-btn"[^>]*aria-label="Buscar cards"/);
+  });
+
+  it("orders the right side: search, running, to review, avatar", () => {
+    const html = render();
+    const right = html.match(/<div class="gb-right">[\s\S]*$/)![0];
+    const at = (needle: string) => right.indexOf(needle);
+    expect(at("gb-search")).toBeGreaterThan(-1);
+    expect(at("gb-search")).toBeLessThan(at("gb-chip-run"));
+    expect(at("gb-chip-run")).toBeLessThan(at("gb-chip-review"));
+    expect(at("gb-chip-review")).toBeLessThan(at("gb-avatar"));
+  });
+});
+
+describe("one poll for the counts at a time (E1 review, B1)", () => {
+  it("leaves the counts to the board's poll on the board, the To review list included", () => {
+    expect(ownsCountsPoll("board")).toBe(false);
+    expect(ownsCountsPoll("missions")).toBe(true);
+    expect(ownsCountsPoll("usage")).toBe(true);
+    expect(ownsCountsPoll("settings")).toBe(true);
+    expect(ownsCountsPoll(null)).toBe(true);
   });
 });
 

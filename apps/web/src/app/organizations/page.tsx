@@ -1,12 +1,12 @@
-import { redirect } from "next/navigation";
+import { permanentRedirect } from "next/navigation";
 import { ORGANIZATIONS_DESTINATION } from "../../lib/redirects";
 
 /**
  * The read-only Organizations page is gone (E5): the numbers are in Consumo and
- * the editing is in Settings. One hop, 307 in this release.
+ * the editing is in Settings. One hop, 308 since E4.
  */
 export const dynamic = "force-dynamic";
 
 export default function OrganizationsRedirect() {
-  redirect(ORGANIZATIONS_DESTINATION);
+  permanentRedirect(ORGANIZATIONS_DESTINATION);
 }

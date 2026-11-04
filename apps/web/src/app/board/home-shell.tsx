@@ -4,6 +4,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { publishGlobalCounts } from "../../components/global-bar/counts-channel";
 import {
+  setBoardSearch,
+  subscribeBoardSearch,
+} from "../../components/global-bar/search-channel";
+import {
   boardTotalsAction,
   setBoardFilterAction,
 } from "../../actions/board-filter";
@@ -14,21 +18,21 @@ import {
 import { assignCardsToMissionAction } from "../../actions/missions";
 import {
   NO_MISSION,
-  boardFilterToQuery,
+  TASK_PRIORITIES,
+  TASK_TYPES,
   activeFilterCount,
+  clearBoardFilter,
   DEFAULT_BOARD_PERIOD,
   DEFAULT_BOARD_PERIOD_FIELD,
   countLooseCards,
   filterBoardCards,
   missionFilterOptions,
-  organizationFilterOptions,
-  projectFilterOptions,
   releaseFilterOptions,
-  toggleOrganization,
-  selectOnly,
-  toggleProject,
+  removeFilterChip,
+  resetBoardPeriod,
   type BoardFilter,
 } from "../../lib/board-filter";
+import { boardAddressQuery } from "../../lib/board-url";
 import { subscribeToBoardRefresh } from "../../lib/board-refresh";
 import { createBoardSearchRunner } from "../../lib/board-search-runner";
 import {
@@ -42,11 +46,10 @@ import { dict, type Dict } from "../../lib/i18n";
 import { Icon } from "../../components/icon";
 import { Board, type BoardCard, type BoardMissionOption } from "./board";
 import { BoardTotal } from "./board-total";
-import { FacetFilters } from "./facet-filters";
-import { PeriodByFilter, PeriodFilter } from "./period-filter";
+import { FacetMenu, MoreFilters } from "./facet-filters";
+import { FilterChips } from "./filter-chips";
+import { PeriodFilter } from "./period-filter";
 import { MissionFilter } from "./mission-filter";
-import { OrganizationFilter } from "./organization-filter";
-import { ProjectFilter } from "./project-filter";
 import { ReleaseHeader } from "./release-header";
 
 export type BoardProjectOption = {
@@ -145,8 +148,6 @@ function BulkMissionBar({
 
 export function HomeShell({
   lang,
-  organizations,
-  projects,
   missions,
   releases,
   cards: windowCards,
@@ -157,10 +158,9 @@ export function HomeShell({
   windowSince,
   boardSignature,
   viewerRole,
+  initialQuery = "",
 }: {
   lang: string;
-  organizations: BoardOrganizationOption[];
-  projects: BoardProjectOption[];
   missions: BoardMissionOption[];
   releases: { value: string }[];
   cards: BoardCard[];
@@ -177,6 +177,8 @@ export function HomeShell({
   boardSignature: string;
   /** Who is looking: Validate and the amber are the admin's (navigation plan E1). */
   viewerRole: "admin" | "member";
+  /** The search words the address carried (`/board?q=`, E4). */
+  initialQuery?: string;
 }) {
   const router = useRouter();
   const t = dict(lang);
@@ -184,8 +186,20 @@ export function HomeShell({
   const [totals, setTotals] = useState<BoardTotals>(initialTotals);
   const [picking, setPicking] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  // The words are typed in the global bar (E4); they reach the board through
+  // the search channel, and the address's ?q= seeds both ends.
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(initialQuery);
+  useEffect(() => {
+    setBoardSearch(initialQuery);
+    const stop = subscribeBoardSearch(setSearchQuery);
+    return () => {
+      stop();
+      setBoardSearch("");
+    };
+    // The seed is read once: afterwards the bar owns the words.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Phone only: the filters leave the compact bar for the panel behind this
   // one button. On the desktop the panel never opens because the button is
   // hidden and the wrapper is transparent to the bar.
@@ -269,26 +283,6 @@ export function HomeShell({
     () => filterBoardCards(cards, scope).length,
     [cards, scope],
   );
-  const projectOptions = useMemo(
-    () =>
-      projectFilterOptions(cards, projects, filter).map((option) => ({
-        ...option,
-        hasContext:
-          projects.find((project) => project.id === option.id)?.hasContext ?? false,
-        contextStatus:
-          projects.find((project) => project.id === option.id)?.contextStatus ?? null,
-      })),
-    [cards, projects, filter],
-  );
-  const organizationOptions = useMemo(
-    () =>
-      organizationFilterOptions(cards, organizations, filter).map((option) => ({
-        ...option,
-        hasContext:
-          organizations.find((org) => org.id === option.id)?.hasContext ?? false,
-      })),
-    [cards, organizations, filter],
-  );
   const releaseOptions = useMemo(
     () => releaseFilterOptions(cards, releases, filter),
     [cards, releases, filter],
@@ -303,14 +297,17 @@ export function HomeShell({
     filter.missionId && filter.missionId !== NO_MISSION
       ? missions.find((item) => item.id === filter.missionId) ?? null
       : null;
-  const hasActiveFilters =
-    filter.organizationIds.length > 0 ||
-    filter.projectIds.length > 0 ||
-    filter.missionId !== null ||
-    filter.types.length > 0 ||
-    filter.priorities.length > 0 ||
-    filter.resolvedIn !== undefined ||
-    searchQuery.trim().length > 0;
+  const typeNames = {
+    bug: t.board.typeBug,
+    feature: t.board.typeFeature,
+    rfc: t.board.typeRfc,
+  };
+  const priorityNames = {
+    urgente: t.board.priorityUrgent,
+    alta: t.board.priorityHigh,
+    media: t.board.priorityMedium,
+    baixa: t.board.priorityLow,
+  };
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -318,6 +315,24 @@ export function HomeShell({
     }, 150);
     return () => window.clearTimeout(timer);
   }, [searchQuery]);
+
+  // The address is the board's state (E4): what is on screen is what a link
+  // copied from it shows. Replaced, not pushed: Back leaves the board, it does
+  // not undo a filter. Only on /board itself: a card's own address
+  // (/cards/OCL-12) is the card's, and the board's query comes back with Back.
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
+  function writeAddress(next: BoardFilter, words: string) {
+    if (window.location.pathname !== "/board") return;
+    const query = boardAddressQuery(next, words, window.location.search);
+    window.history.replaceState(null, "", query ? `/board?${query}` : "/board");
+  }
+  const wroteWords = useRef(initialQuery);
+  useEffect(() => {
+    if (debouncedSearchQuery === wroteWords.current) return;
+    wroteWords.current = debouncedSearchQuery;
+    writeAddress(filterRef.current, debouncedSearchQuery);
+  }, [debouncedSearchQuery]);
 
   // MCP writes happen outside this React tree. Refreshing the dynamic route
   // pulls projects, cards and their latest attempts together, so every part
@@ -381,8 +396,11 @@ export function HomeShell({
   }, [debouncedSearchQuery]);
 
   function apply(next: BoardFilter) {
+    // Only the scope and the period are remembered (F2); the rest lives in
+    // the address, written here.
     const saved = setBoardFilterAction(next);
     setFilter(next);
+    writeAddress(next, searchQuery);
     if (
       (next.period ?? DEFAULT_BOARD_PERIOD) !== period ||
       (next.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD) !== periodBy
@@ -413,30 +431,28 @@ export function HomeShell({
     setSelected([]);
   }
 
-  function clearBoardFilters() {
+  function clearSearch() {
+    setBoardSearch("");
     setSearchQuery("");
     setDebouncedSearchQuery("");
-    apply({
-      organizationIds: [],
-      projectIds: [],
-      missionId: null,
-      types: [],
-      priorities: [],
-      // The period is a reach, not a narrowing: clearing filters keeps it,
-      // and the date it reads.
-      period,
-      periodBy,
-    });
+  }
+
+  // Clear keeps the scope and the period (E4): they are where the reader is,
+  // not a narrowing. Back to 7 days is its own button.
+  function clearBoardFilters() {
+    clearSearch();
+    apply(clearBoardFilter(filter));
   }
 
   return (
     <>
-      {/* Navigation plan E1: identity, places, work state and the account
-          moved up to the global bar (the route's layout). What stays here is
-          the board's filter line, still ONE line on the desktop with what
-          does not fit stepping aside in order (nebula.css, "one line"), and
-          the cost at its far end, as in A-board-1440. On the phone the
-          filters live behind the Filtros button. */}
+      {/* Navigation plan E1 moved identity, places, work state and the
+          account up to the global bar, and E4 the scope and the search. What
+          stays here is the filter line, ONE line on the desktop with what does
+          not fit stepping aside in order (board-filters.css): Missão · Tipo ·
+          Prioridade · Mostrar: … · Mais, the cost at its far end, and the
+          chips of what narrows the board under it. On the phone the filters
+          live behind the Filtros button. */}
       <header className="topbar-wrap">
         <div className="topbar topbar-l1">
           <div className="spacer" />
@@ -445,63 +461,11 @@ export function HomeShell({
           <BoardTotal totals={totals} filter={filter} t={t} />
         </div>
         <div className="topbar-l2">
-          {/* On the desktop the wrapper is transparent to the level, the
-              controls inside it lay out exactly as before, and the phone-only
-              filters button stays hidden. On the phone the level collapses
-              behind the Filtros button and the wrapper becomes the panel that
-              holds it: same controls, same order, nothing dropped (AGB-65). */}
+          {/* On the desktop the wrapper is transparent to the level and the
+              phone-only filters button stays hidden. On the phone the level
+              collapses behind the Filtros button and the wrapper becomes the
+              panel that holds it: same controls, same order (AGB-65). */}
           <div className={`topbar-more${filtersOpen ? " open" : ""}`}>
-            <div className="crumb">
-              {/* Only where there is a choice to make: one business is the
-                  whole board, and a control that can only be set to All is one
-                  more thing to read for nothing. */}
-              {organizations.length > 1 ? (
-                <OrganizationFilter
-                  options={organizationOptions}
-                  value={filter.organizationIds}
-                  onToggle={(organizationId) =>
-                    apply({
-                      ...filter,
-                      organizationIds: toggleOrganization(
-                        filter.organizationIds,
-                        organizationId,
-                        organizations,
-                      ),
-                      // The projects on screen belong to the business that just
-                      // left. Keeping them would leave an empty board under a
-                      // filter that reads as if it should show something.
-                      projectIds: [],
-                    })
-                  }
-                  onOnly={(organizationId) =>
-                    apply({
-                      ...filter,
-                      organizationIds: selectOnly(organizationId, organizations),
-                      projectIds: [],
-                    })
-                  }
-                  onAll={() =>
-                    apply({ ...filter, organizationIds: [], projectIds: [] })
-                  }
-                  t={t}
-                />
-              ) : null}
-              <ProjectFilter
-                options={projectOptions}
-                value={filter.projectIds}
-                onToggle={(projectId) =>
-                  apply({
-                    ...filter,
-                    projectIds: toggleProject(filter.projectIds, projectId, projects),
-                  })
-                }
-                onOnly={(projectId) =>
-                  apply({ ...filter, projectIds: selectOnly(projectId, projects) })
-                }
-                onAll={() => apply({ ...filter, projectIds: [] })}
-                t={t}
-              />
-            </div>
             <MissionFilter
               options={missionOptions}
               organizationId={
@@ -525,72 +489,38 @@ export function HomeShell({
                 <Icon name="chevronRight" label={null} size={12} />
               </a>
             ) : null}
+            <FacetMenu
+              kind="type"
+              label={t.board.typeFilter}
+              choices={TASK_TYPES}
+              names={typeNames}
+              value={filter.types}
+              onChange={(types) => apply({ ...filter, types })}
+            />
+            <FacetMenu
+              kind="priority"
+              label={t.board.priorityFilter}
+              choices={TASK_PRIORITIES}
+              names={priorityNames}
+              value={filter.priorities}
+              onChange={(priorities) => apply({ ...filter, priorities })}
+            />
             <PeriodFilter
               value={period}
+              by={periodBy}
               onChange={(next) => apply({ ...filter, period: next })}
+              onByChange={(next) => apply({ ...filter, periodBy: next })}
               t={t}
             />
-            {/* On the phone this one moves into More filters (the sheet
-                hides it), so the sheet keeps one row for the period. */}
-            <PeriodByFilter
-              value={periodBy}
-              onChange={(next) => apply({ ...filter, periodBy: next })}
-              t={t}
-            />
-            <FacetFilters
-              types={filter.types}
-              priorities={filter.priorities}
+            <MoreFilters
               releases={releaseOptions}
               resolvedIn={filter.resolvedIn}
-              onTypesChange={(types) => apply({ ...filter, types })}
-              onPrioritiesChange={(priorities) =>
-                apply({ ...filter, priorities })
-              }
-              onReleaseChange={(resolvedIn) =>
-                apply({ ...filter, resolvedIn })
-              }
-              periodBy={periodBy}
-              onPeriodByChange={(next) => apply({ ...filter, periodBy: next })}
-              query={searchQuery}
-              onQueryChange={setSearchQuery}
-              onOpen={() => setFiltersOpen(true)}
-              onClear={() => {
-                const { resolvedIn: _release, ...rest } = filter;
-                setSearchQuery("");
-                setDebouncedSearchQuery("");
-                apply({ ...rest, types: [], priorities: [] });
-              }}
+              onReleaseChange={(resolvedIn) => apply({ ...filter, resolvedIn })}
               t={t}
             />
-            {/* The count says something on a narrowed board; on the whole one
-                it is the first thing the one-line bar lets go of. */}
-            <span
-              className={`filter-result${hasActiveFilters || searchQuery.trim() ? " narrowed" : ""}`}
-            >
-              {searching ? t.board.searchingOlder : t.board.cardsShown(visible.length)}
-              {searchLimited && !searching ? (
-                <> · {t.board.searchLimited}</>
-              ) : null}
-            </span>
-            {hasActiveFilters ? (
-              <button
-                className="btn-ghost clear-board-filters"
-                type="button"
-                onClick={clearBoardFilters}
-                aria-label={t.board.clearFilters}
-                title={t.board.clearFilters}
-              >
-                {/* Where the bar runs short the words step aside and the
-                    mark stays, with the words as its name. */}
-                <Icon name="close" label={null} size={12} className="cbf-icon" />
-                <span className="cbf-label">{t.board.clearFilters}</span>
-              </button>
-            ) : null}
             {/* ux-v2 §3: "Mover para missão" appears only with cards
                 selected, right-aligned — an impossible action with nothing
-                picked has no reason to sit on the bar (OCL-86). The trigger
-                for entering picking mode is a separate concern outside this
-                card's scope; `selected` is the real precondition. */}
+                picked has no reason to sit on the bar (OCL-86). */}
             {selected.length > 0 ? (
               <button
                 className={`btn-ghost move-btn${picking ? " on" : ""}`}
@@ -614,22 +544,27 @@ export function HomeShell({
           >
             <Icon name="filter" label={null} size={14} />
             <span>{t.board.filters}</span>
-            {/* How many filters are on, not how many cards are left: that
-                count is a line of its own in the sheet. Nothing when none. */}
+            {/* How many filters are on, a period out of the default
+                included (F2), not how many cards are left. Nothing when none. */}
             {activeFilterCount(filter) > 0 ? (
               <span className="badge">{activeFilterCount(filter)}</span>
-            ) : null}
-            {searchQuery.trim() ? (
-              <span
-                className="badge ff-query-badge"
-                title={searchQuery.trim()}
-              >
-                {searchQuery.trim()}
-              </span>
             ) : null}
           </button>
         </div>
       </header>
+      <FilterChips
+        filter={filter}
+        missions={missions}
+        query={searchQuery}
+        shown={visible.length}
+        searching={searching}
+        searchLimited={searchLimited}
+        onRemove={(key) => apply(removeFilterChip(filter, key))}
+        onClearSearch={clearSearch}
+        onClear={clearBoardFilters}
+        onResetPeriod={() => apply(resetBoardPeriod(filter))}
+        t={t}
+      />
       {/* Tap-away target for the phone filters panel; rendered only while it
           is open, which the desktop never does. */}
       {filtersOpen ? (

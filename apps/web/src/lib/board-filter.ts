@@ -119,16 +119,16 @@ export type SearchableBoardCard = FilterableCard & {
 };
 
 /**
- * How many choices narrow the board, one per business, project, mission, type,
- * priority and release picked, the way the Filters menu counts its own. A
- * period other than the default 7 days and the creation date as the one it
- * reads are choices too, one each. The search words have a chip of their own,
- * so they are not counted.
+ * How many choices narrow the board, one per mission, type, priority and
+ * release picked, the way the Filters menu counts its own. A period other than
+ * the default 7 days and the creation date as the one it reads are choices
+ * too, one each: they are remembered, and this count is how the phone says the
+ * board is not on its default (F2). The scope is not counted: since E4 it
+ * lives in the global bar, written out, not behind Filtros. The search words
+ * have a chip of their own, so they are not counted either.
  */
 export function activeFilterCount(filter: BoardFilter): number {
   return (
-    filter.organizationIds.length +
-    filter.projectIds.length +
     (filter.missionId !== null ? 1 : 0) +
     filter.types.length +
     filter.priorities.length +
@@ -318,10 +318,82 @@ export function selectOnly(id: string, items: { id: string }[]): string[] {
   return items.length <= 1 ? [] : [id];
 }
 
+/** The period and the date it reads are the defaults: 7 days, last activity. */
+export function periodIsDefault(filter: BoardFilter): boolean {
+  return (
+    (filter.period ?? DEFAULT_BOARD_PERIOD) === DEFAULT_BOARD_PERIOD &&
+    (filter.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD) === DEFAULT_BOARD_PERIOD_FIELD
+  );
+}
+
+/**
+ * Clear filters (E4): the mission, the facets, the release go; the scope and
+ * the period stay, because they are not narrowing, they are where the reader
+ * is. "Back to 7 days" is the other button, for the period.
+ */
+export function clearBoardFilter(filter: BoardFilter): BoardFilter {
+  return {
+    organizationIds: filter.organizationIds,
+    projectIds: filter.projectIds,
+    missionId: null,
+    types: [],
+    priorities: [],
+    period: filter.period ?? DEFAULT_BOARD_PERIOD,
+    periodBy: filter.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD,
+  };
+}
+
+/** Back to 7 days (E4): the period and its date to the default, nothing else. */
+export function resetBoardPeriod(filter: BoardFilter): BoardFilter {
+  return { ...filter, period: DEFAULT_BOARD_PERIOD, periodBy: DEFAULT_BOARD_PERIOD_FIELD };
+}
+
+/** The dimensions a chip under the filter line can stand for. */
+export type FilterChipKey = "mission" | "types" | "priorities" | "release";
+
+export type FilterChip = {
+  key: FilterChipKey;
+  /** What is picked: mission titles, type and priority keys, release values (null is no release). */
+  values: (string | null)[];
+};
+
+/**
+ * The chips under the filter line (E4): one per narrowed dimension, each
+ * removable on its own. The scope is written in the bar and the period in its
+ * control, so neither has a chip here.
+ */
+export function activeFilterChips(
+  filter: BoardFilter,
+  names: { mission: (id: string) => string | null },
+): FilterChip[] {
+  const chips: FilterChip[] = [];
+  if (filter.missionId !== null) {
+    chips.push({
+      key: "mission",
+      values: [filter.missionId === NO_MISSION ? NO_MISSION : (names.mission(filter.missionId) ?? filter.missionId)],
+    });
+  }
+  if (filter.types.length > 0) chips.push({ key: "types", values: [...filter.types] });
+  if (filter.priorities.length > 0) chips.push({ key: "priorities", values: [...filter.priorities] });
+  if (filter.resolvedIn !== undefined) chips.push({ key: "release", values: [filter.resolvedIn] });
+  return chips;
+}
+
+/** The filter without the dimension a chip stands for. */
+export function removeFilterChip(filter: BoardFilter, key: FilterChipKey): BoardFilter {
+  if (key === "mission") return { ...filter, missionId: null };
+  if (key === "types") return { ...filter, types: [] };
+  if (key === "priorities") return { ...filter, priorities: [] };
+  const { resolvedIn: _release, ...rest } = filter;
+  return rest;
+}
+
 /**
  * The filter as a query string, so a link can hand the same selection to
- * another page. Insights reads it back with boardFilterFromQuery, which is
- * what makes the topbar total and the Insights page agree by construction.
+ * another page. Consumo reads it back with boardFilterFromQuery, which is
+ * what makes the topbar total and the Consumo page agree by construction.
+ * Since E4 it always says the period and the date it reads (D6, F2): the page
+ * a link opens never borrows the reader's remembered period.
  */
 export function boardFilterToQuery(filter: BoardFilter): string {
   const params = new URLSearchParams();
@@ -338,32 +410,63 @@ export function boardFilterToQuery(filter: BoardFilter): string {
   if (filter.resolvedIn !== undefined) {
     params.set("release", encodeReleaseSelection(filter.resolvedIn) ?? "");
   }
+  params.set("period", filter.period ?? DEFAULT_BOARD_PERIOD);
+  params.set("periodBy", filter.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD);
   return params.toString();
 }
 
-/** The other end of boardFilterToQuery. No params at all means everything. */
+/** The query parameters a board filter is read from. */
+export type BoardFilterQuery = {
+  organizations?: string | null;
+  projects?: string | null;
+  mission?: string | null;
+  types?: string | null;
+  priorities?: string | null;
+  release?: string | null;
+  period?: string | null;
+  periodBy?: string | null;
+};
+
+/** What the board remembers per person since E4: the scope and the period, nothing else. */
+export type RememberedBoardView = {
+  organizationId: string | null;
+  projectId: string | null;
+  period: string | null;
+  periodBy: string | null;
+};
+
+/**
+ * The other end of boardFilterToQuery. No params at all means everything,
+ * unless a remembered view is given: then the URL wins, and the memory only
+ * fills what the URL does not say (E4, F2). The memory holds the scope and the
+ * period; the mission, the facets and the release come from the URL or not at
+ * all. A URL value the board does not know (a period of 90 days) reads as
+ * absent, so the memory answers it.
+ */
 export function boardFilterFromQuery(
-  params: {
-    organizations?: string | null;
-    projects?: string | null;
-    mission?: string | null;
-    types?: string | null;
-    priorities?: string | null;
-    release?: string | null;
-  },
+  params: BoardFilterQuery,
   projects: { id: string; organizationId?: string }[],
   missions: { id: string }[] = [],
   releases?: { value: string }[],
   organizations: { id: string }[] = [],
+  remembered?: RememberedBoardView | null,
 ): BoardFilter {
+  const given = (value: string | null | undefined) =>
+    value === undefined || value === null ? undefined : value;
+  const period = isBoardPeriod(params.period) ? params.period : remembered?.period;
+  const periodBy = isBoardPeriodField(params.periodBy) ? params.periodBy : remembered?.periodBy;
   return resolveBoardFilter(
     {
-      organizationId: params.organizations ?? ALL_ORGANIZATIONS,
-      projectId: params.projects ?? ALL_PROJECTS,
+      organizationId:
+        given(params.organizations) ??
+        (remembered ? remembered.organizationId : ALL_ORGANIZATIONS),
+      projectId: given(params.projects) ?? (remembered ? remembered.projectId : ALL_PROJECTS),
       missionId: params.mission ?? null,
       types: params.types,
       priorities: params.priorities,
       resolvedIn: params.release,
+      period,
+      periodBy,
     },
     projects,
     missions,

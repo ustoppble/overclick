@@ -181,4 +181,50 @@ describe("the mission page", () => {
 
     expect(await loadMissionList(database(), world.workspaceId, member)).toEqual([]);
   });
+  it("follows the scope of the bar: the organization, then the projects (E4)", async () => {
+    await card(world.projectId, "OC-1", "validado");
+    await card(siteProjectId, "OVW-1", "feito");
+    const [siteOnly] = await world.db
+      .insert(mission)
+      .values({
+        workspaceId: world.workspaceId,
+        organizationId: world.organizationId,
+        title: "Only the site",
+        createdByUserId: world.adminUserId,
+      })
+      .returning({ id: mission.id });
+    await card(siteProjectId, "OVW-2", "aberto", world.adminUserId, siteOnly!.id);
+    const [empty] = await world.db
+      .insert(mission)
+      .values({
+        workspaceId: world.workspaceId,
+        organizationId: world.organizationId,
+        title: "Nothing yet",
+        createdByUserId: world.adminUserId,
+      })
+      .returning({ id: mission.id });
+
+    const narrowed = await loadMissionList(database(), world.workspaceId, adminPrincipal(world), {
+      organizationIds: [world.organizationId],
+      projectIds: [world.projectId],
+    });
+    // The site-only mission has nothing in the project on screen; the empty
+    // one belongs to the organization and is where the next card goes.
+    expect(narrowed.map((item) => item.id).sort()).toEqual([world.missionId, empty!.id].sort());
+    const north = narrowed.find((item) => item.id === world.missionId)!;
+    expect(north.counts).toMatchObject({ total: 1, validado: 1 });
+    expect(north.projectNames).toEqual(["OverClick"]);
+
+    const elsewhere = await loadMissionList(database(), world.workspaceId, adminPrincipal(world), {
+      organizationIds: ["00000000-0000-4000-8000-000000000000"],
+      projectIds: [],
+    });
+    expect(elsewhere).toEqual([]);
+
+    const whole = await loadMissionList(database(), world.workspaceId, adminPrincipal(world), {
+      organizationIds: [],
+      projectIds: [],
+    });
+    expect(whole).toHaveLength(3);
+  });
 });

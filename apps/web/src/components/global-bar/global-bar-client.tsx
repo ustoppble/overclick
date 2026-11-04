@@ -3,14 +3,30 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { logoutAction } from "../../actions/auth";
+import { setBoardScopeAction } from "../../actions/board-filter";
 import { globalBarCountsAction } from "../../actions/global-bar";
 import { ThemePicker } from "../../app/board/theme-picker";
+import {
+  encodeOrganizationSelection,
+  encodeProjectSelection,
+  projectsInOrganizations,
+  resolveOrganizationSelection,
+  resolveProjectSelection,
+} from "../../lib/board-filter";
+import { cardIdFromPath } from "../../lib/card-path";
 import { dict } from "../../lib/i18n";
 import type { GlobalCounts } from "../../lib/global-counts";
 import { Icon } from "../icon";
 import { StatusMark } from "../status-mark";
 import { Wordmark } from "../wordmark";
+import { BarSearch } from "./bar-search";
 import { subscribeGlobalCounts } from "./counts-channel";
+import {
+  ScopePicker,
+  type ScopeOrganization,
+  type ScopeProject,
+  type ScopeValue,
+} from "./scope-picker";
 
 /** The place a page is, for `aria-current`. Settings and Organizations are not places. */
 export type GlobalPlace = "board" | "missions" | "usage" | "settings" | "organizations";
@@ -26,6 +42,60 @@ const PLACES = [
 ] as const;
 
 const REVIEW_HREF = "/board?status=feito";
+
+/**
+ * Whether the bar asks for its own numbers. On the board, the To review list
+ * included, the board's 20 s poll already brings them, and a second poll would
+ * only double the reads (E1 review, B1).
+ */
+export function ownsCountsPoll(current: GlobalPlace | null): boolean {
+  return current !== "board";
+}
+
+/** What the bar knows of the reader's scope: the choices and the remembered pick. */
+export type BarScope = {
+  organizations: ScopeOrganization[];
+  projects: ScopeProject[];
+  remembered: ScopeValue;
+};
+
+/**
+ * The scope on screen: the URL's when it says one, the remembered one when it
+ * does not (E4, F2). Read with the board's own rules, so the bar and the page
+ * under it agree on what an address means.
+ */
+export function scopeOnScreen(
+  scope: BarScope,
+  params: { get(name: string): string | null } | null,
+): ScopeValue {
+  const organizations = params?.get("organizations") ?? null;
+  const projects = params?.get("projects") ?? null;
+  if (organizations === null && projects === null) return scope.remembered;
+  const organizationIds =
+    organizations === null
+      ? scope.remembered.organizationIds
+      : resolveOrganizationSelection(organizations, scope.organizations);
+  const inScope = projectsInOrganizations(scope.projects, organizationIds);
+  const projectIds =
+    projects === null
+      ? scope.remembered.projectIds.filter((id) => inScope.some((item) => item.id === id))
+      : resolveProjectSelection(projects, inScope);
+  return { organizationIds, projectIds };
+}
+
+/**
+ * Where a new scope lands: the same page, with the scope in its address, so
+ * the URL keeps winning over the memory. A card's own address (/cards/OCL-12)
+ * is one card, not a scope: the new scope opens the board.
+ */
+function addressWithScope(next: ScopeValue): string {
+  const { pathname, search } = window.location;
+  const params = new URLSearchParams(search);
+  params.set("organizations", encodeOrganizationSelection(next.organizationIds));
+  params.set("projects", encodeProjectSelection(next.projectIds));
+  const path = cardIdFromPath(pathname) !== null ? "/board" : pathname;
+  return `${path}?${params.toString()}`;
+}
 
 /**
  * The avatar's menu (navigation plan E1): who is signed in and as what, then
@@ -97,8 +167,8 @@ function initialOf(email: string): string {
 
 /**
  * The global bar (navigation plan E1, Alternative A): the wordmark, the
- * places, the two work-state chips and the avatar, the same on every signed-in
- * page. On the phone the places and the review count go down to a bottom bar,
+ * scope, the places, the search, the two work-state chips and the avatar, the
+ * same on every signed-in page (the scope and the search came up in E4). On the phone the places and the review count go down to a bottom bar,
  * where "to review" is a tab of its own: it never leaves the screen.
  *
  * The numbers are counted by scope and role only (the F1 contract). On the
@@ -111,6 +181,7 @@ export function GlobalBarClient({
   role,
   organizationName,
   counts: initialCounts,
+  scope,
   reviewing: reviewingProp = false,
 }: {
   current: GlobalPlace | null;
@@ -119,6 +190,8 @@ export function GlobalBarClient({
   role: "admin" | "member";
   organizationName: string | null;
   counts: GlobalCounts;
+  /** The scope picker's choices and the remembered pick (E4). */
+  scope: BarScope;
   /** The To review list is on screen: its chip and its tab read as current. */
   reviewing?: boolean;
 }) {
@@ -132,7 +205,18 @@ export function GlobalBarClient({
   const account = useRef<HTMLDivElement | null>(null);
   const admin = role === "admin";
   // The board polls every 20 s and publishes the counts with its answer.
-  const ownPoll = current !== "board" || reviewing;
+  const ownPoll = ownsCountsPoll(current);
+  const scopeValue = scopeOnScreen(scope, params);
+  const [moving, setMoving] = useState(false);
+
+  async function changeScope(next: ScopeValue) {
+    if (moving) return;
+    setMoving(true);
+    // Remembered first, so the page the address opens reads the same scope
+    // for whatever the address does not say.
+    await setBoardScopeAction(next).catch(() => null);
+    window.location.assign(addressWithScope(next));
+  }
 
   // A server render (navigation, router.refresh) brings fresher numbers.
   useEffect(() => setCounts(initialCounts), [initialCounts.running, initialCounts.review]);
@@ -180,6 +264,13 @@ export function GlobalBarClient({
       <header className="global-bar">
         <div className="gb-row">
           <Wordmark label={t.board.homeLink} />
+          <ScopePicker
+            organizations={scope.organizations}
+            projects={scope.projects}
+            value={scopeValue}
+            onChange={(next) => void changeScope(next)}
+            t={t}
+          />
           <nav className="gb-places" aria-label={t.nav.places}>
             {PLACES.map((place) => (
               <a key={place.key} className="gb-place" href={place.href} aria-current={here(place.key)}>
@@ -189,6 +280,7 @@ export function GlobalBarClient({
             ))}
           </nav>
           <div className="gb-right">
+            <BarSearch onBoard={current === "board" && !reviewing} t={t} />
             <a
               className="gb-chip gb-chip-run"
               href="/board#board-col-em_execucao"

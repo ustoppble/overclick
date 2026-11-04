@@ -32,13 +32,16 @@ export default async function MissionPage({
   if (!page) notFound();
 
   const t = dict(ws.language);
-  // The whole mission, whatever the board's scope, by the Usage page's numbers.
+  // The whole mission, whatever the board's scope and period, by the Usage
+  // page's numbers. All time is said explicitly: the total reads the period
+  // since E4, and its link to Consumo carries it.
   const filter: BoardFilter = {
     organizationIds: [],
     projectIds: [],
     missionId: page.mission.id,
     types: [],
     priorities: [],
+    period: "all",
   };
   const prices = ws.pricingEnabled ? await loadModelPrices(db(), ws.id) : [];
   const [totals, list] = await Promise.all([
@@ -72,7 +75,7 @@ export default async function MissionPage({
         ran={page.ran}
         totals={totals}
         pricingEnabled={ws.pricingEnabled}
-        usageHref={`/insights?${boardFilterToQuery(filter)}`}
+        usageHref={`/usage?${boardFilterToQuery(filter)}`}
         viewerRole={principal.role}
       />
       <div className="nebula-glass-fade viewport-fade" aria-hidden="true" />

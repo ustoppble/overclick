@@ -8,6 +8,7 @@ import {
   REDIRECT_SOURCES,
   homeDestination,
   insightsDestination,
+  withQuery,
 } from "./redirects";
 
 /** Where a rewrite sends a path, as Next matches it, or null. */
@@ -28,7 +29,15 @@ describe("the old board links (navigation plan E3)", () => {
 
   it("/home?card=OCL-12 goes to the card's own address, not to /board?card=", () => {
     expect(homeDestination({ card: "OCL-12" })).toBe("/cards/OCL-12");
-    expect(homeDestination({ card: "OCL-12", projects: "OCL" })).toBe("/cards/OCL-12");
+  });
+
+  it("keeps the period and the filters on the card's address, for the board behind it (E3 review)", () => {
+    expect(homeDestination({ card: "OCL-12", projects: "OCL", period: "30d" })).toBe(
+      "/cards/OCL-12?projects=OCL&period=30d",
+    );
+    expect(withQuery("/cards/OCL-14", { cardRoute: "OCL-12", period: "14d" }, ["cardRoute"])).toBe(
+      "/cards/OCL-14?period=14d",
+    );
   });
 
   it("/home?projects=X&period=30d keeps the filter it carried", () => {
