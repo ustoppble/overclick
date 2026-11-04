@@ -9,7 +9,7 @@ import { db } from "../lib/db";
 import { emailConfigured, sendEmail } from "../lib/email";
 import { redeemEmergencyLogin } from "../lib/emergency-login";
 import { dict } from "../lib/i18n";
-import { countUsers, ensureWorkspace } from "../lib/instance";
+import { countUsers, createFirstAdminWithCode, ensureWorkspace } from "../lib/instance";
 import { sweepLoginRows } from "../lib/login-housekeeping";
 import {
   LOGIN_CODE_PATTERN,
@@ -29,7 +29,6 @@ import {
 } from "../lib/login-rate-limit";
 import {
   issueSignupCode,
-  redeemSignupCode,
   setupScope,
   signupCodeEmail,
 } from "../lib/signup-code";
@@ -118,24 +117,19 @@ export async function signupAction(
 
   const origin = await loginOrigin();
   const charge = await withinCodeLoginBudget(db(), email, origin);
-  if (!charge.ok || !(await redeemSignupCode(db(), setupScope(email), email, code))) {
+  if (!charge.ok) {
     return { error: (await authCopy()).errCode };
   }
-  // Read again: someone else may have finished setup while this code was typed.
-  if (!canCreateFirstAdmin(await countUsers())) {
-    return { error: (await authCopy()).errAdminExists };
-  }
-
-  const [created] = await db()
-    .insert(user)
-    .values({ email, role: "admin" })
-    .returning({
-      id: user.id,
-      sessionVersion: user.sessionVersion,
-    });
-
-  if (!created) {
-    return { error: (await authCopy()).errCreate };
+  // The count of accounts, the code and the admin are one transaction
+  // (`createFirstAdminWithCode`): two setups finishing together make one admin.
+  const created = await createFirstAdminWithCode(db(), email, code);
+  if (!created.ok) {
+    return {
+      error:
+        created.reason === "exists"
+          ? (await authCopy()).errAdminExists
+          : (await authCopy()).errCode,
+    };
   }
 
   await refundCodeLoginOrigin(db(), origin, charge);
