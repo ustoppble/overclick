@@ -56,7 +56,7 @@ describe("emergencyLoginAction", () => {
 
     await emergencyLoginAction(null, tokenForm(token));
     expect(sessions).toEqual([{ userId: world.adminUserId, sessionVersion: 1 }]);
-    expect(redirectSpy).toHaveBeenCalledWith("/home");
+    expect(redirectSpy).toHaveBeenCalledWith("/board");
 
     expect(await emergencyLoginAction(null, tokenForm(token))).toEqual({
       error: expect.any(String),

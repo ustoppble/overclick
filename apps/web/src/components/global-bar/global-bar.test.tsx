@@ -33,13 +33,26 @@ const menu = (role: "admin" | "member", lang = "pt-BR") =>
   );
 
 describe("the global bar (navigation plan E1)", () => {
-  it("is a nav of places: Board and Consumo, and no Missions until E3", () => {
+  it("is a nav of places: Board, Missões and Consumo (Missions joins in E3)", () => {
     const html = render();
     expect(html).toMatch(/<nav[^>]*class="gb-places"/);
+    const places = html.match(/<nav[^>]*class="gb-places"[\s\S]*?<\/nav>/)![0];
+    expect(places.match(/href="([^"]+)"/g)).toEqual([
+      'href="/board"',
+      'href="/missions"',
+      'href="/usage"',
+    ]);
     expect(html).toContain(">Board<");
+    expect(html).toContain(">Missões<");
     expect(html).toContain(">Consumo<");
-    expect(html).not.toMatch(/Missões|Missions/);
     expect(render({ lang: "en" })).toContain(">Usage<");
+    expect(render({ lang: "en" })).toContain(">Missions<");
+  });
+
+  it("puts Missões on the phone's bottom bar too", () => {
+    const tabs = render().match(/<nav[^>]*class="gb-tabbar"[\s\S]*?<\/nav>/)![0];
+    expect(tabs).toContain('href="/missions"');
+    expect(tabs).toContain("Missões");
   });
 
   it("puts aria-current on the place the reader is in, and only there", () => {
@@ -49,11 +62,15 @@ describe("the global bar (navigation plan E1)", () => {
     expect(places.match(/aria-current="page"/g)?.length).toBe(1);
     const tabs = onBoard.match(/<nav[^>]*class="gb-tabbar"[\s\S]*?<\/nav>/)![0];
     expect(tabs.match(/aria-current="page"/g)?.length).toBe(1);
-    expect(onBoard).toMatch(/href="\/home"[^>]*aria-current="page"/);
+    expect(onBoard).toMatch(/href="\/board"[^>]*aria-current="page"/);
 
     const onUsage = render({ current: "usage" });
     expect(onUsage).toMatch(/href="\/usage"[^>]*aria-current="page"/);
-    expect(onUsage).not.toMatch(/href="\/home"[^>]*aria-current="page"/);
+    expect(onUsage).not.toMatch(/href="\/board"[^>]*aria-current="page"/);
+
+    const onMissions = render({ current: "missions" });
+    expect(onMissions).toMatch(/href="\/missions"[^>]*aria-current="page"/);
+    expect(onMissions).not.toMatch(/href="\/board"[^>]*aria-current="page"/);
 
     expect(render({ current: "settings" })).not.toContain('aria-current="page"');
   });
@@ -68,7 +85,7 @@ describe("the global bar (navigation plan E1)", () => {
 
   it("tells the admin how many wait for review, in the amber, and links to the list", () => {
     const html = render();
-    expect(html).toMatch(/class="gb-chip gb-chip-review attention"[^>]*href="\/home\?status=feito"|href="\/home\?status=feito"[^>]*class="gb-chip gb-chip-review attention"/);
+    expect(html).toMatch(/class="gb-chip gb-chip-review attention"[^>]*href="\/board\?status=feito"|href="\/board\?status=feito"[^>]*class="gb-chip gb-chip-review attention"/);
     expect(html).toContain("para revisar");
     expect(html).toContain("2 em execução");
   });

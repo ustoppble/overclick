@@ -404,7 +404,7 @@ describe("signing in with a code sent by email", () => {
       await requestLoginCodeAction(null, emailForm(EMAIL));
       await loginWithCodeAction(null, codeForm(EMAIL, lastSentCode()));
 
-      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
+      expect(redirectSpy).toHaveBeenLastCalledWith("/board");
       expect(requestState.cookieSet).toHaveBeenCalledTimes(2);
       const codeCookie = requestState.cookieSet.mock.calls[1];
       expect(codeCookie?.[0]).toBe(SESSION_COOKIE);
@@ -451,7 +451,7 @@ describe("signing in with a code sent by email", () => {
       expect(before!.count).toBe(4);
 
       await loginWithCodeAction(null, codeForm(EMAIL, issued!.code));
-      expect(redirectSpy).toHaveBeenCalledWith("/home");
+      expect(redirectSpy).toHaveBeenCalledWith("/board");
       expect(
         await world.db.select().from(loginFailure).where(eq(loginFailure.id, `logincode-user:${userId}`)),
       ).toHaveLength(0);
@@ -462,7 +462,7 @@ describe("signing in with a code sent by email", () => {
       const code = lastSentCode();
 
       await loginWithCodeAction(null, codeForm(EMAIL, code));
-      expect(redirectSpy).toHaveBeenCalledWith("/home");
+      expect(redirectSpy).toHaveBeenCalledWith("/board");
 
       const again = await loginWithCodeAction(null, codeForm(EMAIL, code));
       expect(again?.error).toBeTruthy();
@@ -572,7 +572,7 @@ describe("signing in with a code sent by email", () => {
           redirectSpy.mockClear();
           const answer = await loginWithCodeAction(null, codeForm(EMAIL, issued!.code));
           expect(answer?.error).toBeUndefined();
-          expect(redirectSpy).toHaveBeenCalledWith("/home");
+          expect(redirectSpy).toHaveBeenCalledWith("/board");
         }
         expect(await originRows()).toHaveLength(0);
       });
@@ -603,7 +603,7 @@ describe("signing in with a code sent by email", () => {
 
       await requestLoginCodeAction(null, emailForm(EMAIL));
       await loginWithCodeAction(null, codeForm(EMAIL, lastSentCode()));
-      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
+      expect(redirectSpy).toHaveBeenLastCalledWith("/board");
 
       const after = (await originRows()).reduce((sum, row) => sum + row.count, 0);
       expect(after).toBeGreaterThanOrEqual(before);
@@ -686,7 +686,7 @@ describe("signing in with a code sent by email", () => {
       at(65 * MINUTE);
       await requestLoginCodeAction(null, emailForm(EMAIL));
       await loginWithCodeAction(null, codeForm(EMAIL, lastSentCode()));
-      expect(redirectSpy).toHaveBeenLastCalledWith("/home");
+      expect(redirectSpy).toHaveBeenLastCalledWith("/board");
 
       await lockThroughTheAction(EMAIL, 70 * MINUTE);
       const notices = lockNotices(EMAIL);

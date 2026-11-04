@@ -127,7 +127,7 @@ describe("loginWithCodeAction rate limits failed attempts per identifier", () =>
     }
 
     await loginWithCodeAction(null, codeForm("exists@local.test", code));
-    expect(redirectSpy).toHaveBeenCalledWith("/home");
+    expect(redirectSpy).toHaveBeenCalledWith("/board");
 
     const [row] = await world.db
       .select()
@@ -145,6 +145,6 @@ describe("loginWithCodeAction rate limits failed attempts per identifier", () =>
     const theirs = (await issueLoginCode(world.db, "neighbour@local.test"))!.code;
 
     await loginWithCodeAction(null, codeForm("neighbour@local.test", theirs));
-    expect(redirectSpy).toHaveBeenCalledWith("/home");
+    expect(redirectSpy).toHaveBeenCalledWith("/board");
   });
 });

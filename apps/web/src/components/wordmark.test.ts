@@ -71,7 +71,7 @@ describe("the wordmark", () => {
 
   it("is a link home, named, and says so when it is already there", () => {
     const here = wordmark({ label: "ir para o board", current: true });
-    expect(here).toContain('href="/home"');
+    expect(here).toContain('href="/board"');
     expect(here).toContain('aria-label="ir para o board"');
     expect(here).toContain('aria-current="page"');
     // The anchor carries the name; the art must not repeat it to a reader.
