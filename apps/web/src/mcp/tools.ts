@@ -98,10 +98,7 @@ import { manageDenialMessage } from "../lib/manage-capability";
 import {
   canManageStructure,
   canManageWorkspace,
-  canSeeMission,
   canSeeOrganization,
-  canSeeProject,
-  canSeeTask,
   isAdmin,
   missionScope,
   organizationScope,
@@ -4060,9 +4057,9 @@ async function taskUpdate(
         // name in the answer (OCL-227). It stays in its project under its id
         // and is detached instead, which is what keeps the rule above: no
         // subtask lives in a different project than its parent.
-        const principal = principalFromAuth(ctx);
-        const children = allChildren.filter((child) => canSeeTask(principal, child));
-        const hidden = allChildren.filter((child) => !canSeeTask(principal, child));
+        const visible = await visibleChildIds(tx, ctx, nextRow.id);
+        const children = allChildren.filter((child) => visible.has(child.id));
+        const hidden = allChildren.filter((child) => !visible.has(child.id));
         if (hidden.length > 0) {
           await tx
             .update(task)
@@ -4855,17 +4852,29 @@ async function taskDelete(
       `Task ${input.task_id} not found in this workspace. Call task_list to see the available cards.`,
     );
     }
+    // A member sees every card of the projects linked to them, but deleting
+    // stays with the card's author: a colleague's card is not theirs to erase.
+    const principal = principalFromAuth(ctx);
+    if (!isAdmin(principal) && found.row.createdByUserId !== principal?.userId) {
+      return err(
+        "PERMISSION_DENIED",
+        `${found.row.shortId} was written by someone else: only its author or an admin can delete it.`,
+      );
+    }
 
     const allChildren = await tx
       .select({ id: task.id, createdByUserId: task.createdByUserId })
       .from(task)
       .where(eq(task.parentId, found.row.id));
-    // A subtask the caller may not see is someone else's card (OCL-227): an
-    // admin can open one under a member's card. It is detached before the
-    // delete, so the cascade cannot take it, and it is left out of the counts.
-    const principal = principalFromAuth(ctx);
-    const children = allChildren.filter((child) => canSeeTask(principal, child));
-    const hidden = allChildren.filter((child) => !canSeeTask(principal, child));
+    // A subtask the caller may not see, or (for a member) one someone else
+    // wrote, is not theirs to delete (OCL-227): an admin can open one under a
+    // member's card. It is detached before the delete, so the cascade cannot
+    // take it, and it is left out of the counts.
+    const visible = await visibleChildIds(tx, ctx, found.row.id);
+    const deletable = (child: { id: string; createdByUserId: string | null }) =>
+      visible.has(child.id) && (isAdmin(principal) || child.createdByUserId === principal?.userId);
+    const children = allChildren.filter(deletable);
+    const hidden = allChildren.filter((child) => !deletable(child));
     if (hidden.length > 0) {
       await tx
         .update(task)
@@ -5671,6 +5680,15 @@ async function findTask(
     : await query;
   const found = rows[0];
   return found ? { row: found.task, proj: found.project } : null;
+}
+
+/** The subtasks of `parentId` the caller may see, by the same scope as every read. */
+async function visibleChildIds(db: Tx, ctx: AuthContext, parentId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ id: task.id })
+    .from(task)
+    .where(and(eq(task.parentId, parentId), taskScope(principalFromAuth(ctx))));
+  return new Set(rows.map((row) => row.id));
 }
 
 async function allocateShortId(tx: Tx, proj: ProjectRow): Promise<string> {

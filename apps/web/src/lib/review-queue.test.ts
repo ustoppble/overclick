@@ -1,7 +1,13 @@
 import { handoff, project, task, user, type Database } from "@agent-board/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
+import {
+  closeTestWorld,
+  createTestWorld,
+  insertSideProject,
+  linkProjects,
+  type TestWorld,
+} from "../mcp/test-db";
 import { invokeToolForTests as invokeTool } from "../mcp/test-tools";
 import type { AuthContext } from "../mcp/types";
 import { loadBoardTasks } from "./board-tasks";
@@ -96,6 +102,7 @@ beforeEach(async () => {
     })
     .returning({ id: user.id });
   memberId = m!.id;
+  await linkProjects(world.db, memberId, [world.projectId]);
   admin = {
     tokenId: world.tokenId,
     workspaceId: world.workspaceId,
@@ -196,16 +203,19 @@ describe("countCardsByStatus: by scope and role, never by period or filters", ()
     expect(counts.feito).toBe(1);
   });
 
-  it("gives a member only the cards they authored", async () => {
+  it("gives a member only the cards of their linked projects, whoever wrote them", async () => {
+    const sideProjectId = await insertSideProject(world.db, world);
     const mine = await create(member, "the member's");
-    const theirs = await create(admin, "the admin's");
+    const colleague = await create(admin, "the admin's, in a linked project");
+    const theirs = await create(admin, "the admin's", { project_id: sideProjectId });
     await deliver(member, mine);
+    await deliver(admin, colleague);
     await deliver(admin, theirs);
 
     const asMember = await countCardsByStatus(world.db as unknown as Database, memberP, scope());
-    expect(asMember.feito).toBe(1);
+    expect(asMember.feito).toBe(2);
     const asAdmin = await countCardsByStatus(world.db as unknown as Database, adminP, scope());
-    expect(asAdmin.feito).toBe(2);
+    expect(asAdmin.feito).toBe(3);
     expect(await countCardsByStatus(world.db as unknown as Database, null, scope())).toEqual({
       aberto: 0,
       em_execucao: 0,
@@ -248,9 +258,10 @@ describe("loadReviewQueue: the oldest delivery first", () => {
     expect((await loadReviewQueue(world.db as unknown as Database, adminP, scope())).map((e) => e.id)).toEqual([b, a]);
   });
 
-  it("lists only the member's own deliveries to the member", async () => {
+  it("lists to the member only the deliveries of their linked projects", async () => {
+    const sideProjectId = await insertSideProject(world.db, world);
     const mine = await create(member, "mine");
-    const theirs = await create(admin, "theirs");
+    const theirs = await create(admin, "theirs", { project_id: sideProjectId });
     await deliver(member, mine);
     await deliver(admin, theirs);
     const queue = await loadReviewQueue(world.db as unknown as Database, memberP, scope());

@@ -28,7 +28,7 @@ import { sessionPrincipal } from "../lib/web-scope";
 /**
  * The cards the board's window leaves out, fetched on demand: the hits of a
  * search, whatever the period. It reads through the same scope as the page
- * itself, so a member gets their own cards here and nothing else.
+ * itself, so a member gets the cards of their linked projects and nothing else.
  */
 
 type BoardReader = {
@@ -75,7 +75,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /**
  * What the detail panel adds to a card, read when the card is opened: the
  * board's list carries only each card's line. Same scope as the board: a
- * member gets their own cards, and any other id, theirs or nobody's, reads
+ * member gets the cards of their linked projects, and any other id reads
  * as "Card not found.", the same answer as no session at all.
  */
 export async function loadBoardCardDetailAction(

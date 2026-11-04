@@ -7,6 +7,7 @@ import { missionAttempt } from "./mission-attempt";
 import { missionAttemptReport } from "./mission-attempt-report";
 import { organization } from "./organization";
 import { project } from "./project";
+import { projectMember } from "./project-member";
 import { projectContextAudit } from "./project-context-audit";
 import { taskComment } from "./task-comment";
 import { task } from "./task";
@@ -94,6 +95,18 @@ export const projectRelations = relations(project, ({ one, many }) => ({
   tasks: many(task),
   missionAttempts: many(missionAttempt),
   contextAudits: many(projectContextAudit),
+  members: many(projectMember),
+}));
+
+export const projectMemberRelations = relations(projectMember, ({ one }) => ({
+  project: one(project, {
+    fields: [projectMember.projectId],
+    references: [project.id],
+  }),
+  user: one(user, {
+    fields: [projectMember.userId],
+    references: [user.id],
+  }),
 }));
 
 export const missionAttemptRelations = relations(

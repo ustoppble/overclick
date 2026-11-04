@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadBoardTotals } from "../lib/board-totals-query";
 import { loadOrganizationOverviews } from "../lib/organizations-query";
 import { principalFromUserId } from "../lib/scope";
-import { closeTestWorld, createTestWorld, type TestWorld } from "../mcp/test-db";
+import {
+  closeTestWorld,
+  createTestWorld,
+  insertSideProject,
+  linkProjects,
+  type TestWorld,
+} from "../mcp/test-db";
 import { invokeToolForTests as invokeTool } from "../mcp/test-tools";
 import type { AuthContext } from "../mcp/types";
 
@@ -47,12 +53,13 @@ const card = (title: string, extra: Record<string, unknown> = {}) => ({
 });
 
 /** OCL-221: the web applies the same scope the MCP does, on every door. */
-describe("web scope: a member only reaches what is theirs", () => {
+describe("web scope: a member only reaches their linked projects", () => {
   let admin: AuthContext;
   let member: AuthContext;
   let memberId: string;
   let otherOrgId: string;
   let otherProjectId: string;
+  let sideProjectId: string;
   let adminCardId: string;
   let memberCardId: string;
   let adminMissionId: string;
@@ -86,6 +93,10 @@ describe("web scope: a member only reaches what is theirs", () => {
       })
       .returning({ id: project.id });
     otherProjectId = proj2!.id;
+    // The member works on OC; the admin's card is in a project of the same
+    // organization they are not linked to.
+    await linkProjects(world.db, memberId, [world.projectId]);
+    sideProjectId = await insertSideProject(world.db, world);
 
     admin = {
       tokenId: world.tokenId,
@@ -105,7 +116,7 @@ describe("web scope: a member only reaches what is theirs", () => {
       canManage: false,
     };
 
-    const a = await invokeTool(world.db, admin, "task_create", card("do admin", { project_id: world.projectId }));
+    const a = await invokeTool(world.db, admin, "task_create", card("do admin", { project_id: sideProjectId }));
     const b = await invokeTool(world.db, member, "task_create", card("do member", { project_id: world.projectId }));
     if (!a.ok || !b.ok) throw new Error("fixture cards failed");
     const idOf = (r: typeof a) => (r.value as { task: { id: string } }).task.id;

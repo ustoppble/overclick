@@ -7,6 +7,7 @@ import {
   mission,
   organization,
   project,
+  projectMember,
   user,
   workspace,
   type ExecutorConfig,
@@ -219,4 +220,37 @@ export function adminPrincipal(world: TestWorld) {
 
 export async function closeTestWorld(world: TestWorld): Promise<void> {
   await world.client.close();
+}
+
+/**
+ * A member sees only the projects linked to them. Fixtures that build a member
+ * link them here, and park what the member must not see in `sideProject`.
+ */
+export async function linkProjects(
+  db: McpDatabase,
+  userId: string,
+  projectIds: string[],
+): Promise<void> {
+  if (projectIds.length === 0) return;
+  await db.insert(projectMember).values(projectIds.map((projectId) => ({ projectId, userId })));
+}
+
+/** A project in the given organization that no member is linked to. */
+export async function insertSideProject(
+  db: McpDatabase,
+  world: { workspaceId: string; organizationId: string },
+  idPrefix = "LT",
+): Promise<string> {
+  const [row] = await db
+    .insert(project)
+    .values({
+      workspaceId: world.workspaceId,
+      organizationId: world.organizationId,
+      name: `Side ${idPrefix}`,
+      idPrefix,
+      nextNumber: 1,
+    })
+    .returning({ id: project.id });
+  if (!row) throw new Error("failed to insert side project");
+  return row.id;
 }

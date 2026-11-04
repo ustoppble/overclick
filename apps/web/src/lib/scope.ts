@@ -1,5 +1,5 @@
 import { mission, organization, project, task, user } from "@agent-board/db";
-import { eq, sql, type SQL } from "drizzle-orm";
+import { eq, or, sql, type SQL } from "drizzle-orm";
 import type { AuthContext, McpDatabase } from "../mcp/types";
 
 /**
@@ -9,14 +9,20 @@ import type { AuthContext, McpDatabase } from "../mcp/types";
  * deciding for itself, so the rule cannot drift between them. The model:
  *
  * - admin: everything, as before.
- * - member: only the cards and missions they authored; only the projects of
- *   their own organization, and that organization; no workspace
- *   configuration; only their own tokens.
+ * - member: only the projects an admin linked them to (`project_member`),
+ *   inside their own organization, and every card in those projects whoever
+ *   wrote it; the missions they authored or that hold a card in one of those
+ *   projects; their own organization; no workspace configuration; only their
+ *   own tokens. No link means no project and no card at all.
  * - anyone we cannot identify (no user behind a token, a user that was
  *   deactivated): nothing. Deny is the default.
  *
  * Out of scope means non-existent: callers answer "not found" for a row that
  * fails these checks, never "forbidden", so its existence is not revealed.
+ *
+ * The links are read inside each query (a subquery on `project_member`), never
+ * cached on the session or the token: an admin changing them takes effect on
+ * the member's next request, without signing in again.
  */
 export type Role = "admin" | "member";
 
@@ -102,34 +108,6 @@ export function canManageStructure(principal: MaybePrincipal): boolean {
   return isAdmin(principal);
 }
 
-export function canSeeTask(
-  principal: MaybePrincipal,
-  row: { createdByUserId: string | null },
-): boolean {
-  if (!principal) return false;
-  if (isAdmin(principal)) return true;
-  return row.createdByUserId !== null && row.createdByUserId === principal.userId;
-}
-
-export function canSeeMission(
-  principal: MaybePrincipal,
-  row: { createdByUserId: string | null },
-): boolean {
-  return canSeeTask(principal, row);
-}
-
-export function canSeeProject(
-  principal: MaybePrincipal,
-  row: { organizationId: string },
-): boolean {
-  if (!principal) return false;
-  if (isAdmin(principal)) return true;
-  return (
-    principal.organizationId !== null &&
-    row.organizationId === principal.organizationId
-  );
-}
-
 export function canSeeOrganization(
   principal: MaybePrincipal,
   row: { id: string },
@@ -152,6 +130,19 @@ export function canManageToken(
 const NOTHING = sql`false`;
 
 /**
+ * The projects linked to the member, kept to their own organization: a link
+ * left behind by a move between organizations opens nothing. The tables are
+ * aliased so the subquery never collides with the query it filters (a
+ * relational query on `project` or `task` already uses those names).
+ */
+function linkedProjectIds(principal: Principal): SQL {
+  return sql`(select scope_pm.project_id from project_member scope_pm
+    join project scope_p on scope_p.id = scope_pm.project_id
+    where scope_pm.user_id = ${principal.userId}
+      and scope_p.organization_id = ${principal.organizationId})`;
+}
+
+/**
  * SQL counterparts of the checks above, for list and aggregate queries that
  * must filter in the database. `undefined` means "no restriction" (admin), so
  * the result can go straight into `and(...)`.
@@ -159,20 +150,33 @@ const NOTHING = sql`false`;
 export function taskScope(principal: MaybePrincipal): SQL | undefined {
   if (!principal) return NOTHING;
   if (isAdmin(principal)) return undefined;
-  return eq(task.createdByUserId, principal.userId);
+  if (!principal.organizationId) return NOTHING;
+  return sql`${task.projectId} in ${linkedProjectIds(principal)}`;
 }
 
+/**
+ * A member's missions: the ones they wrote, and the ones holding a card in a
+ * project linked to them, which is what lets the cards they see carry their
+ * mission. A mission whose cards are all in other projects stays hidden.
+ */
 export function missionScope(principal: MaybePrincipal): SQL | undefined {
   if (!principal) return NOTHING;
   if (isAdmin(principal)) return undefined;
-  return eq(mission.createdByUserId, principal.userId);
+  const authored = eq(mission.createdByUserId, principal.userId);
+  if (!principal.organizationId) return authored;
+  return or(
+    authored,
+    sql`exists (select 1 from task scope_t
+      where scope_t.mission_id = ${mission.id}
+        and scope_t.project_id in ${linkedProjectIds(principal)})`,
+  );
 }
 
 export function projectScope(principal: MaybePrincipal): SQL | undefined {
   if (!principal) return NOTHING;
   if (isAdmin(principal)) return undefined;
   if (!principal.organizationId) return NOTHING;
-  return eq(project.organizationId, principal.organizationId);
+  return sql`${project.id} in ${linkedProjectIds(principal)}`;
 }
 
 export function organizationScope(principal: MaybePrincipal): SQL | undefined {
