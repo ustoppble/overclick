@@ -3,6 +3,7 @@ import { GlobalBar } from "../../components/global-bar/global-bar";
 import "../../styles/nebula.css";
 import "../../styles/missions.css";
 import "../../styles/board-filters.css";
+import "../../styles/selection-bar.css";
 
 export default function BoardLayout({ children }: { children: ReactNode }) {
   return (

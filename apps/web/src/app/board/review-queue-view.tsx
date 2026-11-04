@@ -80,7 +80,9 @@ export function ReviewQueueView({
       subscribeToBoardRefresh({
         refresh: () => startRefresh(() => router.refresh()),
         signature: async () => {
-          const answer = await boardSignatureAction();
+          // The page's query rides along: the bar's numbers follow the
+          // scope the address carries (E4 review, item 1).
+          const answer = await boardSignatureAction(window.location.search);
           if (answer && "signature" in answer) {
             publishGlobalCounts(answer.counts);
             return answer.signature;

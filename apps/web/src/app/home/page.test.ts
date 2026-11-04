@@ -56,10 +56,13 @@ describe("/home?card= finds the card's current address first", () => {
     if (world) await closeTestWorld(world);
   });
 
-  it("sends an old id to the new address in one permanent hop, with the query", async () => {
+  // E4 review, item 3: the lookup reads today's data, and the card may move
+  // again; a browser must not cache this hop, so it is temporary (307). The
+  // static branches stay permanent.
+  it("sends an old id to the new address in one temporary hop, with the query", async () => {
     expect(await answer({ card: "OLD-4", period: "30d" })).toEqual({
       to: "/cards/OC-30?period=30d",
-      status: "308",
+      status: "307",
     });
   });
 

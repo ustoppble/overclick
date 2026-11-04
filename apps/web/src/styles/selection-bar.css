@@ -1,0 +1,242 @@
+/* ============================================================
+   SELECIONAR — navigation plan E6 (variant A, F9 of the review)
+
+   The button on the filter line, the bar at the foot of the board while the
+   mode is on ("N selecionados · Mover para missão… · Descartar · Cancelar"),
+   the menu and the confirmation that open from it, and the line it leaves
+   ("N cards movidos · Desfazer"). Its own sheet (plan §3.3).
+
+   Rules kept from E1 (plan §3.5): nothing new under 12px, no stacked opacity
+   on text, radius 4/8/12, spacing 4/8/12/16/24/32/48, 200ms motion on colour
+   and background only, no colour of its own: the primary is the accent pair,
+   Descartar is the danger text the design draws, far from the primary.
+   ============================================================ */
+
+/* ---------- the button on the filter line ---------- */
+.nb .topbar-l2 .sel-toggle { flex: none; }
+.nb .topbar-l2 .sel-toggle .nb-icon { flex: none; color: var(--oc-text-3); }
+.nb .topbar-l2 .sel-toggle.on {
+  color: var(--oc-text-1);
+  border-color: var(--oc-border-strong);
+  background: var(--oc-surface-hover);
+}
+.nb .topbar-l2 .sel-toggle.on .nb-icon { color: var(--oc-text-1); }
+.nb .topbar-l2 .sel-hint {
+  flex: none;
+  color: var(--oc-text-3);
+  font: 400 13px/16px var(--oc-font-ui);
+  white-space: nowrap;
+}
+
+/* ---------- the bar ---------- */
+.nb .sel-bar {
+  position: fixed;
+  z-index: var(--oc-z-chrome);
+  left: 50%;
+  bottom: var(--oc-space-6);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  max-width: calc(100vw - var(--oc-space-6));
+  padding: var(--oc-space-2) var(--oc-space-2) var(--oc-space-2) var(--oc-space-4);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-card);
+  background: var(--oc-surface-3);
+  box-shadow: var(--oc-shadow-panel);
+  font-family: var(--oc-font-ui);
+}
+.nb .sel-count {
+  flex: none;
+  margin-right: var(--oc-space-2);
+  color: var(--oc-text-1);
+  font: 600 14px/20px var(--oc-font-ui);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.nb .sel-move { position: relative; flex: none; }
+
+/* the bar's controls: one height, the accent pair for the primary */
+.nb .sel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--oc-space-2);
+  height: 32px;
+  padding: 0 var(--oc-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-2);
+  font: 500 14px/16px var(--oc-font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--oc-duration-micro) var(--oc-ease-atmosphere),
+    color var(--oc-duration-micro) var(--oc-ease-atmosphere);
+}
+.nb .sel-btn:hover:not(:disabled) { background: var(--oc-surface-hover); color: var(--oc-text-1); }
+.nb .sel-btn:focus-visible { outline: none; box-shadow: var(--oc-focus-ring); }
+.nb .sel-btn.primary { background: var(--oc-accent); color: var(--oc-accent-contrast); font-weight: 600; }
+.nb .sel-btn.primary:hover:not(:disabled) { background: var(--oc-accent); color: var(--oc-accent-contrast); }
+.nb .sel-btn.danger { color: var(--oc-danger); }
+.nb .sel-btn.danger:not(.quiet) { border-color: var(--oc-danger); }
+.nb .sel-btn.danger:hover:not(:disabled) { color: var(--oc-danger); }
+.nb .sel-btn.sm { height: 28px; font-size: 13px; }
+/* an action that waits: the fill goes, the word stays at text-3, no opacity */
+.nb .sel-btn:disabled {
+  background: transparent;
+  border-color: var(--oc-border);
+  color: var(--oc-text-3);
+  cursor: not-allowed;
+}
+.nb .sel-btn.quiet:disabled { border-color: transparent; }
+
+/* ---------- what opens from the bar: the menu, + Nova, the confirmation ---------- */
+.nb .sel-pop {
+  position: absolute;
+  z-index: var(--oc-z-menu);
+  bottom: calc(100% + var(--oc-space-2));
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--oc-space-1);
+  width: 300px;
+  max-width: calc(100vw - var(--oc-space-6));
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+  padding: var(--oc-space-1);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-card);
+  background: var(--oc-surface-3);
+  box-shadow: var(--oc-shadow-panel);
+}
+.nb .sel-pop hr { width: 100%; margin: var(--oc-space-1) 0; border: 0; border-top: 1px solid var(--oc-border); }
+.nb .sel-pop-label {
+  padding: var(--oc-space-1) var(--oc-space-2);
+  color: var(--oc-text-3);
+  font: 500 12px/16px var(--oc-font-ui);
+}
+.nb .sel-mi {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-space-2);
+  min-height: 32px;
+  padding: 0 var(--oc-space-2);
+  border: 0;
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--oc-text-1);
+  font: 500 13px/16px var(--oc-font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--oc-duration-micro) var(--oc-ease-atmosphere);
+}
+.nb .sel-mi:hover:not(:disabled),
+.nb .sel-mi:focus-visible { outline: none; background: var(--oc-surface-hover); }
+.nb .sel-mi .nb-icon { flex: none; color: var(--oc-text-3); }
+.nb .sel-mi-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb .sel-mi-end { flex: none; color: var(--oc-text-3); font: 400 12px/16px var(--oc-font-ui); }
+
+/* the confirmation stands at the bar's far end, away from the primary */
+.nb .sel-discard {
+  left: auto;
+  right: 0;
+  width: 360px;
+  gap: var(--oc-space-2);
+  padding: var(--oc-space-4);
+}
+.nb .sel-create { gap: var(--oc-space-2); padding: var(--oc-space-3); }
+.nb .sel-pop-head { color: var(--oc-text-1); font: 600 14px/20px var(--oc-font-ui); }
+.nb .sel-note { margin: 0; color: var(--oc-text-2); font: 400 13px/20px var(--oc-font-ui); }
+.nb .sel-reason,
+.nb .sel-input {
+  width: 100%;
+  padding: var(--oc-space-2) var(--oc-space-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-bg);
+  color: var(--oc-text-1);
+  font: 400 13px/20px var(--oc-font-ui);
+  resize: vertical;
+}
+.nb .sel-input { height: 32px; padding-top: 0; padding-bottom: 0; }
+.nb .sel-reason:focus,
+.nb .sel-input:focus { outline: none; box-shadow: var(--oc-focus-ring); }
+.nb .sel-pop-row { display: flex; justify-content: flex-end; gap: var(--oc-space-2); }
+.nb .sel-err { margin: 0; color: var(--oc-danger); font: 400 13px/20px var(--oc-font-ui); }
+.nb .sel-bar-err {
+  position: absolute;
+  bottom: calc(100% + var(--oc-space-2));
+  left: 0;
+  right: 0;
+  padding: var(--oc-space-2) var(--oc-space-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-surface-3);
+}
+
+/* ---------- the line it leaves: "N cards movidos · Desfazer" ---------- */
+.nb .sel-toast {
+  position: fixed;
+  z-index: var(--oc-z-chrome);
+  left: 50%;
+  bottom: var(--oc-space-6);
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-space-3);
+  max-width: calc(100vw - var(--oc-space-6));
+  padding: var(--oc-space-2) var(--oc-space-2) var(--oc-space-2) var(--oc-space-4);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius-card);
+  background: var(--oc-surface-3);
+  box-shadow: var(--oc-shadow-panel);
+  color: var(--oc-text-1);
+  font: 500 13px/20px var(--oc-font-ui);
+}
+.nb .sel-toast .nb-icon { flex: none; color: var(--oc-text-2); }
+.nb .sel-toast-txt { min-width: 0; }
+.nb .sel-toast-kept { color: var(--oc-text-2); }
+.nb .sel-kept { display: block; }
+.nb .sel-kept b { color: var(--oc-text-1); font: 500 13px/20px var(--oc-font-data); }
+/* the board keeps its last cards clear of the bar while the mode is on */
+.nb:has(.sel-bar) { padding-bottom: calc(var(--oc-space-9) * 2); }
+.nb .sel-toast .sel-btn.sm:not(.quiet) { border-color: var(--oc-border-strong); color: var(--oc-text-1); }
+
+/* ---------- what steps aside ---------- */
+@media (max-width: 1279px) {
+  .nb .topbar-l2 .sel-hint { display: none; }
+}
+
+/* ---------- the phone: above the bottom bar, never over it ---------- */
+@media (max-width: 768px), (orientation: landscape) and (max-height: 500px) {
+  /* the button keeps its mark and its name for a screen reader */
+  .nb .topbar-l2 > .sel-toggle { order: 3; padding: 0 10px; }
+  .nb .topbar-l2 .sel-toggle .sel-toggle-txt { display: none; }
+  /* two rows: the count and Cancelar, then the two actions */
+  .nb .sel-bar {
+    left: var(--oc-space-3);
+    right: var(--oc-space-3);
+    bottom: calc(64px + var(--oc-space-3));
+    transform: none;
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: var(--oc-space-2) var(--oc-space-2) var(--oc-space-2) var(--oc-space-3);
+  }
+  .nb .sel-count { grid-row: 1; grid-column: 1; align-self: center; }
+  .nb .sel-cancel { grid-row: 1; grid-column: 2; }
+  .nb .sel-move { grid-row: 2; grid-column: 1; }
+  .nb .sel-move > .sel-btn { width: 100%; height: 40px; }
+  .nb .sel-discard-btn { grid-row: 2; grid-column: 2; height: 40px; }
+  .nb .sel-bar:not(:has(.sel-discard-btn)) .sel-move { grid-column: 1 / -1; }
+  .nb .sel-pop { width: 100%; }
+  .nb .sel-discard { width: 100%; }
+  .nb .sel-toast { bottom: calc(64px + var(--oc-space-3)); }
+  body:has(.gb-tabbar) .nb:has(.sel-bar) { padding-bottom: calc(64px + var(--oc-space-9) * 3); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb .sel-btn,
+  .nb .sel-mi { transition: none; }
+}

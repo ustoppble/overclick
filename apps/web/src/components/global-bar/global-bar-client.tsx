@@ -12,6 +12,7 @@ import {
   projectsInOrganizations,
   resolveOrganizationSelection,
   resolveProjectSelection,
+  scopeOverrideFromSearch,
 } from "../../lib/board-filter";
 import { cardIdFromPath } from "../../lib/card-path";
 import { dict } from "../../lib/i18n";
@@ -21,6 +22,7 @@ import { StatusMark } from "../status-mark";
 import { Wordmark } from "../wordmark";
 import { BarSearch } from "./bar-search";
 import { subscribeGlobalCounts } from "./counts-channel";
+import { onRestoredFromCache } from "./restore";
 import {
   ScopePicker,
   type ScopeOrganization,
@@ -209,6 +211,10 @@ export function GlobalBarClient({
   const scopeValue = scopeOnScreen(scope, params);
   const [moving, setMoving] = useState(false);
 
+  // The page goes with location.assign below; brought back from the
+  // browser's cache it would keep the picker disabled (E4 review, item 4).
+  useEffect(() => onRestoredFromCache(window, () => setMoving(false)), []);
+
   async function changeScope(next: ScopeValue) {
     if (moving) return;
     setMoving(true);
@@ -218,8 +224,31 @@ export function GlobalBarClient({
     window.location.assign(addressWithScope(next));
   }
 
+  // The layout cannot read the query, so its numbers are the remembered
+  // scope's. When the address carries a scope of its own, the numbers are
+  // asked again for it (E4 review h-ipv, item 1): the chips count what the
+  // page shows, and a server render cannot put the memory's numbers back.
+  const addressScope = scopeOverrideFromSearch(params?.toString() ?? "");
+  const addressScopeKey = addressScope ? JSON.stringify(addressScope) : "";
   // A server render (navigation, router.refresh) brings fresher numbers.
-  useEffect(() => setCounts(initialCounts), [initialCounts.running, initialCounts.review]);
+  useEffect(() => {
+    if (!addressScopeKey) {
+      setCounts(initialCounts);
+      return;
+    }
+    let live = true;
+    void globalBarCountsAction(window.location.search).then(
+      (next) => {
+        if (live && next) setCounts(next);
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+    // The numbers the server sent are the trigger; the scope key is in it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCounts.running, initialCounts.review, addressScopeKey]);
 
   useEffect(() => subscribeGlobalCounts(setCounts), []);
 
@@ -227,7 +256,7 @@ export function GlobalBarClient({
     if (!ownPoll) return;
     const tick = () => {
       if (document.visibilityState !== "visible") return;
-      void globalBarCountsAction().then(
+      void globalBarCountsAction(window.location.search).then(
         (next) => {
           if (next) setCounts(next);
         },

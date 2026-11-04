@@ -6,7 +6,9 @@ import { revalidatePath } from "next/cache";
 import type { ActionResult } from "../lib/action-result";
 import { getSession } from "../lib/cookies";
 import { db } from "../lib/db";
-import { planMissionAssignment } from "../lib/mission-assign";
+import { MAX_BULK_CARDS } from "../lib/bulk";
+import { looksLikeUuid } from "../mcp/map";
+import { planMissionAssignment, planMissionRestore } from "../lib/mission-assign";
 import { missionScope, taskScope, type Principal } from "../lib/scope";
 import { sessionPrincipal } from "../lib/web-scope";
 
@@ -209,33 +211,59 @@ export async function deleteEmptyMissionAction(
   });
 }
 
+/** Where a card was before a move: what the undo sends it back to. */
+export type CardMissionBefore = { taskId: string; missionId: string | null };
+
 /**
  * Moves cards between missions from the board: one card from its detail
- * panel, or a whole selection from the bulk bar. `missionId: null` detaches.
- * The same rule the MCP `task_update` follows applies here, so a human and an
- * agent can never leave the board in states the other one cannot produce.
+ * panel, or a whole selection from the selection bar. `missionId: null`
+ * detaches. The same rule the MCP `task_update` follows applies here, so a
+ * human and an agent can never leave the board in states the other one cannot
+ * produce. Every id is checked against the caller's scope on the server; one
+ * out of reach refuses the whole move.
+ *
+ * The answer carries where each card was — read here, not taken from the
+ * client — so "N cards movidos · Desfazer" can put every one of them back
+ * (navigation plan E6).
  */
 export async function assignCardsToMissionAction(
   taskIds: string[],
   missionId: string | null,
-): Promise<ActionResult> {
+): Promise<
+  | { ok: true; previous: CardMissionBefore[] }
+  | { ok: false; error: string }
+> {
   const session = await getSession();
   if (!session) return { ok: false, error: "Session expired. Sign in again." };
   const principal = await sessionPrincipal(session);
   if (!principal) return { ok: false, error: "Session expired. Sign in again." };
 
   const requested = [...new Set(taskIds.filter((id) => id.trim()))];
+  if (requested.length > MAX_BULK_CARDS) {
+    return { ok: false, error: `Select at most ${MAX_BULK_CARDS} cards at a time.` };
+  }
+  // A non-uuid matches no card (Postgres would refuse it in the comparison);
+  // the plan answers it as not found, like any other unknown id.
+  const uuidIds = requested.filter(looksLikeUuid);
   const rows =
-    requested.length === 0
+    uuidIds.length === 0
       ? []
       : await db()
-          .select({ id: task.id, workspaceId: project.workspaceId })
+          .select({
+            id: task.id,
+            workspaceId: project.workspaceId,
+            missionId: task.missionId,
+          })
           .from(task)
           .innerJoin(project, eq(task.projectId, project.id))
-          .where(and(inArray(task.id, requested), taskScope(principal)));
+          .where(
+            and(inArray(task.id, uuidIds), taskScope(principal)),
+          );
 
   const target = missionId
-    ? ((
+    ? !looksLikeUuid(missionId)
+      ? ("missing" as const)
+      : ((
         await db()
           .select({ id: mission.id, workspaceId: mission.workspaceId })
           .from(mission)
@@ -251,15 +279,96 @@ export async function assignCardsToMissionAction(
   });
   if (!plan.ok) return { ok: false, error: plan.error };
 
+  // Subtasks were created inside the parent's mission; they follow it out
+  // too, so the undo has to know where they were as well.
+  const children = await db()
+    .select({ id: task.id, missionId: task.missionId })
+    .from(task)
+    .where(and(inArray(task.parentId, plan.taskIds), taskScope(principal)));
+  const previous = new Map<string, string | null>();
+  for (const row of [...rows, ...children]) {
+    if (!previous.has(row.id)) previous.set(row.id, row.missionId);
+  }
+
   await db()
     .update(task)
     .set({ missionId: plan.missionId })
     .where(inArray(task.id, plan.taskIds));
-  // Subtasks were created inside the parent's mission; they follow it out too.
-  await db()
-    .update(task)
-    .set({ missionId: plan.missionId })
-    .where(and(inArray(task.parentId, plan.taskIds), taskScope(principal)));
+  if (children.length > 0) {
+    await db()
+      .update(task)
+      .set({ missionId: plan.missionId })
+      .where(inArray(task.id, children.map((row) => row.id)));
+  }
+
+  revalidatePath("/board");
+  return {
+    ok: true,
+    previous: [...previous].map(([taskId, before]) => ({ taskId, missionId: before })),
+  };
+}
+
+/**
+ * The bulk move's Desfazer (navigation plan E6): each card back to the
+ * mission it had, "Sem missão" included. The list comes from the client, so
+ * nothing in it is trusted: every card and every mission is checked against
+ * the caller's scope again, exactly as a move would be.
+ */
+export async function restoreCardMissionsAction(
+  moves: CardMissionBefore[],
+): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Session expired. Sign in again." };
+  const principal = await sessionPrincipal(session);
+  if (!principal) return { ok: false, error: "Session expired. Sign in again." };
+  if (!Array.isArray(moves) || moves.length > MAX_BULK_CARDS * 2) {
+    return { ok: false, error: "Nothing to undo." };
+  }
+
+  const clean = moves.filter(
+    (move): move is CardMissionBefore =>
+      typeof move?.taskId === "string" &&
+      (move.missionId === null || typeof move.missionId === "string"),
+  );
+  if (clean.length !== moves.length) return { ok: false, error: "Nothing to undo." };
+  // Postgres refuses a non-uuid in a uuid comparison; such an id is simply
+  // one that matches nothing, and the plan answers it as not found.
+  const taskIds = [...new Set(clean.map((move) => move.taskId))].filter(looksLikeUuid);
+  const missionIds = [
+    ...new Set(clean.flatMap((move) => (move.missionId ? [move.missionId] : []))),
+  ].filter(looksLikeUuid);
+
+  const cards =
+    taskIds.length === 0
+      ? []
+      : await db()
+          .select({ id: task.id, workspaceId: project.workspaceId })
+          .from(task)
+          .innerJoin(project, eq(task.projectId, project.id))
+          .where(and(inArray(task.id, taskIds), taskScope(principal)));
+  const missions =
+    missionIds.length === 0
+      ? []
+      : await db()
+          .select({ id: mission.id, workspaceId: mission.workspaceId })
+          .from(mission)
+          .where(and(inArray(mission.id, missionIds), missionScope(principal)));
+
+  const plan = planMissionRestore({
+    moves: clean,
+    cards,
+    missions: new Map(missions.map((row) => [row.id, { workspaceId: row.workspaceId }])),
+  });
+  if (!plan.ok) return { ok: false, error: plan.error };
+
+  await db().transaction(async (tx) => {
+    for (const group of plan.groups) {
+      await tx
+        .update(task)
+        .set({ missionId: group.missionId })
+        .where(inArray(task.id, group.taskIds));
+    }
+  });
 
   revalidatePath("/board");
   return { ok: true };

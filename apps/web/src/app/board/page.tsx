@@ -10,6 +10,7 @@ import {
   boardFilterFromQuery,
   filterBoardCards,
   releaseValueOptions,
+  scopeOverrideFromSearch,
 } from "../../lib/board-filter";
 import { resolveCardRoute, type CardRoute } from "../../lib/card-route";
 import { CARD_ROUTE_PARAM, withQuery } from "../../lib/redirects";
@@ -243,7 +244,15 @@ async function BoardContent({
   // reader's scope, oldest first, whatever the board's period and filters.
   if (params.status === "feito" && !cardRoute) {
     const t = dict(ws.language);
-    const scope = await readReviewScope(db(), ws.id, principal);
+    // The address's scope wins over the remembered one (E4 review, item 1):
+    // a link to the list of one project shows that project's deliveries.
+    const scope = await readReviewScope(
+      db(),
+      ws.id,
+      principal,
+      undefined,
+      scopeOverrideFromSearch(params),
+    );
     const queue = await loadReviewQueue(db(), principal, scope);
     const queueRows = await loadBoardTasksByIds(
       db(),

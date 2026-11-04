@@ -218,3 +218,30 @@ describe("the board remembers only the scope and the period (navigation plan E4,
     expect(row.period).toBe("14d");
   });
 });
+
+/** E4 review, item 5: the filter line writes the period, and only the period. */
+describe("setBoardPeriodAction", () => {
+  beforeEach(async () => {
+    world = await createTestWorld();
+    sessionUserId = world.adminUserId;
+  });
+  afterEach(async () => {
+    sessionUserId = "";
+    if (world) await closeTestWorld(world);
+  });
+
+  it("writes the period and leaves the remembered scope alone", async () => {
+    const { setBoardPeriodAction } = await import("./board-filter");
+    await world.db
+      .update(user)
+      .set({ boardOrganizationId: "all", boardProjectId: world.projectId })
+      .where(eq(user.id, world.adminUserId));
+    expect(await setBoardPeriodAction({ period: "30d", periodBy: "created" })).toEqual({ ok: true });
+    const [row] = await world.db
+      .select({ p: user.boardPeriod, by: user.boardPeriodBy, proj: user.boardProjectId, org: user.boardOrganizationId })
+      .from(user)
+      .where(eq(user.id, world.adminUserId));
+    expect(row).toEqual({ p: "30d", by: "created", proj: world.projectId, org: "all" });
+    expect(await setBoardPeriodAction({ period: "90d" as never, periodBy: "updated" })).toMatchObject({ ok: false });
+  });
+});

@@ -8,7 +8,7 @@ import {
 } from "@agent-board/db";
 import { and, asc, count, eq, inArray, max, sql } from "drizzle-orm";
 import { parseComoConfirmo } from "../mcp/map";
-import { resolveBoardFilter } from "./board-filter";
+import { resolveBoardFilter, type ScopeOverride } from "./board-filter";
 import {
   organizationScope,
   projectScope,
@@ -160,6 +160,12 @@ export async function readReviewScope(
    * same scope (the board's signature poll does): one query fewer per poll.
    */
   known?: { projects: { id: string; name: string; organizationId: string }[] },
+  /**
+   * The scope the address carries (E4 review h-ipv, item 1): it wins over the
+   * remembered pair, which fills only what the address does not say — the
+   * board's own rule, so the chips, the list and the board agree.
+   */
+  override?: ScopeOverride,
 ): Promise<ReviewScope & { label: ReviewScopeLabel }> {
   const empty = {
     workspaceId,
@@ -190,8 +196,8 @@ export async function readReviewScope(
     .orderBy(asc(organization.name));
   const filter = resolveBoardFilter(
     {
-      organizationId: me?.organizationId ?? null,
-      projectId: me?.projectId ?? null,
+      organizationId: override?.organizations ?? me?.organizationId ?? null,
+      projectId: override?.projects ?? me?.projectId ?? null,
       missionId: null,
       types: null,
       priorities: null,

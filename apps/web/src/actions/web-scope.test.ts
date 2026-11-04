@@ -162,7 +162,7 @@ describe("web scope: a member only reaches what is theirs", () => {
     expect(rows.find((r) => r.id === adminCardId)?.m).toBeNull();
     expect(rows.find((r) => r.id === memberCardId)?.m).toBeNull();
     // Their own card into their own mission works.
-    expect(await assignCardsToMissionAction([memberCardId], memberMissionId)).toEqual({ ok: true });
+    expect(await assignCardsToMissionAction([memberCardId], memberMissionId)).toMatchObject({ ok: true });
   });
 
   it("member: cannot edit or delete the admin's mission", async () => {

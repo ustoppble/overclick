@@ -427,6 +427,62 @@ export type BoardFilterQuery = {
   periodBy?: string | null;
 };
 
+/**
+ * The scope an address carries (`?organizations=`, `?projects=`), in the
+ * shape the remembered columns use. The URL wins over the memory (E4, F2), so
+ * whatever counts by scope — the bar's two numbers, the To review list, the
+ * board's poll — reads this first and the memory only for what it does not
+ * say (E4 review h-ipv, item 1). Undefined when the address says nothing.
+ */
+export type ScopeOverride = { organizations?: string; projects?: string };
+
+/** The longest scope value an address may carry: ids joined, never a page of text. */
+const MAX_SCOPE_VALUE = 4_000;
+
+export function scopeOverrideFromSearch(
+  search: string | Record<string, string | string[] | undefined>,
+): ScopeOverride | undefined {
+  const read = (key: "organizations" | "projects"): string | undefined => {
+    const raw =
+      typeof search === "string"
+        ? new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get(key)
+        : search[key];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    return typeof value === "string" && value && value.length <= MAX_SCOPE_VALUE
+      ? value
+      : undefined;
+  };
+  const organizations = read("organizations");
+  const projects = read("projects");
+  if (organizations === undefined && projects === undefined) return undefined;
+  return {
+    ...(organizations !== undefined ? { organizations } : {}),
+    ...(projects !== undefined ? { projects } : {}),
+  };
+}
+
+/**
+ * What a change on the board's filter line leaves remembered (E4 review,
+ * item 5): the period and its date, and only when one of them changed. The
+ * scope is the global bar's to remember; the line never writes it, so a type,
+ * a priority or a mission picked under a scope that came in by a link does
+ * not turn that link's scope into the reader's own.
+ */
+export function boardPeriodToRemember(
+  previous: BoardFilter,
+  next: BoardFilter,
+): { period: BoardPeriod; periodBy: BoardPeriodField } | null {
+  const period = next.period ?? DEFAULT_BOARD_PERIOD;
+  const periodBy = next.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD;
+  if (
+    period === (previous.period ?? DEFAULT_BOARD_PERIOD) &&
+    periodBy === (previous.periodBy ?? DEFAULT_BOARD_PERIOD_FIELD)
+  ) {
+    return null;
+  }
+  return { period, periodBy };
+}
+
 /** What the board remembers per person since E4: the scope and the period, nothing else. */
 export type RememberedBoardView = {
   organizationId: string | null;

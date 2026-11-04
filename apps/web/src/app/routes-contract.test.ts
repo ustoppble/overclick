@@ -77,10 +77,19 @@ describe("the board's new addresses (E3)", () => {
  * in), and a browser keeps a 308 for every reader of that machine.
  */
 describe("the old addresses become permanent redirects (E4)", () => {
-  it.each(["home", "insights", "organizations"])("app/%s/page.tsx answers 308", (route) => {
+  it.each(["insights", "organizations"])("app/%s/page.tsx answers 308", (route) => {
     const source = readFileSync(page(route), "utf8");
     expect(source).toMatch(/\bpermanentRedirect\(/);
     expect(source).not.toMatch(/\bredirect\(/);
+  });
+
+  // E4 review h-ipv, item 3: /home's static mapping is permanent, but the
+  // /home?card=<old id> lookup reads today's data and answers 307, once.
+  it("app/home/page.tsx answers 308 for the static mapping and 307 only after the lookup", () => {
+    const source = readFileSync(page("home"), "utf8");
+    expect(source).toMatch(/\bpermanentRedirect\(homeDestination\(/);
+    expect(source.match(/\bredirect\(/g) ?? []).toHaveLength(1);
+    expect(source).toMatch(/if \(moved\) redirect\(/);
   });
 
   it("/settings?tab= stays a 307: its destination depends on the reader", () => {
